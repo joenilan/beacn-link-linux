@@ -93,6 +93,45 @@ fn run(args: &[String]) -> Result<(), String> {
             let proposed = planner::plan(&inventory, &records).map_err(|e| e.to_string())?;
             println!("{proposed:#?}");
         }
+        Some("prepare-graph") if args.len() == 3 => {
+            let generation = args[1]
+                .parse::<u64>()
+                .map_err(|_| "generation must be u64")?;
+            let Frame::Data(payload) =
+                decode_frame(&parse_hex(&args[2])?).map_err(|e| e.to_string())?
+            else {
+                return Err("preparation requires a data frame".into());
+            };
+            let records = decode_records(&payload).map_err(|e| e.to_string())?;
+            let mut input = Vec::new();
+            std::io::stdin()
+                .take((beacn_link_protocol::graph_snapshot::MAX_GRAPH_TSV_BYTES + 1) as u64)
+                .read_to_end(&mut input)
+                .map_err(|e| format!("graph stdin: {e}"))?;
+            let text = std::str::from_utf8(&input).map_err(|_| "graph stdin must be UTF-8")?;
+            let data = beacn_link_protocol::graph_snapshot::preparation_from_tsv(generation, text)?;
+            let mut tracker = beacn_link_protocol::lifecycle::InventoryTracker::default();
+            tracker
+                .advance(&data.inventory)
+                .map_err(|e| e.to_string())?;
+            let plan = planner::plan(&data.inventory, &records).map_err(|e| e.to_string())?;
+            let prepared = beacn_link_protocol::executor::prepare(
+                &tracker,
+                &plan,
+                &data.expected,
+                &data.observed,
+                &data.destinations,
+                &data.ownership,
+            )
+            .map_err(|e| e.to_string())?;
+            println!(
+                "DRY RUN: {} guarded operations; actual application disabled",
+                prepared.steps.len()
+            );
+            for (index, step) in prepared.steps.iter().enumerate() {
+                println!("{index}: {:?}", step.operation);
+            }
+        }
         Some("apply") | Some("--apply") => {
             return Err(
                 "route application is disabled; only offline dry-run preparation is supported"
@@ -117,7 +156,7 @@ fn run(args: &[String]) -> Result<(), String> {
         }
         Some("--help") | Some("-h") if args.len() == 1 => {
             println!("Offline static-subset codec. All commands are dry runs. Route application disabled.\n\
-Usage:\n  link-protocol decode <hex-frame>\n  link-protocol decode-header <8-hex-digits>\n  link-protocol encode [assignment:name ...]\n  link-protocol plan-snapshot <snapshot-id> <data-frame-hex> < inventory.tsv\n\
+Usage:\n  link-protocol decode <hex-frame>\n  link-protocol decode-header <8-hex-digits>\n  link-protocol encode [assignment:name ...]\n  link-protocol plan-snapshot <snapshot-id> <data-frame-hex> < inventory.tsv\n  link-protocol prepare-graph <generation> <data-frame-hex> < graph.tsv\n\
 Hex may contain quoted whitespace. Encoding requires printable ASCII names.\n\
 Assignments 0 and 5..255 are opaque; zero is not interpreted as unroute.\n\
 Data frames must be exact-sized and contain terminated assignment records.\n\

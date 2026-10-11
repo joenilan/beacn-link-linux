@@ -4,9 +4,12 @@ Independent, unofficial Linux compatibility research; not affiliated with BEACN.
 
 Status: partial static evidence plus a dependency-free offline Rust protocol
 codec, CLI, provider-neutral routing planner and read-only PipeWire snapshot
-adapter with explicit wire bindings, plus guarded dry-run route preparation and
-rollback descriptions. The current slice passes 29 Rust integration
-tests and seven Python tests on both Windows and Ubuntu 26.04.1. The Linux adapter
+adapter with explicit wire bindings, guarded dry-run route preparation,
+read-only audio graph projection and pure acknowledgment receipt bookkeeping.
+The current slice passes 36 Rust integration tests and 15 Python tests on both
+Windows and Ubuntu 26.04.1. An actual read-only graph preparation preserved two
+already-correct foreign links and refused an incorrect destination serial.
+The Linux adapter
 also verified a real Firefox playback node in one populated snapshot, after an
 initial empty inventory. A private disposable PipeWire core subsequently verified
 one owned synthetic stereo stream moving from A to B, matching planner identities,
@@ -28,6 +31,7 @@ application can appear in Windows App and be routed from it.
 - [Offline routing preparation](docs/offline-executor.md)
 - [Offline inventory lifecycle](docs/offline-lifecycle.md)
 - [Read-only PipeWire inventory](docs/pipewire-inventory.md)
+- [Read-only graph projection and receipts](docs/pipewire-graph.md)
 - [Controlled virtual routing evidence](docs/controlled-virtual-routing.md)
 - [Linux offline validation](docs/linux-validation.md)
 - [Phased research plan](docs/research-plan.md)

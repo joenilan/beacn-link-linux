@@ -292,3 +292,9 @@ pub mod lifecycle;
 
 /// Pure guarded route preparation; actual audio application remains disabled.
 pub mod executor;
+
+/// Bounded graph metadata bridge into guarded preparation.
+pub mod graph_snapshot;
+
+/// Pure operation acknowledgment and concrete receipt bookkeeping.
+pub mod receipts;

@@ -176,7 +176,7 @@ fn port(g: &GraphSnapshot, expected: ObjectRef) -> Result<&Port, PrepareError> {
         .find(|p| p.object == expected)
         .expect("checked port"))
 }
-fn validate_graph(g: &GraphSnapshot) -> Result<(), PrepareError> {
+pub(crate) fn validate_graph(g: &GraphSnapshot) -> Result<(), PrepareError> {
     if !label(&g.core_id)
         || g.nodes.len() > MAX_NODES
         || g.ports.len() > MAX_PORTS

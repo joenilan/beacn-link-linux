@@ -105,10 +105,12 @@ count is rejected; zero produces no undo steps.
   Endpoints alone do not authorize deleting a link.
 
 The caller must distinguish acknowledged success from failure and unknown
-outcome. There is no receipt capture, mutation journal, rollback validator,
-automatic retry or actual rollback backend in this slice. Rollback descriptions
-are not a guarantee that vanished endpoints or interrupted operations can be
-recovered.
+outcome. The later [pure receipt journal](pipewire-graph.md) now records
+ordered caller acknowledgments and actual created-link identities, and resolves
+rollback descriptions for only the known successful prefix. Native receipt
+capture, rollback validation, automatic retry and actual rollback remain absent.
+Rollback descriptions do not guarantee recovery of vanished endpoints or
+interrupted operations.
 
 ## Synthetic dry-run example
 
@@ -164,14 +166,15 @@ builds. No cleanup, dependency download or heavy build occurred.
 
 ## Remaining integration gap
 
-The read-only adapter still projects application inventories; it does not yet
-populate this node/port/link graph contract or consume guarded steps. A future
-native integration needs a verified session key, complete fresh graph/binding
-construction, explicit destination configuration, owned create receipts,
-acknowledgment handling and guarded forward/rollback application. Its session
-policy must preserve desktop fallback and foreign routes.
+The later [read-only graph reader and receipt journal](pipewire-graph.md)
+now populate this node/port/link contract with native core-cookie identity and
+existing application/stream bindings, and perform pure receipt bookkeeping.
+A real already-correct route passed read-only preparation. Native create
+receipts/acknowledgments and guarded forward/rollback application still need a
+backend whose session policy preserves desktop fallback and foreign routes.
 
-This slice performs only synthetic validation. The earlier
+The original preparation-contract slice was verified synthetically; the
+later read-only integration has its own evidence. The earlier
 [private-core A-to-B test](controlled-virtual-routing.md) remains separate
 evidence from an external harness, not a validation of this module against a
 live server. No audio mutation or capture, BEACN/USB access, remote discovery,

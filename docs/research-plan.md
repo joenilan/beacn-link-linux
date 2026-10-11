@@ -46,10 +46,13 @@ An [offline routing preparation contract](offline-executor.md) now connects pure
 proposals to explicitly configured stereo destinations and produces guarded
 link-change and rollback descriptions. It rejects stale generations/identities,
 ambiguous stereo mappings and removal of unowned links; all checks remain pure.
-The next local gap is the native graph/binding provider and application backend:
-fresh session/identity checks, actual create receipts and acknowledgments,
-per-operation guards and rollback handling that preserve desktop fallback and
-foreign routes. Actual CLI route application remains disabled. The private
+The [read-only graph provider and pure receipt journal](pipewire-graph.md)
+now reuse existing identities and executor types. Identical-source Windows/Linux
+tests passed, and one real already-correct stereo route passed read-only
+preparation with foreign links preserved and a wrong destination serial refused.
+The next local gap is the native application backend: actual create receipts and
+acknowledgments, fresh per-operation checks and guarded rollback that preserve
+desktop fallback and foreign routes. Actual CLI route application remains disabled. The private
 harness is separate evidence and was not reused as a production executor. USB discovery,
 handshake/reconnect semantics, remote assignment handling and Windows App
 visibility still need separately scoped evidence and implementation. No further
