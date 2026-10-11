@@ -1,0 +1,28 @@
+# Private analysis material
+local/
+private/
+artifacts/
+captures/
+*.exe
+*.dll
+*.sys
+*.pdb
+*.bin
+*.asar
+*.pcap
+*.pcapng
+*.har
+*.dmp
+*.zip
+*.7z
+*.log
+.env
+.env.*
+# Generated output
+node_modules/
+dist/
+build/
+.cache/
+__pycache__/
+# CI remains disabled
+.github/workflows/
