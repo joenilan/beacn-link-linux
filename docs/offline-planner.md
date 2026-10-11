@@ -115,4 +115,9 @@ was installed in isolated directories without sudo or profile edits. See
 
 The later read-only adapter has separate [validation evidence](pipewire-inventory.md).
 One populated Firefox snapshot passed the read-only metadata comparison.
-Live routing and hardware interoperability remain untested. No validation captured traffic or accessed BEACN devices.
+A later [private-core controlled test](controlled-virtual-routing.md) matched the
+same application/stream identities to Link One/Two proposals while an external
+private harness moved its owned synthetic stream between null outputs. The
+repository planner remains pure and no production executor was added. Desktop
+routing policy and hardware interoperability remain unverified. No validation
+captured traffic or accessed BEACN devices.

@@ -30,14 +30,24 @@ A bounded [read-only PipeWire adapter](pipewire-inventory.md) now projects
 explicit application identities/wire bindings into the pure planner.
 One real Firefox playback node was subsequently observed and resolved from a
 single populated snapshot. This proves local metadata discovery for that case;
-remote Windows visibility, routing and hardware interoperability remain unverified.
+remote Windows visibility and hardware interoperability remain unverified.
+Isolated synthetic-stream routing was subsequently verified as described below.
 An [offline lifecycle tracker](offline-lifecycle.md) now compares successive
 complete inventories and guards saved plan generations. Closure/reopen, changed
 stream sets, node-ID reuse and stale snapshots are checked synthetically;
 no OS lifecycle or routing behavior is inferred from those tests.
-A separately approved [controlled virtual routing attempt](controlled-virtual-routing.md)
-aborted before creating links: temporary outputs displaced the shared fallback
-sink. Owned objects were removed; the fallback and existing logical routes
-returned with new identities. The proposed next check uses a private disposable
-PipeWire core and does not yet establish routing or interoperability.
+The [controlled virtual routing evidence](controlled-virtual-routing.md) distinguishes
+two outcomes: a shared-core attempt aborted before linking and recreated the
+fallback with new identities; a private-core attempt moved the same owned stereo
+stream A -> disconnected -> B, matched planner identities, and passed cleanup
+with an exact match of the desktop's immediate filtered baseline.
+
+The next local implementation gap is a small routing executor connecting pure
+proposals to explicitly configured stereo destinations. It must revalidate current
+core, node/port/link serials, stream ownership and plan generation before mutation,
+track only links it owns, and handle failure/cleanup without displacing desktop
+fallbacks. The private harness is evidence, not that executor. USB discovery,
+handshake/reconnect semantics, remote assignment handling and Windows App
+visibility still need separately scoped evidence and implementation. No next
+implementation or hardware test was started by the documentation update.
 Keep raw evidence private.
