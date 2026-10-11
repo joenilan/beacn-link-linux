@@ -5,7 +5,9 @@ Existing beacn-on-linux work reportedly exposes four stereo Link pairs; that
 prior research is context, not a locally verified replacement for discovery.
 
 1. Static tracing: follow the GUID/VID/PID anchor, WinUSB calls and audio-session
-   discovery RTTI. Record references, framing candidates and uncertainties.
+   discovery RTTI. [Static protocol evidence](protocol.md) now covers envelopes,
+   name/assignment records, PID provenance and the 500 ms list timer. Resolve
+   the remaining ABI, Unicode/codepage, bounds and reconnect uncertainties.
    Exit: defensible candidate messages/transport and explicit unknowns.
 2. Separately approved controlled captures: agree scope, devices, routing actions,
    consent and local artifact handling first. No capture is authorized now.
@@ -17,5 +19,7 @@ prior research is context, not a locally verified replacement for discovery.
    restarts, rate changes and errors. Preserve normal streaming-PC behavior.
 
 A generic USB/audio Linux port alone does not prove remote app visibility.
-Packet fields, endpoint numbers, handshakes and routing semantics are unknown.
+Some pipe IDs and framing/record fields are statically reconstructed; complete
+handshake semantics, assignment-zero actions and runtime compatibility remain unknown.
+Preserve the sender character-count/byte-copy mismatch until separately validated.
 No implementation or Linux runtime has been validated. Keep raw evidence private.

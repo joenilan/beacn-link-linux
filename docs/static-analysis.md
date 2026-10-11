@@ -15,7 +15,8 @@ CoCreateInstance and CoInitializeEx.
 
 Preferred VA 0x14013296D begins stack construction of the verified Link GUID.
 0x1401329C9/0x1401329CF load PID 4003 and VID 33AE; call at 0x1401329E1
-targets 0x1400075F0. This is a tracing anchor, not a decoded protocol.
+targets 0x1400075F0, a VID_%04X&PID_%04X formatting helper, not USB I/O.
+The following call at 0x1401329F0 stores the GUID-containing record.
 
 RTTI file offsets: WindowsAudioSessionDiscovery 0x4ADB00;
 BeacnStudioCompanionUsbDevice 0x4ADDD0; WinUsbDevice 0x4ADE08;
@@ -23,4 +24,6 @@ UsbDeviceConnectionManager 0x4ADEA0; UsbDeviceScanner 0x4ADF08.
 No BEACN/TUSBAudio imports or delay imports; matching API-name strings absent.
 Dynamic usage remains possible. Tools: GNU objdump/strings, pefile and capstone.
 
-Protocol undecoded; routing API calls unresolved; native Linux runtime untested.
+Partial framing, records, process-name/PID paths and scheduling are reconstructed
+in [protocol.md](protocol.md). The complete protocol and exact routing ABI remain
+unverified; native Linux runtime is untested.
