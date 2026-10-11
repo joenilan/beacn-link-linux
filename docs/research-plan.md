@@ -28,6 +28,7 @@ proposals and explicit failure outcomes over synthetic provider-neutral inventor
 The offline crate now has [verified Linux build, tests and synthetic runtime](linux-validation.md).
 A bounded [read-only PipeWire adapter](pipewire-inventory.md) now projects
 explicit application identities/wire bindings into the pure planner.
-Synthetic populated metadata checks and a read-only empty graph are distinct
-from proving live application discovery and hardware interoperability.
+One real Firefox playback node was subsequently observed and resolved from a
+single populated snapshot. This proves local metadata discovery for that case;
+remote Windows visibility, routing and hardware interoperability remain unverified.
 Keep raw evidence private.

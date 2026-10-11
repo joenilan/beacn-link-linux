@@ -6,8 +6,9 @@ Status: partial static evidence plus a dependency-free offline Rust protocol
 codec, CLI, provider-neutral routing planner and read-only PipeWire snapshot
 adapter with explicit wire bindings. The current slice passes 17 Rust integration
 tests and six Python tests on both Windows and Ubuntu 26.04.1. The Linux adapter
-also read the existing user session and returned a valid empty inventory. Populated live
-application graphs and hardware interoperability remain untested;
+also verified a real Firefox playback node in one populated snapshot, after an
+initial empty inventory. Remote discovery, live routing and hardware interoperability
+remain untested;
 no Link replacement is working yet.
 
 Goal: a Linux gaming PC connected through BEACN Studio while the Windows

@@ -192,6 +192,48 @@ target-file sizes summed to 116,082,577 bytes. The owner was notified that free
 space was below the 25 GB threshold for heavy builds; this small existing-toolchain
 build proceeded under the clarified rule. No cleanup or heavy download occurred.
 
+### One populated browser snapshot
+
+After the owner started browser playback, one bounded read-only snapshot was
+taken on 2026-10-11 from the existing Ubuntu 26.04.1 / PipeWire 1.6.2 session.
+Strict SSH host-key verification succeeded. The imported adapter matched
+commit `8228fcad080f505bd8cf8f0ddb08d1cad455bc6f`; its exact file SHA-256 was
+`bfe64336f96ad078149fa31b8471eed886dd6a8959dd3e3aa34f49e9f127b89a`.
+
+The check called `collect_live()`, `decode_dump()` and `observe()` once, then
+compared a whitelist of relevant node/client properties from those same
+objects with the adapter output. The dump contained 61 objects and one playback
+node. The actual metadata identified Firefox; no browser type was assumed.
+
+| Observed field | Value |
+| --- | --- |
+| Node global ID / object serial | 59 / 61 |
+| Media class / node state | `Stream/Output/Audio` / `running` |
+| Client global ID / object serial | 58 / 60 |
+| Node-advertised process PID | 5579 |
+| Client-advertised process PID | 5579, agrees with node |
+| Node and client application name / binary | `Firefox` / `firefox` |
+| `application.id` | Not supplied on either object |
+| Adapter application identity | `pw-client:60:pid:5579` |
+| Adapter stream identity | `pw-node:61` |
+| PID provenance / planner state | `node` / `live` |
+| Unresolved playback streams | 0 |
+
+The check exited 0 with `status: available`, one application, one stream and
+`planner_ready: true`. Every relevant raw node was accounted for, and node ID,
+serial, client reference, PID, display metadata and state agreed with the
+adapter output. No mismatch or discovery bug was found, so code and tests were
+unchanged.
+
+These IDs describe this snapshot only; PID values remain advertised metadata.
+No wire alias was automatically chosen, and no route was proposed or applied.
+This single case verifies Firefox playback metadata discovery, not live
+multi-client behavior, lifecycle stability, audible output, Windows remote
+visibility or hardware interoperability. Only filtered relevant metadata was
+retained privately; browser page titles, URLs, media titles, arguments and raw
+dumps were not logged. No polling, audio capture, service changes, device access
+or stream creation occurred.
+
 ### Invocation review and remaining limits
 
 Both subprocess calls use argument arrays with no shell; supplied aliases,

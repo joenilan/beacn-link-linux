@@ -84,8 +84,9 @@ it wants Disappeared reported. The core stores no history and polls nothing.
 The read-only provider selects playback nodes, separates node/client/PID metadata
 from explicit ASCII wire bindings, and supplies one bounded snapshot. Its
 identity contract and conservative failure policy are documented separately.
-Synthetic checks cover populated metadata; an empty live graph cannot validate
-populated application identity behavior. OS-native IDs must not be assumed
+Synthetic checks cover populated metadata, and one real Firefox playback node
+was resolved in a bounded live snapshot. Multiple real clients, lifecycle changes
+and cross-session identity behavior remain unverified. OS-native IDs must not be assumed
 persistent or safe from reuse solely because their strings match.
 
 An eventual executor would need to revalidate snapshot version, identity
@@ -109,5 +110,5 @@ was installed in isolated directories without sudo or profile edits. See
 [Linux validation](linux-validation.md) for exact commands, exits and provenance.
 
 The later read-only adapter has separate [validation evidence](pipewire-inventory.md).
-Populated live application graphs, live routing and hardware interoperability
-remain untested. No validation captured traffic or accessed BEACN devices.
+One populated Firefox snapshot passed the read-only metadata comparison.
+Live routing and hardware interoperability remain untested. No validation captured traffic or accessed BEACN devices.
