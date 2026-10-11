@@ -23,5 +23,7 @@ Some pipe IDs and framing/record fields are statically reconstructed; complete
 handshake semantics, assignment-zero actions and runtime compatibility remain unknown.
 Preserve the sender character-count/byte-copy mismatch until separately validated.
 An [offline codec](offline-codec.md) now validates a strict static subset using
-synthetic tests. No Linux runtime or hardware interoperability has been validated.
+synthetic tests. A [pure routing planner](offline-planner.md) adds deterministic
+proposals and explicit failure outcomes over synthetic provider-neutral inventory.
+No Linux runtime or hardware interoperability has been validated.
 Keep raw evidence private.

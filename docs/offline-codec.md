@@ -4,6 +4,8 @@ The dependency-free Rust library and link-protocol CLI implement a confirmed
 static-evidence subset. They do not replace Windows Link, discover applications,
 route audio, contact devices, or implement a handshake. All validation below
 uses synthetic bytes. See [protocol evidence](protocol.md) for provenance.
+A separate [pure planner](offline-planner.md) maps records to synthetic local
+streams without applying routes or assuming an OS metadata contract.
 
 ## Use
 

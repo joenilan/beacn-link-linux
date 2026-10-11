@@ -280,3 +280,6 @@ pub fn encode_records(records: &[Record]) -> Result<Vec<u8>, Error> {
     bytes.push(0);
     Ok(bytes)
 }
+
+/// Pure offline routing proposals over provider-neutral snapshots.
+pub mod planner;
