@@ -289,3 +289,6 @@ pub mod snapshot;
 
 /// Pure inventory lifecycle tracking and plan generation checks.
 pub mod lifecycle;
+
+/// Pure guarded route preparation; actual audio application remains disabled.
+pub mod executor;

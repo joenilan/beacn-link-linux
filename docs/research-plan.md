@@ -42,12 +42,16 @@ fallback with new identities; a private-core attempt moved the same owned stereo
 stream A -> disconnected -> B, matched planner identities, and passed cleanup
 with an exact match of the desktop's immediate filtered baseline.
 
-The next local implementation gap is a small routing executor connecting pure
-proposals to explicitly configured stereo destinations. It must revalidate current
-core, node/port/link serials, stream ownership and plan generation before mutation,
-track only links it owns, and handle failure/cleanup without displacing desktop
-fallbacks. The private harness is evidence, not that executor. USB discovery,
+An [offline routing preparation contract](offline-executor.md) now connects pure
+proposals to explicitly configured stereo destinations and produces guarded
+link-change and rollback descriptions. It rejects stale generations/identities,
+ambiguous stereo mappings and removal of unowned links; all checks remain pure.
+The next local gap is the native graph/binding provider and application backend:
+fresh session/identity checks, actual create receipts and acknowledgments,
+per-operation guards and rollback handling that preserve desktop fallback and
+foreign routes. Actual CLI route application remains disabled. The private
+harness is separate evidence and was not reused as a production executor. USB discovery,
 handshake/reconnect semantics, remote assignment handling and Windows App
-visibility still need separately scoped evidence and implementation. No next
-implementation or hardware test was started by the documentation update.
+visibility still need separately scoped evidence and implementation. No further
+audio mutation or hardware test was performed in the preparation-contract slice.
 Keep raw evidence private.

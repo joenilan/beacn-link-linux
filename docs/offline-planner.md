@@ -3,8 +3,9 @@
 The planner module is pure Rust logic over supplied data. It creates proposed
 routes; it cannot apply them, enumerate real applications or read the OS.
 A separate [read-only PipeWire adapter](pipewire-inventory.md) supplies explicit
-snapshots to this pure module. No routing executor, USB access, daemon or
-startup behavior is implemented.
+snapshots to this pure module. A separate [offline preparation contract](offline-executor.md)
+turns proposals into guarded operation descriptions. No actual route application,
+USB access, daemon or startup behavior is implemented.
 See [offline codec](offline-codec.md) for wire parsing and ASCII constraints.
 
 ## Synthetic example
@@ -95,7 +96,10 @@ persistent or safe from reuse solely because their strings match.
 
 An eventual executor would need to revalidate snapshot version, identity
 ownership and every stream's liveness immediately before applying any proposal.
-This module does not authorize or implement that executor. Applying routes or sending messages to hardware remains outside this slice.
+The separate preparation contract validates supplied identity/ownership data and
+provides rollback descriptions; it has no native application backend. This
+planner does not authorize audio changes. Applying routes or sending messages
+to hardware remains outside this slice.
 
 ## Verified scope
 

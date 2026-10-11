@@ -93,6 +93,12 @@ fn run(args: &[String]) -> Result<(), String> {
             let proposed = planner::plan(&inventory, &records).map_err(|e| e.to_string())?;
             println!("{proposed:#?}");
         }
+        Some("apply") | Some("--apply") => {
+            return Err(
+                "route application is disabled; only offline dry-run preparation is supported"
+                    .into(),
+            )
+        }
         Some("encode") => {
             let mut records = Vec::new();
             for arg in &args[1..] {
@@ -110,7 +116,7 @@ fn run(args: &[String]) -> Result<(), String> {
             println!("{}", hex(&bytes));
         }
         Some("--help") | Some("-h") if args.len() == 1 => {
-            println!("Offline static-subset codec. No device access.\n\
+            println!("Offline static-subset codec. All commands are dry runs. Route application disabled.\n\
 Usage:\n  link-protocol decode <hex-frame>\n  link-protocol decode-header <8-hex-digits>\n  link-protocol encode [assignment:name ...]\n  link-protocol plan-snapshot <snapshot-id> <data-frame-hex> < inventory.tsv\n\
 Hex may contain quoted whitespace. Encoding requires printable ASCII names.\n\
 Assignments 0 and 5..255 are opaque; zero is not interpreted as unroute.\n\
