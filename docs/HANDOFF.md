@@ -68,12 +68,20 @@ three acknowledged steps of a controlled B -> A failure, then restored B with
 new native receipts. Owned cleanup and the desktop settings/state comparison
 passed. Ordinary `link-protocol apply` remains disabled.
 
-**Next work:** test native server rejection, lost acknowledgments and recovery
-interruption on a separately authorized disposable core. Reconciliation exists
-and is tested synthetically; these fault outcomes have not yet been forced on
-the actual backend. Check long-lived registry churn and retain explicit recovery
-state rather than adding automatic retries. Keep desktop apply disabled. The
-original batch below records what this continuation implemented.
+**Completed fault/recovery continuation:** explicit rollback continuation now
+retains the acknowledged recovery prefix and revalidates before resuming.
+Actual private-core tests passed for native factory rejection, deliberately
+withheld acknowledgment delivery, interrupted recovery and rejected restoration.
+Request counters proved no automatic retries or repeated acknowledged operations.
+A 32-iteration transient-client smoke test preserved the current receipts and
+issued no mutation requests. See [native-recovery.md](native-recovery.md).
+The owner continued the existing isolated-VM authorization; physical/desktop
+routing stayed outside scope.
+
+**Next work:** pending work across native core disconnect/restart, bounded
+long-lived registry/resource cleanup and capacity tests. Withheld acknowledgment
+delivery is not proof of network packet-loss handling. Keep desktop apply
+disabled. The original batch below records the first implementation.
 
 Implement native execution and acknowledgment capture for the existing guarded
 plan and receipt journal, first restricted to an explicitly selected disposable

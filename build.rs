@@ -31,6 +31,9 @@ fn main() {
         "-o",
     ])
     .arg(&object);
+    if env::var_os("CARGO_FEATURE_NATIVE_TEST_FAULTS").is_some() {
+        cc.arg("-DBCL_TEST_FAULTS");
+    }
     if let Some(root) = env::var_os("BEACN_PIPEWIRE_SYSROOT") {
         let root = PathBuf::from(root);
         assert!(root.is_absolute(), "header sysroot must be absolute");

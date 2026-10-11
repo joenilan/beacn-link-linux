@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import select
 import subprocess
@@ -70,6 +71,7 @@ def main():
     parser.add_argument("--executor", required=True)
     parser.add_argument("--codec", required=True)
     parser.add_argument("--evidence-dir", required=True)
+    parser.add_argument("--fault-tests", action="store_true", help="requires native-test-faults executable")
     args = parser.parse_args()
     if not args.authorize_isolated_routing or sys.platform != "linux":
         parser.error("requires Linux and explicit owner authorization for isolated routing")
@@ -215,6 +217,66 @@ def main():
         assert 'Complete, 3' in native_command("rollback")
         restored = stage("restored-B", b)
         assert {props(obj)["object.serial"] for obj in restored}.isdisjoint(props(obj)["object.serial"] for obj in before_failure)
+        if args.fault_tests:
+            def stats():
+                text=native_command("fault-stats")
+                match=re.search(r"native-test-stats \[(\d+), (\d+), (\d+)\]",text)
+                assert match,text
+                return tuple(map(int,match.groups()))
+
+            prior=stats()
+            assert "Failed prefix=2" in native_command("route-native-reject 4 " + frames[0] + " 2",False)
+            rejected=stats()
+            assert rejected==(prior[0]+3,prior[1],prior[2]+1),(prior,rejected)
+            assert not links(dump(private_env,remote,server))
+            assert 'Complete, 2' in native_command("rollback")
+            stage("server-rejection-restored-B",b)
+
+            prior=stats()
+            assert "Unknown prefix=2" in native_command("route-native-unknown 5 " + frames[0] + " 2",False)
+            stage("unacknowledged-A",a,1)
+            held=stats();assert held==(prior[0]+3,prior[1]+1,prior[2])
+            native_command("rollback",False)
+            native_command("route 6 " + frames[1],False)
+            assert stats()==held,"blocked commands submitted a request"
+            assert "Failed prefix=3" in native_command("reconcile")
+            assert stats()==held,"reconciliation retried the native request"
+            assert 'Complete, 3' in native_command("rollback")
+            stage("lost-ack-restored-B",b)
+
+            assert "Complete prefix=4" in native_command("route 6 " + frames[0])
+            stage("pre-interruption-A",a)
+            prior=stats()
+            assert 'Unknown, 1' in native_command("rollback-native-unknown 1",False)
+            assert not links(wait(lambda oo:not links(oo)))
+            held=stats();assert held==(prior[0]+2,prior[1]+1,prior[2])
+            native_command("resume-rollback",False)
+            native_command("rollback",False)
+            assert stats()==held
+            assert 'Failed, 2' in native_command("reconcile")
+            assert stats()==held
+            assert 'Complete, 4' in native_command("resume-rollback")
+            resumed=stats();assert resumed[0]==held[0]+2
+            stage("interrupted-recovery-restored-B",b)
+
+            assert "Complete prefix=4" in native_command("route 7 " + frames[0])
+            prior=stats()
+            assert 'Failed, 2' in native_command("rollback-native-reject 2",False)
+            rejected=stats();assert rejected==(prior[0]+3,prior[1],prior[2]+1)
+            assert not links(dump(private_env,remote,server))
+            assert 'Complete, 4' in native_command("resume-rollback")
+            assert stats()[0]==rejected[0]+2
+            stage("rejected-recovery-restored-B",b)
+            prior=stats()
+            stable=[(obj['id'],props(obj)['object.serial']) for obj in links(dump(private_env,remote,server))]
+            for generation in range(8,40):
+                dump(private_env,remote,server)
+                assert "Complete prefix=0" in native_command("route " + str(generation) + " " + frames[1])
+            assert stats()==prior,"already-correct routes submitted mutation requests"
+            assert stable==[(obj['id'],props(obj)['object.serial']) for obj in links(dump(private_env,remote,server))]
+            journal['client_churn_iterations']=32
+            journal['fault_tests_passed']=True
+            journal['native_test_stats']=stats()
         native_command("quit")
         assert executor.wait(timeout=3) == 0
         journal["routing_passed"] = True
@@ -273,7 +335,8 @@ def main():
             journal["desktop_cleanup_error"] = str(exc)
         save()
     checks = ("routing_passed", "private_baseline_restored", "desktop_settings_unchanged", "desktop_state_files_unchanged", "desktop_has_no_owned_objects", "runtime_removed")
-    print(json.dumps({key: journal.get(key) for key in checks} | {"error": journal["error"], "stages": journal["stages"], "diagnostics": journal.get("diagnostics"), "cleanup_errors": [journal[key] for key in ("private_cleanup_error", "desktop_cleanup_error") if key in journal]}))
+    if args.fault_tests: checks+=("fault_tests_passed",)
+    print(json.dumps({key: journal.get(key) for key in checks} | {"error": journal["error"], "native_test_stats": journal.get("native_test_stats"), "client_churn_iterations": journal.get("client_churn_iterations"), "stages": journal["stages"], "diagnostics": journal.get("diagnostics"), "cleanup_errors": [journal[key] for key in ("private_cleanup_error", "desktop_cleanup_error") if key in journal]}))
     return 0 if all(journal.get(key) for key in checks) and journal["error"] is None else 1
 
 

@@ -31,7 +31,7 @@ struct created {
   struct session *s;
   struct pw_proxy *proxy;
   struct spa_hook listener, info_listener;
-  uint32_t id, out_node, out_port, in_node, in_port;
+  uint32_t id, local_id, out_node, out_port, in_node, in_port;
   uint64_t serial;
   char owner[129];
   bool bound, removed, error, info;
@@ -51,6 +51,10 @@ struct session {
   uint32_t cookie;
   char name[129];
   int seq, done;
+#ifdef BCL_TEST_FAULTS
+  int test_fault;
+  uint64_t test_submissions, test_withheld, test_rejected;
+#endif
 };
 struct endpoint {
   uint32_t id;
@@ -244,8 +248,7 @@ static void core_error(void *data, uint32_t id, int seq, int res,
   (void)seq;
   (void)res;
   (void)message;
-  if (s->pending && s->pending->proxy &&
-      id == pw_proxy_get_id(s->pending->proxy))
+  if (s->pending && id == s->pending->local_id)
     s->pending->error = true;
   else {
     /* Registry enumeration can race a short-lived query client's departure.
@@ -585,11 +588,28 @@ int bcl_reconcile(struct session *s, struct receipt *result) {
     return 0;
   }
   if (c->removed && !o) {
+#ifdef BCL_TEST_FAULTS
+    if (c->error)
+      s->test_rejected++;
+#endif
     s->pending = NULL;
     return 1;
   }
   return -2;
 }
+#ifdef BCL_TEST_FAULTS
+int bcl_test_fault(struct session *s, int mode) {
+  if (s->fatal || s->pending || s->test_fault || (mode != 1 && mode != 2))
+    return -1;
+  s->test_fault = mode;
+  return 0;
+}
+void bcl_test_stats(struct session *s, uint64_t *stats) {
+  stats[0] = s->test_submissions;
+  stats[1] = s->test_withheld;
+  stats[2] = s->test_rejected;
+}
+#endif
 /* Guards must have just been validated against bcl_snapshot. No loop iteration
  * occurs between these local serial checks and request submission. Server-side
  * compare-and-swap is unavailable: post-operation endpoint checks remain
@@ -597,6 +617,13 @@ int bcl_reconcile(struct session *s, struct receipt *result) {
 int bcl_perform(struct session *s, int deleting, const struct endpoint *out,
                 const struct endpoint *in, const char *owner,
                 const struct receipt *old, struct receipt *result) {
+#ifdef BCL_TEST_FAULTS
+  /* Consume even on a local refusal: a test fault cannot leak into recovery. */
+  int fault = s->test_fault;
+  s->test_fault = 0;
+  if (fault == 1 && deleting)
+    return 1;
+#endif
   if (s->fatal || s->pending || !endpoint(s, out, owner) ||
       !endpoint(s, in, owner) || !label(owner))
     return 1;
@@ -637,9 +664,13 @@ int bcl_perform(struct session *s, int deleting, const struct endpoint *out,
     }
     pw_properties_setf(props, PW_KEY_LINK_OUTPUT_PORT, "%u", out->id);
     pw_properties_setf(props, PW_KEY_LINK_INPUT_PORT, "%u", in->id);
-    c->proxy =
-        pw_core_create_object(s->core, "link-factory", PW_TYPE_INTERFACE_Link,
-                              PW_VERSION_LINK, &props->dict, 0);
+    const char *factory = "link-factory";
+#ifdef BCL_TEST_FAULTS
+    if (fault == 1)
+      factory = "beacn-test-missing-link-factory";
+#endif
+    c->proxy = pw_core_create_object(s->core, factory, PW_TYPE_INTERFACE_Link,
+                                     PW_VERSION_LINK, &props->dict, 0);
     pw_properties_free(props);
     if (!c->proxy) {
       free(c);
@@ -649,10 +680,22 @@ int bcl_perform(struct session *s, int deleting, const struct endpoint *out,
     s->created = c;
     s->pending = c;
     s->deleting = false;
+    c->local_id = pw_proxy_get_id(c->proxy);
     pw_proxy_add_listener(c->proxy, &c->listener, &created_events, c);
     pw_proxy_add_object_listener(c->proxy, &c->info_listener,
                                  &created_link_events, c);
   }
+#ifdef BCL_TEST_FAULTS
+  s->test_submissions++;
+  if (fault == 2) {
+    s->test_withheld++;
+    /* Submit through the real native loop, but deliberately return before
+     * acknowledgment capture. Pending proxy/identity remain for reconciliation.
+     */
+    pw_loop_iterate(pw_main_loop_get_loop(s->loop), 0);
+    return -2;
+  }
+#endif
   int64_t deadline = millis() + 5000;
   do {
     int r = bcl_reconcile(s, result);

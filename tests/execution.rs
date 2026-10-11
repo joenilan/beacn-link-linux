@@ -226,6 +226,69 @@ fn unknown_effect_blocks_progress_and_recovery_until_reconciled() {
     assert_eq!(run.journal().state(), JournalState::Failed);
     run.rollback(&mut backend).unwrap();
     assert!(backend.observation.graph.links.is_empty());
+    assert!(run.resume_rollback(&mut backend).is_err());
+}
+
+#[test]
+fn explicit_recovery_continues_after_settlement_without_repeating_prefix() {
+    let (o, own) = setup();
+    let mut backend = Fake::new(o.clone());
+    let mut a = Execution::new(prepared(&o, &own, 1), &o, own).unwrap();
+    a.run(&mut backend).unwrap();
+    let before = backend.observation.clone();
+    let mut b = Execution::new(
+        prepared(&before, a.journal().ownership(), 2),
+        &before,
+        a.journal().ownership().clone(),
+    )
+    .unwrap();
+    b.run(&mut backend).unwrap();
+    backend.effects = VecDeque::from([0, 2]);
+    assert!(b.rollback(&mut backend).is_err());
+    let calls = backend.calls;
+    assert!(b.resume_rollback(&mut backend).is_err());
+    assert_eq!(backend.calls, calls);
+    b.reconcile(&mut backend).unwrap();
+    assert_eq!(b.recovery_journal().unwrap().prefix(), 2);
+    assert!(backend.observation.graph.links.is_empty());
+    b.resume_rollback(&mut backend).unwrap();
+    assert_eq!(backend.calls, calls + 2);
+    assert_eq!(b.recovery_journal().unwrap().prefix(), 4);
+    assert_eq!(
+        b.recovery_journal().unwrap().state(),
+        JournalState::Complete
+    );
+    for old in &before.graph.links {
+        let new = backend
+            .observation
+            .graph
+            .links
+            .iter()
+            .find(|l| l.output == old.output)
+            .unwrap();
+        assert_eq!(new.input, old.input);
+        assert_ne!(new.object.serial, old.object.serial);
+    }
+}
+
+#[test]
+fn recovery_continuation_refuses_reused_receipt_and_retains_failed_prefix() {
+    let (o, own) = setup();
+    let mut backend = Fake::new(o.clone());
+    let mut run = Execution::new(prepared(&o, &own, 1), &o, own).unwrap();
+    run.run(&mut backend).unwrap();
+    backend.effects = VecDeque::from([0, 1]);
+    assert!(run.rollback(&mut backend).is_err());
+    assert_eq!(run.recovery_journal().unwrap().prefix(), 1);
+    backend.observation.graph.links[0].object.serial += 100;
+    let calls = backend.calls;
+    assert!(run.resume_rollback(&mut backend).is_err());
+    assert_eq!(backend.calls, calls);
+    assert_eq!(
+        run.recovery_journal().unwrap().state(),
+        JournalState::Failed
+    );
+    assert_eq!(run.recovery_journal().unwrap().prefix(), 1);
 }
 #[test]
 fn identity_reuse_and_inventory_change_refuse_without_native_delete() {
@@ -265,4 +328,12 @@ fn failed_recovery_keeps_its_prefix_and_cannot_be_restarted() {
         JournalState::Failed
     );
     assert!(backend.observation.graph.links.is_empty());
+    let calls = backend.calls;
+    run.resume_rollback(&mut backend).unwrap();
+    assert_eq!(
+        run.recovery_journal().unwrap().state(),
+        JournalState::Complete
+    );
+    assert_eq!(backend.calls, calls);
+    assert!(run.resume_rollback(&mut backend).is_err());
 }

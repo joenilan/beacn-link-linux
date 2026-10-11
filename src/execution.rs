@@ -9,7 +9,7 @@ pub struct Observation {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Effect {
     Acknowledged(Acknowledgment),
-    /// Provider proves no request was issued / no effect occurred.
+    /// Provider proves no request was issued / no surviving effect remains.
     Failed(String),
     /// A request might have taken effect; no retry or recovery until reconciled.
     Unknown(String),
@@ -17,7 +17,7 @@ pub enum Effect {
 pub trait Backend {
     fn observe(&mut self, generation: u64) -> Result<Observation, String>;
     fn perform(&mut self, operation: &Operation) -> Effect;
-    /// Ok(None) proves the pending request had no effect. Err remains unknown.
+    /// Ok(None) proves no surviving pending effect. Err remains unknown.
     fn reconcile(&mut self) -> Result<Option<Acknowledgment>, String>;
 }
 
@@ -191,6 +191,42 @@ impl Execution {
         )
         .map_err(|e| format!("{e:?}"))?;
         self.recovery = Some((recovery, journal));
+        self.drive_recovery(backend)
+    }
+    /// Explicitly continue the existing recovery after a known failure or settled
+    /// unknown effect. Never restart its prefix or resume forward work. Revalidate
+    /// before changing journal state; rejection preserves the stopped journal.
+    pub fn resume_rollback(&mut self, backend: &mut impl Backend) -> Result<(), String> {
+        let (prepared, journal) = self.recovery.as_ref().ok_or("no recovery to continue")?;
+        if journal.state() != JournalState::Failed {
+            return Err("recovery must be stopped and any unknown effect reconciled".into());
+        }
+        let (observation, tracker) = self.fresh(backend)?;
+        if observation.graph.core_id != prepared.core_id
+            || observation.graph.generation != prepared.generation
+        {
+            return Err("recovery identity domain changed".into());
+        }
+        validate_graph(&observation.graph).map_err(|e| e.to_string())?;
+        if journal.prefix() < prepared.steps.len() {
+            validate_step(
+                prepared,
+                journal.prefix(),
+                &tracker,
+                &observation.graph,
+                journal.ownership(),
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        self.recovery
+            .as_mut()
+            .unwrap()
+            .1
+            .resume_recovery()
+            .map_err(|e| format!("{e:?}"))?;
+        self.drive_recovery(backend)
+    }
+    fn drive_recovery(&mut self, backend: &mut impl Backend) -> Result<(), String> {
         loop {
             let state = self.recovery.as_ref().unwrap().1.state();
             if state != JournalState::Ready {

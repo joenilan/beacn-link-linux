@@ -76,11 +76,22 @@ unsafe extern "C" {
         result: *mut Receipt,
     ) -> c_int;
     fn bcl_reconcile(session: *mut c_void, result: *mut Receipt) -> c_int;
+    #[cfg(feature = "native-test-faults")]
+    fn bcl_test_fault(session: *mut c_void, mode: c_int) -> c_int;
+    #[cfg(feature = "native-test-faults")]
+    fn bcl_test_stats(session: *mut c_void, stats: *mut u64);
     fn getuid() -> u32;
 }
 struct Pending {
     operation: Operation,
     receipt: Option<Receipt>,
+}
+/// Test-only, one-shot fault at the native request/acknowledgment boundary.
+/// Unavailable unless explicitly compiled with native-test-faults.
+#[cfg(feature = "native-test-faults")]
+pub enum NativeTestFault {
+    RejectCreate,
+    WithholdAcknowledgment,
 }
 pub struct NativePipeWire {
     session: *mut c_void,
@@ -100,6 +111,26 @@ impl Drop for NativePipeWire {
     }
 }
 impl NativePipeWire {
+    #[cfg(feature = "native-test-faults")]
+    pub fn test_fault_stats(&self) -> [u64; 3] {
+        let mut stats = [0; 3];
+        unsafe { bcl_test_stats(self.session, stats.as_mut_ptr()) };
+        stats
+    }
+    #[cfg(feature = "native-test-faults")]
+    pub fn arm_test_fault(&mut self, fault: NativeTestFault) -> Result<(), String> {
+        if self.pending.is_some() {
+            return Err("cannot arm fault with unresolved work".into());
+        }
+        let mode = match fault {
+            NativeTestFault::RejectCreate => 1,
+            NativeTestFault::WithholdAcknowledgment => 2,
+        };
+        if unsafe { bcl_test_fault(self.session, mode) } != 0 {
+            return Err("native fault could not be armed".into());
+        }
+        Ok(())
+    }
     /// Requires a direct /tmp/beacn-pw-* mode-0700 runtime, beacn-test-* socket,
     /// exact minimal client.conf without drop-ins, expected cookie and server PID.
     /// The native socket's SO_PEERCRED is checked before handing the FD to PipeWire.

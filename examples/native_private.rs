@@ -18,7 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args.first().is_some_and(|v| v == "--help") || args.len() < 7 {
-        println!("Explicit disposable-core executor. Audio mutation requires owner authorization.\nUsage: native_private RUNTIME CORE COOKIE SERVER-PID OWNER APP-ID=WIRE-NAME ASSIGNMENT:NODE-ID:SERIAL ...\nStdin commands: route GENERATION FRAME-HEX | route-fail-before GENERATION FRAME-HEX STEP | reconcile | rollback | quit\nFailure injection stops before a native request; it is confined to this example.\nRequires exact native_pipewire::CLIENT_CONFIG in private RUNTIME/client.conf.\nEvery route uses native observations and session-created receipts. No desktop/default core support.");
+        println!("Explicit disposable-core executor. Audio mutation requires owner authorization.\nUsage: native_private RUNTIME CORE COOKIE SERVER-PID OWNER APP-ID=WIRE-NAME ASSIGNMENT:NODE-ID:SERIAL ...\nStdin commands: route GENERATION FRAME-HEX | route-fail-before GENERATION FRAME-HEX STEP | reconcile | rollback | resume-rollback | quit\nWith native-test-faults: route-native-reject/route-native-unknown GENERATION FRAME-HEX STEP; rollback-native-reject/rollback-native-unknown STEP; fault-stats.\nFaults are one-shot and confined to the test feature and this example.\nRequires exact native_pipewire::CLIENT_CONFIG in private RUNTIME/client.conf.\nEvery route uses native observations and session-created receipts. No desktop/default core support.");
         return Ok(());
     }
     let mut bindings = BTreeMap::new();
@@ -47,19 +47,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         args[4].clone(),
     )?;
     let mut execution: Option<Execution> = None;
-    struct FailBefore<'a> {
+    struct FaultAt<'a> {
         backend: &'a mut NativePipeWire,
-        remaining: usize,
+        remaining: Option<usize>,
+        kind: &'a str,
     }
-    impl Backend for FailBefore<'_> {
+    impl Backend for FaultAt<'_> {
         fn observe(&mut self, generation: u64) -> Result<Observation, String> {
             self.backend.observe(generation)
         }
         fn perform(&mut self, operation: &Operation) -> Effect {
-            if self.remaining == 0 {
-                return Effect::Failed("controlled failure before native request".into());
+            if let Some(remaining) = self.remaining {
+                if remaining != 0 {
+                    self.remaining = Some(remaining - 1);
+                } else {
+                    self.remaining = None;
+                    if self.kind == "before" {
+                        return Effect::Failed("controlled failure before native request".into());
+                    }
+                    #[cfg(feature = "native-test-faults")]
+                    {
+                        use beacn_link_protocol::native_pipewire::NativeTestFault;
+                        let fault = if self.kind == "reject" {
+                            if !matches!(operation, Operation::Connect { .. }) {
+                                return Effect::Failed("rejection fault requires a create".into());
+                            }
+                            NativeTestFault::RejectCreate
+                        } else {
+                            NativeTestFault::WithholdAcknowledgment
+                        };
+                        if let Err(error) = self.backend.arm_test_fault(fault) {
+                            return Effect::Failed(error);
+                        }
+                    }
+                    #[cfg(not(feature = "native-test-faults"))]
+                    return Effect::Failed(
+                        "native faults require native-test-faults feature".into(),
+                    );
+                }
             }
-            self.remaining -= 1;
             self.backend.perform(operation)
         }
         fn reconcile(&mut self) -> Result<Option<Acknowledgment>, String> {
@@ -80,8 +106,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let fields: Vec<_> = line.split_whitespace().collect();
         let result: Result<(), String> = (|| match fields.as_slice() {
             ["quit"] => return Ok(()),
-            ["route", generation, hex] | ["route-fail-before", generation, hex, _] if !blocked => {
-                let fail_before = if fields[0] == "route-fail-before" {
+            ["fault-stats"] => {
+                #[cfg(feature = "native-test-faults")]
+                {
+                    println!("native-test-stats {:?}", backend.test_fault_stats());
+                    Ok(())
+                }
+                #[cfg(not(feature = "native-test-faults"))]
+                Err("native faults require native-test-faults feature".into())
+            }
+            ["route", generation, hex]
+            | ["route-fail-before" | "route-native-reject" | "route-native-unknown", generation, hex, _]
+                if !blocked =>
+            {
+                let fail_before = if fields.len() == 4 {
                     Some(
                         fields[3]
                             .parse::<usize>()
@@ -131,9 +169,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut run = Execution::new(prepared, &fresh, backend.ownership().clone())?;
                 last_generation = Some(generation);
                 let result = if let Some(remaining) = fail_before {
-                    run.run(&mut FailBefore {
+                    run.run(&mut FaultAt {
                         backend: &mut backend,
-                        remaining,
+                        remaining: Some(remaining),
+                        kind: match fields[0] {
+                            "route-native-reject" => "reject",
+                            "route-native-unknown" => "unknown",
+                            _ => "before",
+                        },
                     })
                 } else {
                     run.run(&mut backend)
@@ -151,6 +194,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .as_mut()
                     .ok_or("no execution")?
                     .rollback(&mut backend);
+                blocked = result.is_err();
+                result
+            }
+            ["rollback-fail-before" | "rollback-native-reject" | "rollback-native-unknown", step] =>
+            {
+                let remaining = step.parse::<usize>().map_err(|_| "invalid failure step")?;
+                let result = execution
+                    .as_mut()
+                    .ok_or("no execution")?
+                    .rollback(&mut FaultAt {
+                        backend: &mut backend,
+                        remaining: Some(remaining),
+                        kind: match fields[0] {
+                            "rollback-native-reject" => "reject",
+                            "rollback-native-unknown" => "unknown",
+                            _ => "before",
+                        },
+                    });
+                blocked = result.is_err();
+                result
+            }
+            ["resume-rollback"] => {
+                let result = execution
+                    .as_mut()
+                    .ok_or("no execution")?
+                    .resume_rollback(&mut backend);
                 blocked = result.is_err();
                 result
             }

@@ -174,7 +174,7 @@ impl ReceiptJournal {
         Ok(())
     }
     /// Only a backend's fresh reconciliation may settle an unknown pending effect.
-    /// Some acknowledges that exact effect; None proves it did not occur. Neither
+    /// Some acknowledges that exact effect; None proves none survives. Neither
     /// permits forward continuation. Rejected evidence preserves the unknown state.
     pub fn reconcile(&mut self, ack: Option<Acknowledgment>) -> Result<(), ReceiptError> {
         if self.state != JournalState::Unknown {
@@ -189,6 +189,19 @@ impl ReceiptJournal {
         } else {
             self.state = JournalState::Failed;
         }
+        Ok(())
+    }
+    /// Only Execution's explicitly requested, freshly guarded recovery may resume.
+    /// Forward journals never call this. Retain prefix, receipts and serial history.
+    pub(crate) fn resume_recovery(&mut self) -> Result<(), ReceiptError> {
+        if self.state != JournalState::Failed {
+            return Err(ReceiptError::Stopped);
+        }
+        self.state = if self.prefix == self.prepared.steps.len() {
+            JournalState::Complete
+        } else {
+            JournalState::Ready
+        };
         Ok(())
     }
     /// Describes only known successful work. Unknown pending effects are excluded;

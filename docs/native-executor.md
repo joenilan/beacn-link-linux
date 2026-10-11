@@ -54,8 +54,9 @@ never resumes forward work.
 Explicit rollback reverses only the known successful prefix. Created-link removal
 uses actual receipts; restoration creates links with new receipts/serials. Each
 recovery operation uses the same fresh validation and native acknowledgment path.
-Interrupted recovery retains its own journal and refuses silent restart. Resuming
-partially settled recovery is not implemented. Session disconnection releases
+Interrupted recovery retains its own journal and refuses silent restart. The later
+[recovery continuation](native-recovery.md) adds explicit, freshly guarded
+`resume_rollback`; forward work never resumes automatically. Session disconnection releases
 non-lingering links; this is private-core teardown, not production route restoration.
 There is no cross-process ledger persistence/import.
 
@@ -83,7 +84,7 @@ target/debug/examples/native_private --help
 
 The example requires explicit runtime, core, cookie, PID, token, wire binding and
 destination identities. Stdin commands are `route GENERATION FRAME-HEX`,
-`reconcile`, `rollback`, `quit`, and the test-only
+`reconcile`, `rollback`, `resume-rollback`, `quit`, and the test-only
 `route-fail-before GENERATION FRAME-HEX STEP`. Generations must increase.
 Failure injection stops **before** the selected native request; it does not
 simulate server rejection or loss of a native acknowledgment.
@@ -126,7 +127,9 @@ CLI. Windows Rust formatting passed; C used clang-format 22.1.3. No Linux rustfm
 run is claimed. New behavior checks cover fresh inventory refusal, reused IDs,
 receipt-based restoration with new serials, foreign link preservation, partial
 failure, unknown outcomes, rejected reconciliation and interrupted recovery.
-Native fault/lost-ack outcomes remain tested synthetically only.
+At this original checkpoint native fault/lost-ack outcomes were synthetic only;
+the [later native fault tests](native-recovery.md) establish the bounded outcomes
+listed there.
 
 The final actual native test observed these active links. The same generated
 private source ports were 24/25 throughout; these are not hardware identities.
@@ -189,8 +192,9 @@ delivery, BEACN USB transport, remote discovery or Windows interoperability.
 No capture, hardware routing, WSL, driver/firmware or proprietary binary operation
 ran. Desktop apply stays disabled.
 
-Next: separately authorized native rejection/lost-ack and interrupted-recovery
-tests, long-lived registry churn, and explicit remaining-recovery handling.
+Native rejection, acknowledgment interruption and explicit recovery continuation
+are now covered by [the following batch](native-recovery.md). Remaining work is
+core disconnect/restart and long-lived registry/resource bounds.
 This slice adds FFI, socket/file/process and routing boundaries; a narrow Codex
 Security review is recommended before expanding beyond disposable scope.
 No paid scan was requested or run.
