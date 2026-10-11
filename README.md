@@ -8,8 +8,9 @@ adapter with explicit wire bindings. The current slice passes 21 Rust integratio
 tests and seven Python tests on both Windows and Ubuntu 26.04.1. The Linux adapter
 also verified a real Firefox playback node in one populated snapshot, after an
 initial empty inventory. Remote discovery, live routing and hardware interoperability
-remain untested;
-no Link replacement is working yet.
+remain unverified. A controlled virtual-output test aborted before linking
+because the shared fallback sink changed; see the recorded cleanup limits.
+No Link replacement is working yet.
 
 Goal: a Linux gaming PC connected through BEACN Studio while the Windows
 streaming PC retains BEACN App and Mix Create. First prove that one Linux
@@ -22,6 +23,7 @@ application can appear in Windows App and be routed from it.
 - [Offline routing planner](docs/offline-planner.md)
 - [Offline inventory lifecycle](docs/offline-lifecycle.md)
 - [Read-only PipeWire inventory](docs/pipewire-inventory.md)
+- [Controlled virtual routing attempt](docs/controlled-virtual-routing.md)
 - [Linux offline validation](docs/linux-validation.md)
 - [Phased research plan](docs/research-plan.md)
 - [REA prerequisites](docs/toolchain.md)

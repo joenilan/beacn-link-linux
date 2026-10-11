@@ -35,4 +35,9 @@ An [offline lifecycle tracker](offline-lifecycle.md) now compares successive
 complete inventories and guards saved plan generations. Closure/reopen, changed
 stream sets, node-ID reuse and stale snapshots are checked synthetically;
 no OS lifecycle or routing behavior is inferred from those tests.
+A separately approved [controlled virtual routing attempt](controlled-virtual-routing.md)
+aborted before creating links: temporary outputs displaced the shared fallback
+sink. Owned objects were removed; the fallback and existing logical routes
+returned with new identities. The proposed next check uses a private disposable
+PipeWire core and does not yet establish routing or interoperability.
 Keep raw evidence private.
