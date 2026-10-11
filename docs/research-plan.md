@@ -25,5 +25,6 @@ Preserve the sender character-count/byte-copy mismatch until separately validate
 An [offline codec](offline-codec.md) now validates a strict static subset using
 synthetic tests. A [pure routing planner](offline-planner.md) adds deterministic
 proposals and explicit failure outcomes over synthetic provider-neutral inventory.
-No Linux runtime or hardware interoperability has been validated.
+The offline crate now has [verified Linux build, tests and synthetic runtime](linux-validation.md).
+Live Linux provider integration and hardware interoperability remain unverified.
 Keep raw evidence private.

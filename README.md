@@ -4,8 +4,9 @@ Independent, unofficial Linux compatibility research; not affiliated with BEACN.
 
 Status: partial static evidence plus a dependency-free offline Rust protocol
 codec, CLI and provider-neutral routing planner with synthetic tests.
-Native Linux runtime and hardware
-interoperability are untested; no Link replacement is working yet.
+The offline crate builds and passes all 15 integration tests on Windows and
+Linux. Live provider integration and hardware interoperability are untested;
+no Link replacement is working yet.
 
 Goal: a Linux gaming PC connected through BEACN Studio while the Windows
 streaming PC retains BEACN App and Mix Create. First prove that one Linux
@@ -16,6 +17,7 @@ application can appear in Windows App and be routed from it.
 - [Protocol evidence](docs/protocol.md)
 - [Offline codec and usage](docs/offline-codec.md)
 - [Offline routing planner](docs/offline-planner.md)
+- [Linux offline validation](docs/linux-validation.md)
 - [Phased research plan](docs/research-plan.md)
 - [REA prerequisites](docs/toolchain.md)
 

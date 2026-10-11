@@ -99,5 +99,12 @@ all four Links, multiple streams, unknown/colliding names, case preservation,
 stale/disappeared/no-stream outcomes, duplicate conflicts, opaque assignments,
 deterministic ordering, invalid identity ownership, ASCII rejection and caps.
 
-Linux runtime, real provider metadata, live routing and hardware interoperability
-remain untested. No tool installations, captures or device access occurred.
+On 2026-10-11, source commit cd33276a29a0b7f09655f4a57e9d7f473f28d327
+also built and ran on Ubuntu 24.04.5 LTS with Rust/Cargo 1.88.0. All 15
+integration tests passed under offline, locked, single-job Cargo, and the
+synthetic offline_plan example succeeded. A minimal official Rustup toolchain
+was installed in isolated directories without sudo or profile edits. See
+[Linux validation](linux-validation.md) for exact commands, exits and provenance.
+
+Real provider metadata, live routing and hardware interoperability remain
+untested. Neither validation captured traffic or accessed BEACN devices.

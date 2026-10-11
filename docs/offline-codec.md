@@ -80,11 +80,17 @@ cargo test --offline -j 1 passed all eight focused
 integration tests, including synthetic fixtures and CLI encode/decode/error
 checks. Build and tests used no external dependencies or installations.
 
+On 2026-10-11, source commit cd33276a29a0b7f09655f4a57e9d7f473f28d327
+also built and ran on Ubuntu 24.04.5 LTS with Rust/Cargo 1.88.0. Offline,
+locked, single-job Cargo passed all 15 integration tests (8 codec/CLI and
+7 planner), and the synthetic CLI examples succeeded. See
+[Linux validation](linux-validation.md) for exact commands, exits and provenance.
+
 The fixtures directory contains handwritten hex, not device captures.
 Tests cover frame and record roundtrips, all shorter prefixes of the ASCII
 fixture, missing terminators, malformed/unsupported headers, conservative
 boundaries, trailing data and unsupported outgoing names.
 
-Linux compilation/runtime, real USB messages, handshake bodies, discovery,
-audio routing and interoperability with BEACN hardware/App remain untested.
+Real USB messages, handshake bodies, discovery, audio routing and
+interoperability with BEACN hardware/App remain untested.
 No USB, PipeWire, audio, daemon, startup, network or target-binary code is present.
