@@ -31,4 +31,8 @@ explicit application identities/wire bindings into the pure planner.
 One real Firefox playback node was subsequently observed and resolved from a
 single populated snapshot. This proves local metadata discovery for that case;
 remote Windows visibility, routing and hardware interoperability remain unverified.
+An [offline lifecycle tracker](offline-lifecycle.md) now compares successive
+complete inventories and guards saved plan generations. Closure/reopen, changed
+stream sets, node-ID reuse and stale snapshots are checked synthetically;
+no OS lifecycle or routing behavior is inferred from those tests.
 Keep raw evidence private.

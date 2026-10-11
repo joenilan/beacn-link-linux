@@ -286,3 +286,6 @@ pub mod planner;
 
 /// Bounded text input for pure routing proposals; no OS access.
 pub mod snapshot;
+
+/// Pure inventory lifecycle tracking and plan generation checks.
+pub mod lifecycle;

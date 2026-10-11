@@ -60,6 +60,23 @@ class DiscoveryTests(unittest.TestCase):
             self.assertIn(b"AmbiguousName", result.stdout)
             self.assertNotIn(b"Proposed(", result.stdout)
 
+    def test_reused_global_node_id_uses_serial_and_reopened_client_needs_new_binding(self):
+        first = adapter.observe([client(), node()], 1)
+        first_app = first["applications"][0]
+        first_stream = first_app["streams"][0]
+        replaced = adapter.observe([client(), node(serial=901)], 2)
+        self.assertEqual(replaced["applications"][0]["application_id"], first_app["application_id"])
+        self.assertEqual(replaced["applications"][0]["streams"][0]["node_id"], first_stream["node_id"])
+        self.assertNotEqual(replaced["applications"][0]["streams"][0]["stream_id"], first_stream["stream_id"])
+        reopened = adapter.observe([client(serial=71), node(serial=902)], 3)
+        reopened_app = reopened["applications"][0]
+        self.assertEqual(reopened_app["process_pid"], first_app["process_pid"])
+        self.assertNotEqual(reopened_app["application_id"], first_app["application_id"])
+        with self.assertRaises(adapter.SnapshotError):
+            adapter.project(reopened, {first_app["application_id"]: "game"})
+        rebound = adapter.project(reopened, {reopened_app["application_id"]: "game"})
+        self.assertEqual(rebound["applications"][0]["streams"][0]["stream_id"], "pw-node:902")
+
     def test_incomplete_playback_identity_blocks_projection_not_empty_inventory(self):
         objects = [client(), node()]
         del objects[0]["info"]["props"]["application.process.id"]

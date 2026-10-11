@@ -4,8 +4,8 @@ Independent, unofficial Linux compatibility research; not affiliated with BEACN.
 
 Status: partial static evidence plus a dependency-free offline Rust protocol
 codec, CLI, provider-neutral routing planner and read-only PipeWire snapshot
-adapter with explicit wire bindings. The current slice passes 17 Rust integration
-tests and six Python tests on both Windows and Ubuntu 26.04.1. The Linux adapter
+adapter with explicit wire bindings. The current slice passes 21 Rust integration
+tests and seven Python tests on both Windows and Ubuntu 26.04.1. The Linux adapter
 also verified a real Firefox playback node in one populated snapshot, after an
 initial empty inventory. Remote discovery, live routing and hardware interoperability
 remain untested;
@@ -20,6 +20,7 @@ application can appear in Windows App and be routed from it.
 - [Protocol evidence](docs/protocol.md)
 - [Offline codec and usage](docs/offline-codec.md)
 - [Offline routing planner](docs/offline-planner.md)
+- [Offline inventory lifecycle](docs/offline-lifecycle.md)
 - [Read-only PipeWire inventory](docs/pipewire-inventory.md)
 - [Linux offline validation](docs/linux-validation.md)
 - [Phased research plan](docs/research-plan.md)

@@ -79,6 +79,10 @@ A disappeared application omitted from the snapshot cannot be distinguished
 from an unknown name. A provider must retain explicit stream tombstones when
 it wants Disappeared reported. The core stores no history and polls nothing.
 
+The separate [offline lifecycle tracker](offline-lifecycle.md) compares ordered,
+complete inventories and rejects plans from older generations. It emits missing
+streams as delta tombstones; these are not mixed into the new planner inventory.
+
 ## Adapter boundary
 
 The read-only provider selects playback nodes, separates node/client/PID metadata
