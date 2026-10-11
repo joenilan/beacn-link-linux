@@ -301,5 +301,8 @@ pub mod receipts;
 
 pub mod execution;
 
+/// Guarded transport-neutral protocol exchanges; no USB or automatic routing.
+pub mod session;
+
 #[cfg(all(feature = "native-pipewire", target_os = "linux"))]
 pub mod native_pipewire;

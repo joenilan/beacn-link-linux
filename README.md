@@ -4,12 +4,14 @@ Independent, unofficial Linux compatibility research; not affiliated with BEACN.
 
 Status: partial static evidence plus a dependency-free offline Rust protocol
 codec, CLI, provider-neutral routing planner, graph/inventory adapters and an
-optional native PipeWire executor restricted to disposable private cores.
+optional native PipeWire executor restricted to disposable private cores, plus a
+transport-neutral protocol session controller validated with scripted transfers.
 The native executor verified A-to-B routing, server rejection, interrupted
 acknowledgments and explicit rollback continuation, with unchanged desktop settings
-and persistent-state hashes after owned cleanup. The suite has 44 Rust integration
-tests and 15 Python tests; this continuation validates the 12 focused recovery
-tests on Windows/Linux and actual private-core faults. Linux builds the C adapter against PipeWire
+and persistent-state hashes after owned cleanup. The suite has 54 Rust integration
+tests and 15 Python tests; the latest protocol continuation validates 25 focused
+session/codec/planner tests on Windows/Linux. The preceding native batch validated
+12 focused recovery tests and actual private-core faults. Linux builds the C adapter against PipeWire
 1.6.2. Normal desktop CLI apply remains disabled.
 An earlier read-only graph preparation preserved two
 already-correct foreign links and refused an incorrect destination serial.
@@ -30,6 +32,7 @@ application can appear in Windows App and be routed from it.
 - [Verified inventory](docs/inventory.md)
 - [Static findings](docs/static-analysis.md)
 - [Protocol evidence](docs/protocol.md)
+- [Protocol session, focused static findings and validation](docs/protocol-session.md)
 - [Offline codec and usage](docs/offline-codec.md)
 - [Offline routing planner](docs/offline-planner.md)
 - [Offline routing preparation](docs/offline-executor.md)

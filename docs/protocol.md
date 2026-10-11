@@ -26,8 +26,10 @@ formats the UTF-16 string VID_%04X&PID_%04X; it is not USB I/O.
   successful four-byte writes, reads exactly 512 bytes, and requires first
   DWORD 0xA2000000. Initialization-handshake purpose is an inference.
 - 0x140130C60 writes 0xAC010000, reads up to 512 bytes, requires at least four,
-  checks high byte 0xAC, rejects 0xACFFFFFF, extracts low-16-bit payload length,
-  and accepts lengths 1..508. Complete length consistency validation is unverified.
+  checks high byte 0xAC, rejects 0xACFFFFFF and extracts low-16-bit payload length.
+  Lengths 1..508 reach the parser; zero/out-of-range lengths skip it. The focused
+  continuation confirmed no check that actual count covers the declared payload.
+  See [session evidence](protocol-session.md) for offsets and safety policies.
 - Setup calls 0x14013121C/0x14013123F set policy ID 3 with four-byte
   value 150 on pipes 0x83/0x03. Calls 0x140131264/0x140131285 set
   policy ID 2 with one-byte value 1 on both pipes; meanings are not inferred here.
@@ -88,7 +90,9 @@ name it obtains an assignment via 0x14012FEB0, stores length and assignment
 at 0x140131868/0x14013186C, and copies the name at 0x140131881.
 It starts a remaining-space counter at 507, subtracts selected length+2,
 writes a zero terminator at 0x140131934 and returns bytes written+1.
-Exact full-list truncation and boundary behavior remain unverified.
+The focused continuation confirmed prefix truncation when a name exceeds remaining
+space, and a length-only capacity comparison before subtracting length+2.
+See [session evidence](protocol-session.md); runtime boundary behavior is untested.
 
 Important mismatch: the loop 0x140131825..0x140131857 counts UTF-8 characters,
 0x14013185C narrows that count to u8, and the copy uses that many bytes.
@@ -125,7 +129,9 @@ The first-message timing and whether these envelopes suffice for discovery
 on Windows App have not been tested. Assignment zero is not proven unroute.
 
 An [offline codec](offline-codec.md) implements the strict static subset with
-synthetic tests. Native Linux runtime and hardware interoperability are untested;
-no discovery or routing implementation is claimed. Controlled captures or
-device experiments need separate approval.
+synthetic tests. A [transport-neutral session controller](protocol-session.md)
+adds gated initialization, publication and assignment ingestion over scripted
+transfers. [Native PipeWire routing](native-recovery.md) has been validated on
+a disposable private core. USB discovery and hardware interoperability remain
+untested. Controlled captures or device experiments need separate approval.
 Keep executables, captures and raw disassembly outside this repository.

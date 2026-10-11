@@ -78,10 +78,23 @@ issued no mutation requests. See [native-recovery.md](native-recovery.md).
 The owner continued the existing isolated-VM authorization; physical/desktop
 routing stayed outside scope.
 
-**Next work:** pending work across native core disconnect/restart, bounded
-long-lived registry/resource cleanup and capacity tests. Withheld acknowledgment
-delivery is not proof of network packet-loss handling. Keep desktop apply
-disabled. The original batch below records the first implementation.
+**Completed protocol continuation:** focused static tracing established A2 body
+handling, ignored constructor/writer results, the short-poll length-check gap and
+serializer prefix/capacity behavior. `src/session.rs` now sequences A0/A1/A2,
+publishes validated complete lists and decodes bounded assignment replies over
+a caller-provided transport. Failures halt without retry; metadata remains opaque.
+All 25 focused session/codec/planner tests pass on identical Windows/Linux code.
+No USB backend or hardware test exists. Read [protocol-session.md](protocol-session.md)
+for exact provenance, deliberate policies and validation hashes.
+
+**Next work:** move toward descriptor evidence and a bounded hardware-validation
+procedure before implementing a Linux transport. The first acceptance remains
+one real Linux app visible/routable in Windows App with verified audio. Hardware
+attachment/captures/routing need separately scoped approval; current isolated-VM
+authorization does not cover them. Local gaps also remain across native core
+disconnect/restart, long-lived registry cleanup and capacity. Withheld acknowledgment
+delivery is not proof of packet-loss handling. Keep desktop apply disabled.
+The original batch below records the first native implementation.
 
 Implement native execution and acknowledgment capture for the existing guarded
 plan and receipt journal, first restricted to an explicitly selected disposable

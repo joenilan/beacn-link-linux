@@ -53,9 +53,12 @@ preparation with foreign links preserved and a wrong destination serial refused.
 The [optional native backend](native-executor.md) subsequently verified actual
 creation receipts, acknowledgment capture, fresh per-operation checks and
 guarded rollback on a disposable private core. Normal CLI route application
-remains disabled. Native fault/lost-ack tests and long-lived session handling
-are the next local gaps. USB discovery,
-handshake/reconnect semantics, remote assignment handling and Windows App
-visibility still need separately scoped evidence and implementation. No further
+remains disabled. [Native fault and explicit recovery tests](native-recovery.md)
+subsequently passed; real disconnect/restart and long-lived resource handling
+remain local gaps. The [protocol session controller](protocol-session.md) now
+sequences initialization/publication/polling over scripted transfers and passes
+focused Windows/Linux tests. USB discovery, a real transport, handshake/reconnect
+semantics and Windows App visibility still need separately scoped evidence and
+implementation. No further
 audio mutation or hardware test was performed in the preparation-contract slice.
 Keep raw evidence private.
