@@ -26,3 +26,4 @@ build/
 __pycache__/
 # CI remains disabled
 .github/workflows/
+target/

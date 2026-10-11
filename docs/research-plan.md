@@ -22,4 +22,6 @@ A generic USB/audio Linux port alone does not prove remote app visibility.
 Some pipe IDs and framing/record fields are statically reconstructed; complete
 handshake semantics, assignment-zero actions and runtime compatibility remain unknown.
 Preserve the sender character-count/byte-copy mismatch until separately validated.
-No implementation or Linux runtime has been validated. Keep raw evidence private.
+An [offline codec](offline-codec.md) now validates a strict static subset using
+synthetic tests. No Linux runtime or hardware interoperability has been validated.
+Keep raw evidence private.

@@ -2,8 +2,9 @@
 
 Independent, unofficial Linux compatibility research; not affiliated with BEACN.
 
-Status: documentation and static evidence only. The Link protocol is undecoded.
-Native Linux runtime behavior is untested. No replacement implementation exists.
+Status: partial static evidence plus a dependency-free offline Rust protocol
+codec and CLI with synthetic tests. Native Linux runtime and hardware
+interoperability are untested; no Link replacement is working yet.
 
 Goal: a Linux gaming PC connected through BEACN Studio while the Windows
 streaming PC retains BEACN App and Mix Create. First prove that one Linux
@@ -11,6 +12,8 @@ application can appear in Windows App and be routed from it.
 
 - [Verified inventory](docs/inventory.md)
 - [Static findings](docs/static-analysis.md)
+- [Protocol evidence](docs/protocol.md)
+- [Offline codec and usage](docs/offline-codec.md)
 - [Phased research plan](docs/research-plan.md)
 - [REA prerequisites](docs/toolchain.md)
 

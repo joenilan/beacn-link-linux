@@ -1,0 +1,15 @@
+[package]
+name = "beacn-link-protocol"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+publish = false
+description = "Offline codecs for a statically reconstructed BEACN Link subset"
+
+[lib]
+name = "beacn_link_protocol"
+path = "src/lib.rs"
+
+[[bin]]
+name = "link-protocol"
+path = "src/main.rs"

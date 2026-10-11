@@ -124,6 +124,8 @@ map-notification policy and reconnection/error behavior remain unresolved.
 The first-message timing and whether these envelopes suffice for discovery
 on Windows App have not been tested. Assignment zero is not proven unroute.
 
-Native Linux runtime and interoperability are untested; no implementation is
-claimed. Controlled captures or device experiments need separate approval.
+An [offline codec](offline-codec.md) implements the strict static subset with
+synthetic tests. Native Linux runtime and hardware interoperability are untested;
+no discovery or routing implementation is claimed. Controlled captures or
+device experiments need separate approval.
 Keep executables, captures and raw disassembly outside this repository.
