@@ -283,3 +283,6 @@ pub fn encode_records(records: &[Record]) -> Result<Vec<u8>, Error> {
 
 /// Pure offline routing proposals over provider-neutral snapshots.
 pub mod planner;
+
+/// Bounded text input for pure routing proposals; no OS access.
+pub mod snapshot;

@@ -26,5 +26,8 @@ An [offline codec](offline-codec.md) now validates a strict static subset using
 synthetic tests. A [pure routing planner](offline-planner.md) adds deterministic
 proposals and explicit failure outcomes over synthetic provider-neutral inventory.
 The offline crate now has [verified Linux build, tests and synthetic runtime](linux-validation.md).
-Live Linux provider integration and hardware interoperability remain unverified.
+A bounded [read-only PipeWire adapter](pipewire-inventory.md) now projects
+explicit application identities/wire bindings into the pure planner.
+Synthetic populated metadata checks and a read-only empty graph are distinct
+from proving live application discovery and hardware interoperability.
 Keep raw evidence private.

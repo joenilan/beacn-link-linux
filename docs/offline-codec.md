@@ -29,7 +29,9 @@ CLI decode expects one exact data frame containing assignment records, or a
 four-byte observed control word. It prints escaped raw names and name hex, not
 an assumed Unicode string. decode-header accepts exactly four bytes and is
 useful for inspecting an observed header without interpreting its body.
-All CLI input is command-line text; no device or file reads are implemented.
+Codec commands use command-line text. The separate `plan-snapshot` bridge reads
+bounded inventory TSV from stdin; see [read-only inventory](pipewire-inventory.md).
+The Rust CLI still performs no OS/device enumeration.
 
 ## Supported subset and conservative policy
 
@@ -93,4 +95,6 @@ boundaries, trailing data and unsupported outgoing names.
 
 Real USB messages, handshake bodies, discovery, audio routing and
 interoperability with BEACN hardware/App remain untested.
-No USB, PipeWire, audio, daemon, startup, network or target-binary code is present.
+The Rust codec/planner performs no USB, PipeWire, audio, daemon, startup,
+network or target-binary operations. A separate Python tool reads one existing
+PipeWire metadata snapshot; it does not apply audio routes.

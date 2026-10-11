@@ -2,7 +2,9 @@
 
 The planner module is pure Rust logic over supplied data. It creates proposed
 routes; it cannot apply them, enumerate real applications or read the OS.
-There is no PipeWire/USB adapter, device access, daemon or startup behavior.
+A separate [read-only PipeWire adapter](pipewire-inventory.md) supplies explicit
+snapshots to this pure module. No routing executor, USB access, daemon or
+startup behavior is implemented.
 See [offline codec](offline-codec.md) for wire parsing and ASCII constraints.
 
 ## Synthetic example
@@ -77,18 +79,18 @@ A disappeared application omitted from the snapshot cannot be distinguished
 from an unknown name. A provider must retain explicit stream tombstones when
 it wants Disappeared reported. The core stores no history and polls nothing.
 
-## Future adapter boundary
+## Adapter boundary
 
-A future provider would construct snapshots, maintain stable ASCII advertised
-identities, detect collisions and stream lifetime changes, and supply decoded
-assignment records. Which PipeWire properties support these responsibilities
-remains undecided and untested. OS-native IDs must not be assumed persistent
-or safe from reuse solely because their strings match.
+The read-only provider selects playback nodes, separates node/client/PID metadata
+from explicit ASCII wire bindings, and supplies one bounded snapshot. Its
+identity contract and conservative failure policy are documented separately.
+Synthetic checks cover populated metadata; an empty live graph cannot validate
+populated application identity behavior. OS-native IDs must not be assumed
+persistent or safe from reuse solely because their strings match.
 
 An eventual executor would need to revalidate snapshot version, identity
 ownership and every stream's liveness immediately before applying any proposal.
-This module does not authorize or implement that executor. Live OS or hardware
-integration needs separate approval; the current task stops at this boundary.
+This module does not authorize or implement that executor. Applying routes or sending messages to hardware remains outside this slice.
 
 ## Verified scope
 
@@ -106,5 +108,6 @@ synthetic offline_plan example succeeded. A minimal official Rustup toolchain
 was installed in isolated directories without sudo or profile edits. See
 [Linux validation](linux-validation.md) for exact commands, exits and provenance.
 
-Real provider metadata, live routing and hardware interoperability remain
-untested. Neither validation captured traffic or accessed BEACN devices.
+The later read-only adapter has separate [validation evidence](pipewire-inventory.md).
+Populated live application graphs, live routing and hardware interoperability
+remain untested. No validation captured traffic or accessed BEACN devices.

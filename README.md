@@ -3,9 +3,11 @@
 Independent, unofficial Linux compatibility research; not affiliated with BEACN.
 
 Status: partial static evidence plus a dependency-free offline Rust protocol
-codec, CLI and provider-neutral routing planner with synthetic tests.
-The offline crate builds and passes all 15 integration tests on Windows and
-Linux. Live provider integration and hardware interoperability are untested;
+codec, CLI, provider-neutral routing planner and read-only PipeWire snapshot
+adapter with explicit wire bindings. The current slice passes 17 Rust integration
+tests and six Python tests on both Windows and Ubuntu 26.04.1. The Linux adapter
+also read the existing user session and returned a valid empty inventory. Populated live
+application graphs and hardware interoperability remain untested;
 no Link replacement is working yet.
 
 Goal: a Linux gaming PC connected through BEACN Studio while the Windows
@@ -17,6 +19,7 @@ application can appear in Windows App and be routed from it.
 - [Protocol evidence](docs/protocol.md)
 - [Offline codec and usage](docs/offline-codec.md)
 - [Offline routing planner](docs/offline-planner.md)
+- [Read-only PipeWire inventory](docs/pipewire-inventory.md)
 - [Linux offline validation](docs/linux-validation.md)
 - [Phased research plan](docs/research-plan.md)
 - [REA prerequisites](docs/toolchain.md)

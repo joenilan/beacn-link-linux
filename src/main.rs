@@ -2,7 +2,8 @@ use beacn_link_protocol::{
     decode_frame, decode_records, encode_frame, encode_records, Assignment, Frame, Header, Record,
     MAX_FRAME,
 };
-use std::{env, process::ExitCode};
+use beacn_link_protocol::{planner, snapshot};
+use std::{env, io::Read, process::ExitCode};
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
@@ -70,6 +71,28 @@ fn run(args: &[String]) -> Result<(), String> {
                 }
             }
         }
+        Some("plan-snapshot") if args.len() == 3 => {
+            let snapshot_id = args[1]
+                .parse::<u64>()
+                .map_err(|_| "snapshot ID must be u64")?;
+            let frame = decode_frame(&parse_hex(&args[2])?).map_err(|e| e.to_string())?;
+            let Frame::Data(payload) = frame else {
+                return Err("planning requires a data frame, not a control header".into());
+            };
+            let records = decode_records(&payload).map_err(|e| e.to_string())?;
+            let mut input = Vec::new();
+            let mut reader = std::io::stdin().take((snapshot::MAX_TSV_BYTES + 1) as u64);
+            reader
+                .read_to_end(&mut input)
+                .map_err(|e| format!("inventory stdin: {e}"))?;
+            if input.len() > snapshot::MAX_TSV_BYTES {
+                return Err("inventory exceeds 2 MiB limit".into());
+            }
+            let text = std::str::from_utf8(&input).map_err(|_| "inventory stdin must be UTF-8")?;
+            let inventory = snapshot::inventory_from_tsv(snapshot_id, text)?;
+            let proposed = planner::plan(&inventory, &records).map_err(|e| e.to_string())?;
+            println!("{proposed:#?}");
+        }
         Some("encode") => {
             let mut records = Vec::new();
             for arg in &args[1..] {
@@ -88,7 +111,7 @@ fn run(args: &[String]) -> Result<(), String> {
         }
         Some("--help") | Some("-h") if args.len() == 1 => {
             println!("Offline static-subset codec. No device access.\n\
-Usage:\n  link-protocol decode <hex-frame>\n  link-protocol decode-header <8-hex-digits>\n  link-protocol encode [assignment:name ...]\n\
+Usage:\n  link-protocol decode <hex-frame>\n  link-protocol decode-header <8-hex-digits>\n  link-protocol encode [assignment:name ...]\n  link-protocol plan-snapshot <snapshot-id> <data-frame-hex> < inventory.tsv\n\
 Hex may contain quoted whitespace. Encoding requires printable ASCII names.\n\
 Assignments 0 and 5..255 are opaque; zero is not interpreted as unroute.\n\
 Data frames must be exact-sized and contain terminated assignment records.\n\

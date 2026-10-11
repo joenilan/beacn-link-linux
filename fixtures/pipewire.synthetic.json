@@ -1,0 +1,38 @@
+[
+  {
+    "id": 5,
+    "type": "PipeWire:Interface:Client",
+    "info": {
+      "props": {
+        "object.serial": 70,
+        "application.process.id": 2001,
+        "application.name": "Native Game",
+        "application.process.binary": "native-game"
+      }
+    }
+  },
+  {
+    "id": 20,
+    "type": "PipeWire:Interface:Node",
+    "info": {
+      "state": "running",
+      "props": {
+        "object.serial": 900,
+        "client.id": 5,
+        "media.class": "Stream/Output/Audio"
+      }
+    }
+  },
+  {
+    "id": 21,
+    "type": "PipeWire:Interface:Node",
+    "info": {
+      "state": "idle",
+      "props": {
+        "object.serial": 901,
+        "client.id": 5,
+        "media.class": "Stream/Output/Audio"
+      }
+    }
+  }
+]
