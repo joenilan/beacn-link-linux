@@ -3,11 +3,14 @@
 Independent, unofficial Linux compatibility research; not affiliated with BEACN.
 
 Status: partial static evidence plus a dependency-free offline Rust protocol
-codec, CLI, provider-neutral routing planner and read-only PipeWire snapshot
-adapter with explicit wire bindings, guarded dry-run route preparation,
-read-only audio graph projection and pure acknowledgment receipt bookkeeping.
-The current slice passes 36 Rust integration tests and 15 Python tests on both
-Windows and Ubuntu 26.04.1. An actual read-only graph preparation preserved two
+codec, CLI, provider-neutral routing planner, graph/inventory adapters and an
+optional native PipeWire executor restricted to disposable private cores.
+The native executor verified A-to-B routing and explicit recovery after a
+controlled partial failure, with unchanged desktop settings and persistent-state
+hashes after owned cleanup. The current slice passes 42 Rust integration tests
+and 15 Python tests; Linux also builds the optional C adapter against PipeWire
+1.6.2. Normal desktop CLI apply remains disabled.
+An earlier read-only graph preparation preserved two
 already-correct foreign links and refused an incorrect destination serial.
 The Linux adapter
 also verified a real Firefox playback node in one populated snapshot, after an
@@ -29,6 +32,7 @@ application can appear in Windows App and be routed from it.
 - [Offline codec and usage](docs/offline-codec.md)
 - [Offline routing planner](docs/offline-planner.md)
 - [Offline routing preparation](docs/offline-executor.md)
+- [Native private-core executor and validation](docs/native-executor.md)
 - [Offline inventory lifecycle](docs/offline-lifecycle.md)
 - [Read-only PipeWire inventory](docs/pipewire-inventory.md)
 - [Read-only graph projection and receipts](docs/pipewire-graph.md)

@@ -298,3 +298,8 @@ pub mod graph_snapshot;
 
 /// Pure operation acknowledgment and concrete receipt bookkeeping.
 pub mod receipts;
+
+pub mod execution;
+
+#[cfg(all(feature = "native-pipewire", target_os = "linux"))]
+pub mod native_pipewire;

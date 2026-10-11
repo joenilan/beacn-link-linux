@@ -50,10 +50,11 @@ The [read-only graph provider and pure receipt journal](pipewire-graph.md)
 now reuse existing identities and executor types. Identical-source Windows/Linux
 tests passed, and one real already-correct stereo route passed read-only
 preparation with foreign links preserved and a wrong destination serial refused.
-The next local gap is the native application backend: actual create receipts and
-acknowledgments, fresh per-operation checks and guarded rollback that preserve
-desktop fallback and foreign routes. Actual CLI route application remains disabled. The private
-harness is separate evidence and was not reused as a production executor. USB discovery,
+The [optional native backend](native-executor.md) subsequently verified actual
+creation receipts, acknowledgment capture, fresh per-operation checks and
+guarded rollback on a disposable private core. Normal CLI route application
+remains disabled. Native fault/lost-ack tests and long-lived session handling
+are the next local gaps. USB discovery,
 handshake/reconnect semantics, remote assignment handling and Windows App
 visibility still need separately scoped evidence and implementation. No further
 audio mutation or hardware test was performed in the preparation-contract slice.

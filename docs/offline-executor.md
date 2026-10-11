@@ -3,7 +3,8 @@
 The pure `executor` module converts existing planner proposals into guarded
 link-change descriptions. It reads no OS state and performs no routing.
 The CLI remains offline; `apply` and `--apply` explicitly fail with exit 2.
-No desktop/hardware backend, daemon, service or installation framework exists.
+An optional [private-core native backend](native-executor.md) now executes these
+contracts. No desktop/hardware backend, daemon, service or installation framework exists.
 
 ## Supported explicit mapping
 

@@ -173,6 +173,24 @@ impl ReceiptJournal {
         };
         Ok(())
     }
+    /// Only a backend's fresh reconciliation may settle an unknown pending effect.
+    /// Some acknowledges that exact effect; None proves it did not occur. Neither
+    /// permits forward continuation. Rejected evidence preserves the unknown state.
+    pub fn reconcile(&mut self, ack: Option<Acknowledgment>) -> Result<(), ReceiptError> {
+        if self.state != JournalState::Unknown {
+            return Err(ReceiptError::Stopped);
+        }
+        if let Some(ack) = ack {
+            let mut settled = self.clone();
+            settled.state = JournalState::Ready;
+            settled.acknowledge(settled.prefix, ack)?;
+            settled.state = JournalState::Failed;
+            *self = settled;
+        } else {
+            self.state = JournalState::Failed;
+        }
+        Ok(())
+    }
     /// Describes only known successful work. Unknown pending effects are excluded;
     /// callers must reconcile them before any real recovery operation.
     pub fn rollback(&self) -> Vec<ReceiptUndo> {

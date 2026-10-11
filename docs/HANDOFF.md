@@ -8,7 +8,7 @@ possibly alongside Windows dual boot for unsupported games. The eventual result
 must expose Linux applications to the streaming PC's Windows App and accept its
 routing assignments. A generic local mixer or USB audio driver is not enough.
 
-## Verified checkpoint
+## Incoming verified checkpoint (historical)
 Repository: https://github.com/joenilan/beacn-link-linux (private), main.
 Windows checkout: E:\git\beacn-link-linux.
 Latest implementation: 39d36a35377df257fd0cdbd95a7577a8bc61e80b,
@@ -57,6 +57,24 @@ These results DO NOT prove audible output, hardware transport, remote Windows
 visibility, native production executor operation or end-to-end interoperability.
 
 ## Next bounded implementation batch
+
+**Completed continuation:** the optional `native-pipewire` feature now provides
+the native executor described below. Read [native-executor.md](native-executor.md)
+for source owners, build dependencies, exact runtime outcomes and limits.
+The owner explicitly authorized the disposable-core VM test during this
+continuation. That scope did not include desktop or hardware routing.
+The actual Rust/C backend moved one owned stereo stream A -> B, stopped after
+three acknowledged steps of a controlled B -> A failure, then restored B with
+new native receipts. Owned cleanup and the desktop settings/state comparison
+passed. Ordinary `link-protocol apply` remains disabled.
+
+**Next work:** test native server rejection, lost acknowledgments and recovery
+interruption on a separately authorized disposable core. Reconciliation exists
+and is tested synthetically; these fault outcomes have not yet been forced on
+the actual backend. Check long-lived registry churn and retain explicit recovery
+state rather than adding automatic retries. Keep desktop apply disabled. The
+original batch below records what this continuation implemented.
+
 Implement native execution and acknowledgment capture for the existing guarded
 plan and receipt journal, first restricted to an explicitly selected disposable
 private PipeWire core. Keep normal desktop CLI apply disabled by default.
@@ -168,6 +186,7 @@ because of that historical orchestration failure.
    Fast-forward only if safe; preserve any local changes.
 2. Reconcile against implementation commit 39d36a3 and read canonical docs.
 3. Verify existing Windows/VM access read-only, toolchain and current disk space.
-4. Continue the native executor batch above. Keep progress factual and report
+4. Continue the native fault/recovery work in the completed-continuation note.
+   The original native batch is implemented. Keep progress factual and report
    implemented / built / runtime-tested / pushed separately.
 5. Leave Jawjack, Haiwire, AI benchmarks and other agents' processes alone.

@@ -172,3 +172,30 @@ fn initial_graph_and_ledger_must_match_preparation_domain() {
         Err(ReceiptError::InitialGraph)
     ));
 }
+
+#[test]
+fn rejected_reconciliation_preserves_unknown_and_settlement_never_resumes() {
+    let (p, g, own) = setup();
+    let mut j = ReceiptJournal::new(p, &g, own.clone()).unwrap();
+    j.stop(0, true).unwrap();
+    assert_eq!(
+        j.reconcile(Some(Acknowledgment::Disconnected(o(30, 999)))),
+        Err(ReceiptError::Mismatch)
+    );
+    assert_eq!(j.state(), JournalState::Unknown);
+    assert_eq!(j.prefix(), 0);
+    assert_eq!(j.ownership(), &own);
+    j.reconcile(Some(Acknowledgment::Disconnected(o(30, 300))))
+        .unwrap();
+    assert_eq!(j.state(), JournalState::Failed);
+    assert_eq!(j.prefix(), 1);
+    assert!(j.ownership().links.is_empty());
+    assert_eq!(j.reconcile(None), Err(ReceiptError::Stopped));
+    let (p, g, own) = setup();
+    let mut j = ReceiptJournal::new(p, &g, own).unwrap();
+    j.stop(0, true).unwrap();
+    j.reconcile(None).unwrap();
+    assert_eq!(j.state(), JournalState::Failed);
+    assert_eq!(j.prefix(), 0);
+    assert!(j.rollback().is_empty());
+}

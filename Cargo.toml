@@ -6,6 +6,10 @@ rust-version = "1.88"
 publish = false
 description = "Offline BEACN Link codecs and provider-neutral routing proposals"
 
+[features]
+default = []
+native-pipewire = []
+
 [lib]
 name = "beacn_link_protocol"
 path = "src/lib.rs"

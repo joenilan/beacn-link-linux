@@ -3,7 +3,9 @@
 This implemented slice adds `tools/pipewire_graph.py`, the pure Rust
 `graph_snapshot` bridge and `receipts` journal. It reuses the existing planner,
 inventory adapter, lifecycle tracker and executor types. Actual route application
-remains disabled; no native mutation or rollback backend exists.
+remains disabled in the ordinary CLI. A later optional
+[private-core native backend](native-executor.md) now executes these contracts;
+the observations and validation below describe the earlier graph slice.
 
 ## Observation and identity contract
 
@@ -97,9 +99,10 @@ Failure and unknown outcomes stop progression without acknowledging pending
 work. Rollback descriptions cover only the known successful prefix in reverse
 order and resolve created-link removals to the actual receipt. An unknown
 pending effect is excluded and must be reconciled before any real recovery.
-No automatic retry, native acknowledgment subscription, rollback validation,
-route application or recovery operation is implemented. Caller acknowledgment
-events remain trusted data, not independent proof of a completed operation.
+The journal itself implements no native subscription or routing. At this original
+checkpoint there was no backend; the later [native slice](native-executor.md)
+supplies observed acknowledgments and explicit recovery. Caller acknowledgment
+events alone remain trusted data, not independent proof of a completed operation.
 
 ## Validation state
 
@@ -171,10 +174,10 @@ USB or hardware operation ran, and earlier private baselines were preserved.
 
 ## Remaining work and references
 
-Native operations/acknowledgments, fresh rollback checks, robust session handling,
-USB discovery and Windows interoperability remain unimplemented. The next native
-backend must preserve foreign routes and desktop fallback, revalidate current
-identities before operations and reconcile unknown outcomes before recovery.
+The [native private-core backend](native-executor.md) now implements operations,
+acknowledgment capture, fresh rollback checks and explicit unknown reconciliation.
+Native failure/lost-ack fault testing, long-lived session handling, USB discovery
+and Windows interoperability remain unresolved. Desktop apply stays disabled.
 
 - [Existing executor contract](offline-executor.md)
 - [Existing inventory identity/query contract](pipewire-inventory.md)

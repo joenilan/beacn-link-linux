@@ -1,5 +1,9 @@
 # Controlled VM routing tests
 
+This document preserves the earlier native-tool experiments. The later
+[private-core executor validation](native-executor.md) exercises the actual
+Rust/C backend, acknowledgment receipts and partial-failure recovery.
+
 ## Aborted shared-core attempt (2026-10-11)
 
 The first controlled test did not prove stream routing. It created two owned
