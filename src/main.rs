@@ -31,6 +31,28 @@ fn parse_hex(text: &str) -> Result<Vec<u8>, String> {
 }
 fn run(args: &[String]) -> Result<(), String> {
     match args.first().map(String::as_str) {
+        Some("inspect-usb-descriptors") if args.len() == 2 => {
+            use beacn_link_protocol::usb_descriptors;
+            let active = args[1]
+                .parse::<u8>()
+                .map_err(|_| "active configuration must be a decimal byte")?;
+            let mut input = Vec::new();
+            std::io::stdin()
+                .take((usb_descriptors::MAX_DESCRIPTOR_BYTES + 1) as u64)
+                .read_to_end(&mut input)
+                .map_err(|_| "cannot read descriptor stdin")?;
+            let descriptors = usb_descriptors::parse(&input).map_err(|e| e.to_string())?;
+            println!("OFFLINE DESCRIPTORS: VID={:04X} PID={:04X} revision={:04X} USB={:04X}; no device access", descriptors.vendor, descriptors.product, descriptors.revision, descriptors.usb_version);
+            for config in &descriptors.configurations {
+                for interface in &config.interfaces {
+                    println!("config={} interface={} alternate={} class={:02X} subclass={:02X} protocol={:02X} endpoints={:?}", config.value, interface.number, interface.alternate, interface.class, interface.subclass, interface.protocol, interface.endpoints);
+                }
+            }
+            let candidate = descriptors.candidate(active).map_err(|e| e.to_string())?;
+            println!(
+                "STATIC CANDIDATE ONLY: {candidate:?}; no claim, transfer or routing authority"
+            );
+        }
         Some("decode-header") if args.len() == 2 => {
             let bytes = parse_hex(&args[1])?;
             let header = Header::decode(&bytes).map_err(|e| e.to_string())?;
@@ -156,7 +178,7 @@ fn run(args: &[String]) -> Result<(), String> {
         }
         Some("--help") | Some("-h") if args.len() == 1 => {
             println!("Offline static-subset codec. All commands are dry runs. Route application disabled.\n\
-Usage:\n  link-protocol decode <hex-frame>\n  link-protocol decode-header <8-hex-digits>\n  link-protocol encode [assignment:name ...]\n  link-protocol plan-snapshot <snapshot-id> <data-frame-hex> < inventory.tsv\n  link-protocol prepare-graph <generation> <data-frame-hex> < graph.tsv\n\
+Usage:\n  link-protocol decode <hex-frame>\n  link-protocol decode-header <8-hex-digits>\n  link-protocol encode [assignment:name ...]\n  link-protocol plan-snapshot <snapshot-id> <data-frame-hex> < inventory.tsv\n  link-protocol prepare-graph <generation> <data-frame-hex> < graph.tsv\n  link-protocol inspect-usb-descriptors <active-config-value> < cached-descriptors.bin\n\
 Hex may contain quoted whitespace. Encoding requires printable ASCII names.\n\
 Assignments 0 and 5..255 are opaque; zero is not interpreted as unroute.\n\
 Data frames must be exact-sized and contain terminated assignment records.\n\

@@ -8,9 +8,11 @@ optional native PipeWire executor restricted to disposable private cores, plus a
 transport-neutral protocol session controller validated with scripted transfers.
 The native executor verified A-to-B routing, server rejection, interrupted
 acknowledgments and explicit rollback continuation, with unchanged desktop settings
-and persistent-state hashes after owned cleanup. The suite has 54 Rust integration
-tests and 15 Python tests; the latest protocol continuation validates 25 focused
-session/codec/planner tests on Windows/Linux. The preceding native batch validated
+and persistent-state hashes after owned cleanup. The suite has 61 Rust integration
+tests and 20 Python tests; the latest descriptor continuation validates 25 focused
+descriptor/session/codec tests on Windows/Linux and 5 new probe tests on Linux.
+The probe operates on an explicitly named cached sysfs device; hardware use remains
+unauthorized and untested. The preceding native batch validated
 12 focused recovery tests and actual private-core faults. Linux builds the C adapter against PipeWire
 1.6.2. Normal desktop CLI apply remains disabled.
 An earlier read-only graph preparation preserved two
@@ -33,6 +35,7 @@ application can appear in Windows App and be routed from it.
 - [Static findings](docs/static-analysis.md)
 - [Protocol evidence](docs/protocol.md)
 - [Protocol session, focused static findings and validation](docs/protocol-session.md)
+- [USB descriptor validator and VM-first hardware plan](docs/usb-descriptor-validation.md)
 - [Offline codec and usage](docs/offline-codec.md)
 - [Offline routing planner](docs/offline-planner.md)
 - [Offline routing preparation](docs/offline-executor.md)

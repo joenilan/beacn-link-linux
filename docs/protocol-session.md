@@ -173,8 +173,9 @@ The archive precedes documentation updates; its executable/test code is identica
 Guest free disk after this lightweight batch was 23,367,229,440 bytes; the owner
 was notified it remains below 25 GB. No packages/toolchains were installed.
 
-Next: establish descriptors and a bounded hardware-validation procedure before
-adding a Linux transport. The first interoperability acceptance is one real Linux
+The subsequent [descriptor preparation batch](usb-descriptor-validation.md) adds
+a bounded offline parser/cache probe and a VM-first hardware procedure. Actual
+descriptors are still unverified and no USB transport exists. The first interoperability acceptance is one real Linux
 application appearing in Windows App and receiving a routing assignment with
 verified audio. USB attachment, captures and physical routing require separately
 scoped authorization; isolated-core approval does not cover them. Offline tests

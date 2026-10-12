@@ -304,5 +304,8 @@ pub mod execution;
 /// Guarded transport-neutral protocol exchanges; no USB or automatic routing.
 pub mod session;
 
+/// Offline cached USB descriptor validation; never opens or claims a device.
+pub mod usb_descriptors;
+
 #[cfg(all(feature = "native-pipewire", target_os = "linux"))]
 pub mod native_pipewire;

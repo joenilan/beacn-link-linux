@@ -59,6 +59,9 @@ remain local gaps. The [protocol session controller](protocol-session.md) now
 sequences initialization/publication/polling over scripted transfers and passes
 focused Windows/Linux tests. USB discovery, a real transport, handshake/reconnect
 semantics and Windows App visibility still need separately scoped evidence and
-implementation. No further
+implementation. [Descriptor preparation](usb-descriptor-validation.md) subsequently
+added a bounded parser, explicit sysfs cache probe and a descriptor-only VM-first
+hardware plan. Its tests are synthetic; hardware attachment/device I/O remains
+separately scoped. No further
 audio mutation or hardware test was performed in the preparation-contract slice.
 Keep raw evidence private.

@@ -87,8 +87,20 @@ All 25 focused session/codec/planner tests pass on identical Windows/Linux code.
 No USB backend or hardware test exists. Read [protocol-session.md](protocol-session.md)
 for exact provenance, deliberate policies and validation hashes.
 
-**Next work:** move toward descriptor evidence and a bounded hardware-validation
-procedure before implementing a Linux transport. The first acceptance remains
+**Completed descriptor preparation:** `src/usb_descriptors.rs` and the offline
+`inspect-usb-descriptors` CLI now validate a bounded cached descriptor stream.
+`tools/usb_descriptor_probe.py` reads one explicitly selected sysfs cache and
+reports descriptor candidates separately from active alternates/driver ownership.
+All 25 focused Rust tests pass on identical Windows/Linux code; 5 new Python
+probe tests pass on Linux with synthetic files and the actual CLI. There is still
+no hardware descriptor evidence or USB transport. Read
+[usb-descriptor-validation.md](usb-descriptor-validation.md) for exact limits/hashes
+and a reviewable descriptor-only physical test. The owner wants the existing VM
+first, then native Linux on the gaming PC; that preference does not authorize
+passthrough or device I/O.
+
+**Next work:** review/authorize the bounded VM descriptor procedure and establish
+actual descriptors before implementing a Linux transport. The first acceptance remains
 one real Linux app visible/routable in Windows App with verified audio. Hardware
 attachment/captures/routing need separately scoped approval; current isolated-VM
 authorization does not cover them. Local gaps also remain across native core
