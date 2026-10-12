@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import selectors
 from pathlib import Path
 import subprocess
 import sys
@@ -16,6 +17,85 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import usb_handshake as base
 
 WIRE_NAME = "BEACN Linux VM Test"
+MAX_CYCLES = 40
+
+
+def inventory_message(inventory):
+    text = base.inventory.to_tsv(inventory).encode("ascii")
+    if not 0 < len(text) <= 3000:
+        raise RuntimeError("fresh inventory exceeds diagnostic IPC bound")
+    return f'{inventory["snapshot_id"]}\t{len(text)}\n'.encode("ascii") + text
+
+
+def execute_periodic(command, fresh, cycles, timeout=50):
+    """Linux-only bounded IPC; no shell, retries, or background inventory writer."""
+    child = subprocess.Popen(command, env={**os.environ, "LIBUSB_DEBUG": "0"},
+                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    result = {"private_child_pid": child.pid, "child_exited": False, "timed_out": False, "exit": 2}
+    output = {"stdout": bytearray(), "stderr": bytearray()}
+    pending = bytearray()
+    requests = 0
+    deadline = time.monotonic() + timeout
+    try:
+        os.set_blocking(child.stdin.fileno(), False)
+        with selectors.DefaultSelector() as selector:
+            for name in output:
+                pipe = getattr(child, name)
+                os.set_blocking(pipe.fileno(), False)
+                selector.register(pipe, selectors.EVENT_READ, name)
+            while selector.get_map():
+                if time.monotonic() >= deadline:
+                    result["timed_out"] = True
+                    raise RuntimeError("periodic child exceeded deadline")
+                for key, _ in selector.select(timeout=min(0.1, max(0, deadline - time.monotonic()))):
+                    data = os.read(key.fileobj.fileno(), 4096)
+                    if not data:
+                        selector.unregister(key.fileobj)
+                        continue
+                    output[key.data].extend(data)
+                    if len(output[key.data]) > 65536:
+                        raise RuntimeError("periodic child output exceeds bound")
+                    if key.data != "stdout":
+                        continue
+                    pending.extend(data)
+                    while b"\n" in pending:
+                        line, _, remainder = pending.partition(b"\n")
+                        pending = bytearray(remainder)
+                        if line.startswith(b"INVENTORY"):
+                            if line != f"INVENTORY {requests}".encode() or requests >= 2 * cycles + 2:
+                                raise RuntimeError("inventory request sequence/budget refused")
+                            message = inventory_message(fresh(requests))
+                            if time.monotonic() >= deadline:
+                                result["timed_out"] = True
+                                raise RuntimeError("fresh inventory exceeded child deadline")
+                            # <= PIPE_BUF; nonblocking write cannot hang on an
+                            # unresponsive or departed child. Partial writes stop.
+                            if os.write(child.stdin.fileno(), message) != len(message):
+                                raise RuntimeError("partial inventory delivery")
+                            requests += 1
+                    if len(pending) > 4096:
+                        raise RuntimeError("periodic child line exceeds bound")
+            child.wait(timeout=max(0.01, deadline - time.monotonic()))
+    except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
+        result["supervisor_error"] = type(error).__name__ + ": " + str(error)
+        if isinstance(error, subprocess.TimeoutExpired):
+            result["timed_out"] = True
+    finally:
+        if child.poll() is None:
+            child.kill()
+            try:
+                child.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
+        result["child_exited"] = child.poll() is not None
+        result["exit"] = child.returncode if result["child_exited"] else None
+        result.update({name: data.decode("utf-8", errors="replace") for name, data in output.items()})
+        result["inventory_requests"] = requests
+        for pipe in (child.stdin, child.stdout, child.stderr):
+            pipe.close()
+        if result["child_exited"]:
+            result["after_child"] = base.snapshot()
+    return result
 
 
 def owned_inventory(objects, pid, node_name, snapshot_id):
@@ -57,7 +137,10 @@ def main():
     parser.add_argument("--authorize-isolated-source", action="store_true")
     parser.add_argument("--sysfs-device")
     parser.add_argument("--expected-cache")
+    parser.add_argument("--cycles", type=int, default=0, help="explicit periodic budget 1..40; default one-shot")
     args = parser.parse_args()
+    if args.cycles and not 1 <= args.cycles <= MAX_CYCLES:
+        parser.error("periodic cycle budget outside 1..40")
     source_only = args.stage == "source-probe"
     if args.stage not in ("run", "source-probe"):
         journal = Path(args.evidence_dir) / "handshake.json"
@@ -105,7 +188,8 @@ def main():
     attached = base.snapshot()
     base.save(root / "run-started.json", {"snapshot": attached, "binary_sha256": digest,
                                           "expected_cache_sha256": cache_hash, "usb_io_requested": not source_only,
-                                          "wire_name": WIRE_NAME, "initial_assignment": 0})
+                                          "wire_name": WIRE_NAME, "initial_assignment": 0,
+                                          "periodic_cycles": args.cycles})
     # PipeWire also creates a '-manager' socket; evidence paths can exceed the
     # Linux Unix-socket limit. mkdtemp retains exclusive 0700 ownership.
     runtime = Path(tempfile.mkdtemp(prefix="beacn-pub-"))
@@ -132,6 +216,7 @@ def main():
     result = {"binary_sha256": digest, "child_exited": True, "exit": 2, "timed_out": False,
               "wire_name": WIRE_NAME, "remote_visibility": "unobserved", "routes_applied": False}
     result["usb_io_requested"] = not source_only
+    result["periodic_cycles"] = args.cycles
     result["private_runtime"] = str(runtime)
 
     def start(name, command, child_env, stdin=None):
@@ -183,9 +268,29 @@ def main():
         _, objects = dump()
         if playback.poll() is not None or owned_inventory(objects, playback.pid, node_name, inventory["snapshot_id"]) != inventory:
             raise RuntimeError("owned source changed before native execution")
-        command = ([str(binary), "--check-inventory", str(projected), str(inventory["snapshot_id"])] if source_only else
-                   [str(binary), "--authorize-publication", str(selected), str(pinned), str(projected), str(inventory["snapshot_id"])])
-        result.update(base.execute_child(command, timeout=12 if source_only else 30))
+        if args.cycles:
+            last_id = inventory["snapshot_id"]
+
+            def fresh(request):
+                nonlocal last_id
+                if server.poll() is not None or playback.poll() is not None:
+                    raise RuntimeError("owned source/core exited")
+                raw, current_objects = dump()
+                last_id = max(last_id + 1, time.time_ns())
+                current = owned_inventory(current_objects, playback.pid, node_name, last_id)
+                if current["applications"] != inventory["applications"]:
+                    raise RuntimeError("pinned source identity changed")
+                (root / f"cycle-{request:03d}-dump.json").write_bytes(raw)
+                base.save(root / f"cycle-{request:03d}-inventory.json", current)
+                return current
+
+            command = ([str(binary), "--check-periodic", str(args.cycles)] if source_only else
+                       [str(binary), "--authorize-periodic", str(selected), str(pinned), str(args.cycles)])
+            result.update(execute_periodic(command, fresh, args.cycles))
+        else:
+            command = ([str(binary), "--check-inventory", str(projected), str(inventory["snapshot_id"])] if source_only else
+                       [str(binary), "--authorize-publication", str(selected), str(pinned), str(projected), str(inventory["snapshot_id"])])
+            result.update(base.execute_child(command, timeout=12 if source_only else 30))
         _, objects = dump()
         result["owned_source_preserved"] = playback.poll() is None and owned_inventory(objects, playback.pid, node_name, inventory["snapshot_id"]) == inventory
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
@@ -218,7 +323,7 @@ def main():
         result["after_owned_cleanup"] = base.snapshot()
         base.save(root / "handshake.json", result)
     print(json.dumps({k: v for k, v in result.items() if k not in ("after_child", "after_owned_cleanup", "private_child_pid", "retained_private_process_pids")}))
-    return 0 if result["exit"] == 0 and not result["timed_out"] and result.get("owned_source_preserved") and result.get("private_core_restored") and all(result.get("owned_processes_stopped", [False])) and "runner_error" not in result else 2
+    return 0 if result["exit"] == 0 and not result["timed_out"] and result.get("owned_source_preserved") and result.get("private_core_restored") and all(result.get("owned_processes_stopped", [False])) and "runner_error" not in result and "supervisor_error" not in result else 2
 
 
 if __name__ == "__main__":

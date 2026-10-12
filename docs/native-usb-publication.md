@@ -254,9 +254,71 @@ Diagnostic Windows return SHA256:
 `9fc82c6e11c55d0da8e2a0596b5e4912d32f956fb41f6eaebe05cfe70bfda332`.
 Latest measured guest free disk: 21,639,749,632 bytes; no packages installed.
 
-Next implementation: explicitly bounded periodic publication/polling with fresh
-inventory/lifecycle checks, preserving the default one-shot gates. The original
-application's repeated 500 ms publication supports investigating sustained refresh;
-the brief observation alone does not establish expiry timing or disappearance
-cause. Then keep the test name available long enough for owner selection and
-verify a real assignment record. Audio routing remains a separate unproven step.
+## Bounded periodic VM diagnostic (2026-10-12)
+
+`examples/native_usb_periodic.rs` adds explicit `--authorize-periodic <sysfs-device>
+<expected-cache> <cycles>` with a 1..40 budget. `--check-periodic <cycles>` performs
+only the fresh-inventory exchange, with no USB access. The ordinary opener remains
+handshake-only and `Publication::from_inventory` remains one-shot. The new
+`Publication::bounded` policy uses the same transport gate, retained device,
+codec, session and lifecycle tracker; there is no second routing/receipt owner.
+
+Initialization leads to an inventory gate. Every publication needs a strictly
+newer complete inventory with exactly the pinned application, wire name, streams
+and live states. After a fully validated poll the gate either exhausts its budget
+or waits for another inventory. Missing refresh, rebinding, stale generation,
+wrong order/frame, partial/unknown transfer or rejected/malformed reply halts it.
+No failed exchange is retried. Device/profile checks still precede every I/O.
+
+The Python runner opts in with `--cycles`. Its private core and unlinked synthetic
+source remain exclusively owned. The child requests snapshots over stdin/stdout;
+the runner checks the retained process handles, obtains a fresh bounded pw-dump,
+checks exact identities/no links, saves each private dump/projected inventory and
+answers with a monotonically increasing generation. IPC has explicit request,
+line, body and output caps; nonblocking writes and a 50-second child deadline
+prevent indefinite waits. Unknown child exit retains private processes for review.
+All snapshot/cleanup owners and used-attempt markers remain in force.
+
+The example requests another inventory after each poll before planning any reply.
+It waits 500 ms between list publication and poll as a controlled diagnostic
+timing hypothesis. A received assignment 1..4 for the bound name stops publication,
+holds for five seconds and checks the source again; it never reports the desired
+assignment as applied or repeatedly overwrites it with outgoing local zero.
+There is no routing, audio capture, guessed shutdown/empty list, heartbeat recovery
+or daemon. Atomic stream-liveness across USB I/O is not established by snapshots.
+
+Windows focused checks: 28 Rust integration cases and seven Python runner cases,
+with two further Linux-only pipe-supervisor cases skipped. Linux passed all 28
+integration cases, two native USB ABI/owned-claim unit cases and 16 Python runner
+cases. Failures covered budget/order, frozen/rebound/disappeared source, malformed
+poll, partial/unknown transfer, invalid IPC sequence, timeout and inventory loss.
+After two comment-only documentation corrections, the exact final native periodic
+and one-shot examples were rebuilt. The final three-cycle private-source probe
+served seven fresh inventories, preserved its source, restored the private graph,
+stopped both owned processes and matched the desktop graph plus all four tracked
+persistent-state files exactly. Studio remained on Windows; no USB I/O occurred.
+This proves the fresh-inventory/supervision path, not periodic hardware acceptance.
+
+Final code SHA256:
+`81213364ed745647da025d8cde3c9d858c74d29ee400e4c73a81f2e21e879a44`.
+Final source archive SHA256:
+`d9f667f0e5d8db8b83b51b6cb37947dc6fe32d64eedca00b1282e19636acb338`.
+Focused Linux matrix journal SHA256:
+`f6b7ca86316f323dec0f1a2b995cc72f224f3f6356517eb24a4bebda0d799a62`.
+Final Linux build/private-source probe journal SHA256:
+`023a855918acb0a1b9ae785fb99c3edecaa9a4d0371a14fdc7d506932e5592f9`.
+Final periodic executable SHA256:
+`4e5958ff52ebfc2d39cfec444f4c596f5abdc75fd8545654737feab3a488a359`.
+Runner SHA256:
+`4e0ec147596827fd88379b59531d7ad60dbfac069265e6c417bde97cb0397a57`.
+Shared runner SHA256:
+`ed84dcec98fcb906069615b31787f802c51eac88ac761d55b254b16708e31583`.
+Final free guest disk: 21,263,077,376 bytes. No packages installed or artifacts deleted.
+
+Next: fresh host/guest snapshots, then owner-managed USB handoff for 40 cycles.
+Keep Windows Link closed. In streaming-PC BEACN App v1.4.0, the target is the
+bottom ASSIGNMENTS / Applications box containing `obs64 System`, immediately
+right of Outgoing Studio Link Assignments. While `BEACN Linux VM Test` is visible,
+drag that test entry into the first `Link In` channel. Verify an actual bound
+assignment record and compare settings after returning Studio to Windows.
+Sustained visibility, assignment receipt and audio remain unverified in this batch.

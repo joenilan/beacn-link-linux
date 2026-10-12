@@ -1,4 +1,4 @@
-//! Selected/pinned USB gate; handshake-only by default, optional one publication/poll.
+//! Selected/pinned USB gate; handshake-only by default, opt-in bounded publication.
 use crate::{
     session::{Transport, TransportError, IN_PIPE, OUT_PIPE},
     usb_descriptors, MAX_FRAME,
@@ -6,11 +6,15 @@ use crate::{
 use std::{fmt, time::Duration};
 
 pub const MAX_TIMEOUT: Duration = Duration::from_millis(500);
+pub const MAX_PUBLICATION_CYCLES: usize = 40;
 /// One explicit application snapshot and its canonical initial list. Zero is
 /// retained opaquely; this does not assign a route or infer an unroute command.
 pub struct Publication {
     records: Vec<crate::Record>,
     frame: Vec<u8>,
+    tracker: crate::lifecycle::InventoryTracker,
+    remaining: usize,
+    periodic: bool,
 }
 impl Publication {
     pub fn from_inventory(inventory: &crate::planner::Inventory) -> Result<Self, Error> {
@@ -35,7 +39,24 @@ impl Publication {
         let payload = crate::encode_records(&records).map_err(|_| Error::Publication)?;
         let frame =
             crate::encode_frame(&crate::Frame::Data(payload)).map_err(|_| Error::Publication)?;
-        Ok(Self { records, frame })
+        Ok(Self {
+            records,
+            frame,
+            tracker,
+            remaining: 1,
+            periodic: false,
+        })
+    }
+    /// Explicit test budget; all cycles, including the first, require a newer
+    /// inventory after initialization. A version is not proof of OS freshness.
+    pub fn bounded(inventory: &crate::planner::Inventory, cycles: usize) -> Result<Self, Error> {
+        if !(1..=MAX_PUBLICATION_CYCLES).contains(&cycles) {
+            return Err(Error::Publication);
+        }
+        let mut publication = Self::from_inventory(inventory)?;
+        publication.remaining = cycles;
+        publication.periodic = true;
+        Ok(publication)
     }
     pub fn records(&self) -> &[crate::Record] {
         &self.records
@@ -92,10 +113,39 @@ enum Phase {
     A1,
     A2,
     Publish,
+    AwaitInventory,
     PollRequest,
     PollReply,
     Complete,
     Halted,
+}
+impl<B: Backend> crate::session::PublicationCycles for Handshake<B> {
+    fn refresh_publication(
+        &mut self,
+        inventory: &crate::planner::Inventory,
+    ) -> Result<(), TransportError> {
+        let accepted = (|| {
+            if self.closed || self.phase != Phase::AwaitInventory || self.check(1).is_err() {
+                return None;
+            }
+            let publication = self.publication.as_mut()?;
+            let pinned = publication.tracker.current()?;
+            // No new process, stream, name or state may replace the pinned test
+            // source, even when the outgoing wire frame would be identical.
+            if inventory.applications != pinned.applications {
+                return None;
+            }
+            publication.tracker.advance(inventory).ok()?;
+            Some(())
+        })();
+        if accepted.is_some() {
+            self.phase = Phase::Publish;
+            Ok(())
+        } else {
+            self.phase = Phase::Halted;
+            Err(TransportError::NoTransfer)
+        }
+    }
 }
 pub struct Handshake<B: Backend> {
     backend: B,
@@ -221,7 +271,7 @@ impl<B: Backend> Handshake<B> {
             }
         }
     }
-    /// Explicit opt-in to one exact list and one poll after a valid handshake.
+    /// Explicit opt-in to the pinned list policy after a valid handshake.
     /// The supplied inventory is caller-observed, not proof of OS freshness.
     pub fn prepare_publication(backend: B, publication: Publication) -> Result<Self, SetupFailure> {
         Self::prepare(backend).map(|mut owner| {
@@ -358,8 +408,12 @@ impl<B: Backend> Transport for Handshake<B> {
                     && n == MAX_FRAME
                     && bytes[..4] == 0xA2000000u32.to_le_bytes()
                 {
-                    if self.publication.is_some() {
-                        Phase::Publish
+                    if let Some(publication) = &self.publication {
+                        if publication.periodic {
+                            Phase::AwaitInventory
+                        } else {
+                            Phase::Publish
+                        }
                     } else {
                         Phase::Complete
                     }
@@ -367,7 +421,13 @@ impl<B: Backend> Transport for Handshake<B> {
                     && n <= MAX_FRAME
                     && crate::session::decode_poll_reply(&bytes[..n]).is_ok()
                 {
-                    Phase::Complete
+                    let publication = self.publication.as_mut().expect("poll requires policy");
+                    publication.remaining -= 1;
+                    if publication.periodic && publication.remaining > 0 {
+                        Phase::AwaitInventory
+                    } else {
+                        Phase::Complete
+                    }
                 } else {
                     Phase::Halted
                 };

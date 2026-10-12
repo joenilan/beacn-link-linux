@@ -27,6 +27,39 @@ def objects():
 
 
 class PublicationRunnerTests(unittest.TestCase):
+    def test_periodic_ipc_encoding_is_bounded_and_preserves_generation(self):
+        inventory = runner.owned_inventory(objects(), 123, "owned-source", 7)
+        message = runner.inventory_message(inventory)
+        header, text = message.split(b"\n", 1)
+        self.assertEqual(header, b"7\t" + str(len(text)).encode())
+        inventory["applications"][0]["streams"] *= 1000
+        with self.assertRaises(RuntimeError): runner.inventory_message(inventory)
+
+    @unittest.skipUnless(sys.platform == "linux", "Linux pipe supervisor")
+    def test_periodic_supervisor_services_fresh_requests_and_stops_bad_sequence(self):
+        for bad in (False, True):
+            requests = []
+            def fresh(n):
+                requests.append(n)
+                return runner.owned_inventory(objects(), 123, "owned-source", n + 1)
+            code = "import sys;print('INVENTORY 0',flush=True);h=sys.stdin.buffer.readline();n=int(h.split(b'\\t')[1]);sys.stdin.buffer.read(n);print('INVENTORY 2' if " + repr(bad) + " else 'done',flush=True)"
+            with patch.object(runner.base, "snapshot", return_value={}), patch.object(runner, "WIRE_NAME", "test"):
+                result = runner.execute_periodic([sys.executable, "-c", code], fresh, 1, timeout=2)
+            self.assertTrue(result["child_exited"])
+            self.assertEqual(requests, [0])
+            self.assertEqual("supervisor_error" in result, bad)
+
+    @unittest.skipUnless(sys.platform == "linux", "Linux pipe supervisor")
+    def test_periodic_supervisor_kills_only_its_child_on_timeout_or_inventory_failure(self):
+        for failure in (False, True):
+            def fresh(n): raise RuntimeError("owned source disappeared")
+            code = "import time;print('INVENTORY 0',flush=True);time.sleep(10)" if failure else "import time;time.sleep(10)"
+            with patch.object(runner.base, "snapshot", return_value={}):
+                result = runner.execute_periodic([sys.executable, "-c", code], fresh, 1, timeout=0.2)
+            self.assertTrue(result["child_exited"])
+            self.assertIn("supervisor_error", result)
+            self.assertEqual(result["timed_out"], not failure)
+
     def test_only_exact_owned_process_and_node_receive_the_explicit_wire_binding(self):
         data = runner.owned_inventory(objects(), 123, "owned-source", 1)
         self.assertEqual(data, {"snapshot_id": 1, "applications": [{"application_id": "pw-client:44:pid:123",

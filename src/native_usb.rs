@@ -288,7 +288,8 @@ pub fn open_handshake(
     }
     Handshake::prepare(backend).map_err(OpenError::Setup)
 }
-/// Explicit one-list/one-poll mode. The default opener remains handshake-only.
+/// Explicit publication policy: one-shot normally, capped cycles only through
+/// Publication::bounded. The default opener remains handshake-only.
 /// `publication` must be built from a caller-observed inventory before device I/O.
 pub fn open_publication(
     sysfs: &Path,

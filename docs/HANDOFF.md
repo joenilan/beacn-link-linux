@@ -227,11 +227,32 @@ device presence and registry values. All evidence is retained, with no rewrites.
 Read [native-usb-publication.md](native-usb-publication.md) for exact outcomes,
 comparison scopes and hashes. Studio is back on Windows.
 
-**Next work:** add an explicitly bounded periodic publication/poll mode with fresh
-inventory/lifecycle checks, retaining one-shot defaults and failure/no-retry rules.
-Use it to keep the observed name available and receive an owner-selected assignment
-under the standing authorization. The stock 500 ms publication timer supports
-this experiment; brief appearance does not establish expiry timing or root cause.
+**Periodic implementation completed, hardware pending:** `native_usb_periodic`
+opts into 1..40 publication/poll cycles using the existing selected-device owner.
+Fresh, strictly increasing inventories are requested after initialization, before
+each publication, and after each reply. The runner checks its retained private
+core/playback processes, exact application/stream identities, live state and no
+private links. Frozen/rebound/disappeared sources or any failed exchange halt;
+there is no retry or reconnect. Defaults remain handshake-only/one-shot.
+Known bound assignments 1..4 stop further zero publication and are planned against
+the fresh inventory without applying routes. The child is externally supervised
+for 50 seconds with bounded IPC and retained-process cleanup.
+
+Windows and Linux focused checks passed: 28 Rust integration cases, Linux's two
+native USB unit checks, and 16 Python runner cases on Linux (two Linux-only cases
+skip on Windows). The final source, differing only by two documentation comments,
+was rebuilt in Linux; its three-cycle private-source probe served seven fresh
+inventories and restored the desktop graph/state files exactly. No USB I/O occurred.
+Final source is `beacn-link-usb-publication-periodic-final-20261012T153055Z/source`
+under the existing guest home. See [native-usb-publication.md](native-usb-publication.md)
+for hashes and precise validation scope. Guest free disk is about 21.3 GB.
+
+**Next work:** fresh snapshots and a 40-cycle hardware test under the standing
+authorization, with Windows Link closed. Before connection, point to the exact
+streaming-PC ASSIGNMENTS / Applications box containing `obs64 System`. Ask the
+owner to drag `BEACN Linux VM Test` into the first `Link In` channel while visible;
+observe whether assignment 1 reaches Linux. The stock 500 ms publication timer
+supports this experiment; brief appearance does not establish expiry or root cause.
 Routing/audio acceptance remains unproven. Preserve all earlier evidence.
 A receiving agent should use this authorization context alongside the current
 owner instructions and applicable execution environment.
@@ -307,10 +328,12 @@ No GitHub credentials were installed in the guest. Sources were archived, transf
 using the existing verified SSH connection, hash-checked, and built in isolated dirs.
 The original graph checkpoint source is under the user's home in
 beacn-link-graph-20261011T204629Z/source.
-The latest tested USB source is in the existing guest user's home under
-beacn-link-usb-publication-diagnostic-20261012T144842Z/source. Its publication example
-is built and hardware list/no-payload poll plus brief owner-observed visibility
-have passed. The source/cleanup probe used the preserved original publication
+The latest built USB source is in the existing guest user's home under
+beacn-link-usb-publication-periodic-final-20261012T153055Z/source. Its periodic
+source/cleanup probe passed without USB. The prior diagnostic source under
+beacn-link-usb-publication-diagnostic-20261012T144842Z/source passed hardware
+list/no-payload poll plus brief owner-observed visibility. The earlier source/cleanup
+probe used the preserved original publication
 source under beacn-link-usb-publication-final-20261012T143405Z/source.
 The corrected handshake source under
 beacn-link-usb-claim-20261012T134712Z/source passed hardware initialization.

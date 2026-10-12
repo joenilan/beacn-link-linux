@@ -255,3 +255,110 @@ fn no_payload_is_distinct_from_an_empty_list_and_never_implies_a_route() {
     assert_eq!(s.poll().unwrap(), PollReply::NoPayload { ignored_tail: 0 });
     assert!(s.into_transport().close().baseline_restored);
 }
+
+fn periodic(journal: Journal, cycles: usize) -> (Rc<RefCell<Journal>>, Session<Handshake<Fake>>) {
+    let log = Rc::new(RefCell::new(journal));
+    let owner = Handshake::prepare_publication(
+        Fake {
+            log: log.clone(),
+            alt: 0,
+        },
+        Publication::bounded(&inventory(), cycles).unwrap(),
+    )
+    .unwrap();
+    (log, Session::new(owner, T).unwrap())
+}
+#[test]
+fn periodic_cycles_require_new_inventory_and_exhaust_exact_budget() {
+    let (log, mut s) = periodic(
+        Journal {
+            reply: 0xAC000000u32.to_le_bytes().to_vec(),
+            ..Default::default()
+        },
+        2,
+    );
+    s.initialize().unwrap();
+    for id in [2, 3] {
+        let mut next = inventory();
+        next.snapshot_id = id;
+        s.refresh_publication(&next).unwrap();
+        s.publish(&records()).unwrap();
+        assert!(matches!(s.poll().unwrap(), PollReply::NoPayload { .. }));
+    }
+    let mut next = inventory();
+    next.snapshot_id = 4;
+    assert!(s.refresh_publication(&next).is_err());
+    assert_eq!(log.borrow().writes.len(), 6);
+    assert_eq!(log.borrow().reads, 3);
+    assert!(s.into_transport().close().baseline_restored);
+    assert_eq!(log.borrow().releases, 1);
+    for budget in [0, 41, usize::MAX] {
+        assert!(Publication::bounded(&inventory(), budget).is_err());
+    }
+}
+#[test]
+fn periodic_cannot_publish_a_frozen_or_rebound_source_or_skip_refresh() {
+    for kind in 0..6 {
+        let (log, mut s) = periodic(Journal::default(), 2);
+        s.initialize().unwrap();
+        let mut next = inventory();
+        next.snapshot_id = 2;
+        match kind {
+            0 => next.snapshot_id = 1,
+            1 => next.applications[0].id.0.push('x'),
+            2 => next.applications[0].streams[0].id.0.push('x'),
+            3 => {
+                next.applications[0].streams[0].state =
+                    beacn_link_protocol::planner::StreamState::Disappeared
+            }
+            4 => next.applications[0].advertised_name = b"replacement".to_vec(),
+            _ => {}
+        }
+        if kind == 5 {
+            assert!(s.publish(&records()).is_err());
+        } else {
+            assert!(s.refresh_publication(&next).is_err());
+        }
+        assert!(s.publish(&records()).is_err());
+        assert_eq!(log.borrow().writes.len(), 2);
+        assert_eq!(log.borrow().reads, 1);
+        s.into_transport().close();
+    }
+}
+#[test]
+fn periodic_refuses_refresh_mid_exchange_and_never_recovers_failed_cycle() {
+    for kind in 0..4 {
+        let (log, mut s) = periodic(
+            Journal {
+                reply: if kind == 3 {
+                    0xACFFFFFFu32.to_le_bytes().to_vec()
+                } else {
+                    0xAC000000u32.to_le_bytes().to_vec()
+                },
+                short_write: (kind == 1).then_some(3),
+                fail_write: (kind == 2).then_some(4),
+                ..Default::default()
+            },
+            2,
+        );
+        s.initialize().unwrap();
+        let mut next = inventory();
+        next.snapshot_id = 2;
+        s.refresh_publication(&next).unwrap();
+        if kind == 0 {
+            next.snapshot_id = 3;
+            assert!(s.refresh_publication(&next).is_err());
+        } else if kind == 1 {
+            assert!(s.publish(&records()).is_err());
+        } else {
+            s.publish(&records()).unwrap();
+            assert!(s.poll().is_err());
+        }
+        let before = log.borrow().writes.len();
+        next.snapshot_id = 4;
+        assert!(s.refresh_publication(&next).is_err());
+        assert!(s.publish(&records()).is_err());
+        assert_eq!(log.borrow().writes.len(), before);
+        s.into_transport().close();
+    }
+}

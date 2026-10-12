@@ -27,6 +27,15 @@ pub trait Transport {
     ) -> Result<usize, TransportError>;
 }
 
+/// An opt-in transport policy for caller-observed inventory between successful
+/// exchanges. This does not supply OS freshness or authorize route application.
+pub trait PublicationCycles: Transport {
+    fn refresh_publication(
+        &mut self,
+        inventory: &crate::planner::Inventory,
+    ) -> Result<(), TransportError>;
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum State {
     New,
@@ -248,6 +257,23 @@ impl<T: Transport> Session<T> {
             let actual = self.read(Step::PollReply, &mut buffer)?;
             decode_poll_reply(&buffer[..actual])
         })();
+        self.finish(result)
+    }
+}
+
+impl<T: PublicationCycles> Session<T> {
+    pub fn refresh_publication(
+        &mut self,
+        inventory: &crate::planner::Inventory,
+    ) -> Result<(), Error> {
+        self.require(State::Ready)?;
+        let result = self
+            .transport
+            .refresh_publication(inventory)
+            .map_err(|error| Error::Transport {
+                step: Step::Publish,
+                error,
+            });
         self.finish(result)
     }
 }
