@@ -2,8 +2,10 @@
 
 Updated 2026-10-12. This batch adds an explicitly enabled one-list/one-poll mode
 to the existing Linux USB owner. Builds, focused tests and a real private-core
-source probe pass. Hardware publication and visibility in the streaming PC's
-BEACN App have not yet run. The earlier real Studio handshake is documented in
+source probe pass. A native app-list write and valid no-payload poll now pass;
+the owner saw `BEACN Linux VM Test` briefly in the streaming PC's BEACN App.
+No routing assignment or audio interoperability has been verified.
+The earlier real Studio handshake is documented in
 [native-usb-handshake.md](native-usb-handshake.md).
 
 ## Execution model and source owners
@@ -140,3 +142,121 @@ python3 tests_native/usb_publication.py run --authorize-publication \
 python3 tests_native/usb_publication.py compare --evidence-dir /PRIVATE/new-hardware-test \
   --executor target/debug/examples/native_usb_publication
 ```
+
+## First hardware attempt: transferred list, rejected poll
+
+Windows Link was absent from the host process check. Fresh full pre-attachment
+backups pinned the executable/runners/cache. At baseline age 81.181 seconds,
+the native child completed A0/A1/A2 and the entire canonical app-list write.
+The poll returned ACFFFFFF and the existing decoder rejected it. The child
+exited 2, without timeout/retry, and successfully released its claim/verified
+the device baseline. Both owned processes stopped, the private graph restored,
+and attached-versus-after-cleanup desktop/state snapshots matched exactly.
+The success-only ten-second hold was not entered because of the poll error.
+
+Visibility was unobserved: the owner did not know where to look. Do not label
+this as a confirmed absent app. The owner returned Studio; all three Windows
+functions were OK, defaults/formats/volumes/mutes matched, guest state-file
+contents/modes matched, and returned graph semantics matched after one recreated
+node/four ports. Windows gained one session (31 to 32, shared fields unchanged),
+16 MMDevices binary values changed, and one user-policy string changed. User
+audio registry matched. Complete differences/backups remain private; no rewrites.
+
+Initial host baseline SHA256:
+`e527aeb149130e994cc4ad4e77d245fe85127c842ace2491dd01e46f617c43b1`.
+Initial guest baseline SHA256:
+`cb61c96962827077bd007434da6b172e7512e2bba95fe213e49bdafe7da801a8`.
+Rejected-poll native journal SHA256:
+`2328f63600de604679314afd60de039507aae2f7d9decad407cc6e034a89e251`.
+Initial guest return comparison SHA256:
+`78936294bb2b55480e8612123f31c4fd23f449449dcb7f2d48751845138f7af1`.
+Initial returned graph semantic comparison SHA256:
+`8bd6fd847118ccd26c160515ddca62c9912252f3f5b5bd63185352f6c5965742`.
+Initial Windows return SHA256:
+`61396aa96d171a9e66023a98280b9e4fbb3b5c5eec600aa5ba3ffa14d1759d56`.
+
+## Controlled timed attempt: native success and brief owner-observed visibility
+
+The owner's streaming-PC screenshot identifies BEACN App v1.4.0. Its selected
+ASSIGNMENTS tab has an Applications column showing `obs64 System`, immediately
+right of Outgoing Studio Link Assignments. This is the precise box identified
+for the observation; top Link In cards are audio-channel controls. The screenshot
+was taken after the first return and is preserved privately, not evidence of
+presence/absence during the earlier test. BEACN's
+[Mix Create guide](https://support.beacn.com/en-US/getting-started-with-beacn-mix-create-282018)
+also documents the Applications pool below the knobs in ASSIGNMENTS.
+
+The next native example adds a 500 ms interval between the list write and the
+one poll, based on the inspected original application's 500 ms publication timer.
+This is a timing hypothesis, not proof of a firmware requirement or sole cause
+of the changed result. It also exposes only the boolean/nonzero value of response
+byte 28 (body index 24), which the inspected Windows helper returns; its meaning
+remains unknown. Other A2 metadata remains redacted. An explicit rejected header
+now permits a ten-second observation hold with no further USB requests, followed
+by failure/cleanup. Unknown I/O and other errors still clean up immediately.
+Success retains the original ten-second hold. No retry or packet-format change.
+
+The diagnostic executable built on Linux and its offline inventory check passed.
+Core/library/runner code stayed identical to the focused-tested implementation;
+only the example changed, so unrelated matrices were not repeated. The owner had
+already reattached Studio before baseline preparation. Default prepare refused
+that order without device I/O. A fresh **connected-state protocol baseline** was
+then explicitly saved before commands, retaining the previous full pre-attachment
+and returned references. This scoped baseline is not a pre-handoff snapshot and
+must not be presented as one. The host's connected snapshot had ten active
+endpoints; the guest had one BEACN ALSA device, 22 nodes, 76 ports and 16 existing
+links. The protocol test preserved this entire connected desktop graph exactly.
+
+At protocol-baseline age 9.782 seconds, the native child completed handshake/list
+and returned a valid 512-byte AC000000 no-payload poll (508 ignored tail bytes).
+Response byte 28 was zero; this does not mean readiness was false or that an
+assignment-zero action occurred. The owner reported `i saw it`, then `briefly`,
+for the advertised Linux name in the identified streaming-PC Applications box.
+Record this as **brief owner-observed visibility**, not independently captured
+video, stable long-lived visibility, a game/Firefox test or audio interoperability.
+No assignment records were received and no routes were applied.
+
+The child exited 0 without timeout/retry, released/verified the original device,
+preserved the owned source, restored the private graph, and stopped both owned
+processes. Attached-before versus after-owned-cleanup desktop and all four state
+files matched exactly, including the existing foreign desktop links.
+The owner returned Studio; guest target count is zero and Windows functions are
+OK. Guest state-file contents/modes match the connected protocol baseline. The
+connected-vs-returned graph/default/endpoint comparisons differ as the hardware
+disappeared/returned: guest graph is now five nodes/eight ports/no links/devices,
+and Windows has 18 active endpoints. Common ten host endpoints retain settings.
+Windows defaults and all endpoint state/format/volume/mute observations match
+the earlier full returned reference; returned guest semantics also match that
+earlier reference after identity normalization. These reference comparisons are
+separate from the fresh connected baseline. MMDevices differs from the connected
+snapshot in 40 values (eight DWORD, sixteen binary, sixteen strings); user
+audio/policy trees match. Preserve all differences, with no blind state/registry
+rewrite or exact cross-handoff baseline claim. Twenty-six private files were
+hashed; earlier evidence and settings screenshots remain preserved outside Git.
+
+Diagnostic tested code SHA256:
+`9a610b271182dadeb4449e9c5e59c7f6d577cb0ed5cba1aca3f9c8e495a9d7ca`.
+Diagnostic source archive SHA256:
+`e2905f9e74674e75fde16773bfab74503d335929a150482facda3924b241c474`.
+Diagnostic Linux build/check journal SHA256:
+`3fa97f9b0f01b7519b915e574648dcae6dbf7385355adc2db9297adf2a316d26`.
+Diagnostic native executable SHA256:
+`c92dc28c491d745867739189aecaec5b3dd5df1bcec31df3cd9c54727b8a8ccb`.
+Connected protocol baseline SHA256:
+`8ba5141c525b66991d4f722a9dedd21edaaeb418dc64bd81d79efa3278154267`.
+Successful publication/poll journal SHA256:
+`3fdf65818c1bff9c9eab914aea1688e17df73094cd80843eedd2c81535bce936`.
+Diagnostic guest return comparison SHA256:
+`afee3fe0905ae688379b991742567897f8444f017df3a27a6ad0d5d9bda0dd20`.
+Returned guest versus prior reference comparison SHA256:
+`7c436dc3cb29a5fa8de9ba3a75b8a1ed51b8a85c11620291b05e2ba4dda21159`.
+Diagnostic Windows return SHA256:
+`9fc82c6e11c55d0da8e2a0596b5e4912d32f956fb41f6eaebe05cfe70bfda332`.
+Latest measured guest free disk: 21,639,749,632 bytes; no packages installed.
+
+Next implementation: explicitly bounded periodic publication/polling with fresh
+inventory/lifecycle checks, preserving the default one-shot gates. The original
+application's repeated 500 ms publication supports investigating sustained refresh;
+the brief observation alone does not establish expiry timing or disappearance
+cause. Then keep the test name available long enough for owner selection and
+verify a real assignment record. Audio routing remains a separate unproven step.

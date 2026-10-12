@@ -203,12 +203,36 @@ runs in the Linux VM, while BEACN App remains on the Windows streaming PC. Verif
 Link remains closed before each publication attempt; do not launch it to make
 Linux interoperability appear to work.
 
-**Next work:** save fresh full-content host/guest baselines and run one controlled
-hardware publication/poll test under the standing authorization. Owner manages
-physical attachment/return and observes `BEACN Linux VM Test` in the streaming
-PC's BEACN App. Native transfer success alone does not establish visibility.
-Preserve all earlier evidence directories. Hardware publication, remote UI
-visibility and audio routing are not yet validated.
+**Completed hardware publication:** Windows Link stayed closed and the Linux
+replacement completed an app-list write. The first immediate poll returned
+ACFFFFFF; cleanup passed, with visibility unobserved because the owner did not
+know where to look. The owner supplied a BEACN App v1.4.0 screenshot; identify the
+bottom ASSIGNMENTS / Applications box containing `obs64 System`, immediately
+right of Outgoing Studio Link Assignments, before the next observation.
+A separately built diagnostic example waits 500 ms before its one poll and
+reports only the unknown boolean at A2 byte 28. The controlled next attempt
+returned a valid no-payload poll (512 bytes, 508 ignored tail) and exited 0 with
+verified device/private-process cleanup. A2 byte 28 was zero; its meaning is
+unknown. The owner saw `BEACN Linux VM Test` briefly in that remote App box.
+No assignment records or audio interoperability are established.
+
+That second attempt used a fresh connected-state protocol baseline because the
+owner had already reattached. Preserve the distinction from the earlier full
+pre-attachment/returned references. The connected guest had one BEACN ALSA device,
+22 nodes/76 ports/16 existing links; native protocol execution preserved its
+entire graph and state files exactly. After owner return, Windows audio settings
+and guest returned graph semantics match the prior returned reference; guest
+state files match the fresh baseline. Cross-handoff exact comparisons differ by
+device presence and registry values. All evidence is retained, with no rewrites.
+Read [native-usb-publication.md](native-usb-publication.md) for exact outcomes,
+comparison scopes and hashes. Studio is back on Windows.
+
+**Next work:** add an explicitly bounded periodic publication/poll mode with fresh
+inventory/lifecycle checks, retaining one-shot defaults and failure/no-retry rules.
+Use it to keep the observed name available and receive an owner-selected assignment
+under the standing authorization. The stock 500 ms publication timer supports
+this experiment; brief appearance does not establish expiry timing or root cause.
+Routing/audio acceptance remains unproven. Preserve all earlier evidence.
 A receiving agent should use this authorization context alongside the current
 owner instructions and applicable execution environment.
 The first acceptance remains one real Linux app visible/routable in Windows App
@@ -284,13 +308,16 @@ using the existing verified SSH connection, hash-checked, and built in isolated 
 The original graph checkpoint source is under the user's home in
 beacn-link-graph-20261011T204629Z/source.
 The latest tested USB source is in the existing guest user's home under
-beacn-link-usb-publication-final-20261012T143405Z/source. Its publication example is
-built and source/cleanup probe has passed. The corrected handshake source under
+beacn-link-usb-publication-diagnostic-20261012T144842Z/source. Its publication example
+is built and hardware list/no-payload poll plus brief owner-observed visibility
+have passed. The source/cleanup probe used the preserved original publication
+source under beacn-link-usb-publication-final-20261012T143405Z/source.
+The corrected handshake source under
 beacn-link-usb-claim-20261012T134712Z/source passed hardware initialization.
 The first runtime attempt used
 the preserved original source under
 beacn-link-usb-final-20261012T132115Z/source. Library-version/cache-check modes remain
-offline. Latest free disk is about 21.7 GB; continue lightweight builds only.
+offline. Latest free disk is about 21.6 GB; continue lightweight builds only.
 Locate the existing isolated Rust homes from local artifacts rather than installing
 another toolchain. Resolve current IP/user/known_hosts/key references locally;
 keep those details and raw evidence out of Git and logs.

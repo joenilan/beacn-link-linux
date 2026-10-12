@@ -15,8 +15,11 @@ The first attempt had stopped before protocol exchange; its claim-observation fi
 was built and tested before the successful separate attempt. The transport is
 separate from the ordinary CLI. An explicit one-list/one-poll mode now builds and
 passes focused checks; its real owned Linux source/cleanup probe preserved the
-desktop exactly. Hardware publication and streaming-PC BEACN App visibility
-remain unverified. Windows Link on the gaming PC stays closed during those tests.
+desktop exactly. A hardware list write and valid no-payload poll now pass, and
+the owner saw the Linux test name briefly in streaming-PC BEACN App v1.4.0.
+The earlier immediate poll was explicitly rejected; timing/retention remain
+unresolved. Assignment records, sustained visibility and audio routing remain
+unverified. Windows Link on the gaming PC stays closed during those tests.
 The native executor verified A-to-B routing, server rejection, interrupted
 acknowledgments and explicit rollback continuation, with unchanged desktop settings
 and persistent-state hashes after owned cleanup. The suite has 76 Rust integration
@@ -26,8 +29,9 @@ platforms, native Linux builds/unit tests and the actual isolated source probe.
 The probe subsequently validated one owner-authorized physical Studio descriptor
 cache in the VM; the device was returned to Windows with logical settings matching
 and persistent-state/identity differences recorded. Hardware initialization is now
-verified; app-list publication, assignment exchange and audio interoperability
-remain untested. The preceding native batch validated
+verified; app-list transfer and brief owner-observed remote visibility now pass.
+Routing-assignment reception and audio interoperability remain unverified.
+The preceding native batch validated
 12 focused recovery tests and actual private-core faults. Linux builds the C adapter against PipeWire
 1.6.2. Normal desktop CLI apply remains disabled.
 An earlier read-only graph preparation preserved two

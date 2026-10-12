@@ -51,13 +51,31 @@ fn main() -> std::process::ExitCode {
         let mut session =
             Session::new(transport, Duration::from_millis(500)).expect("fixed deadline");
         let result = (|| -> Result<(), String> {
-            session.initialize().map_err(|e| e.to_string())?;
-            println!("A0/A1/A2 completed; metadata redacted");
+            let reply = session.initialize().map_err(|e| e.to_string())?;
+            // The inspected Windows helper returns this byte as a boolean.
+            // Its meaning is unknown; do not label it readiness or identity.
+            println!(
+                "A0/A1/A2 completed; response byte 28 nonzero={}; other metadata redacted",
+                reply.body()[24] != 0
+            );
             session.publish(&records).map_err(|e| e.to_string())?;
             println!(
                 "one bound application list transferred completely; remote visibility unverified"
             );
-            match session.poll().map_err(|e| e.to_string())? {
+            // Controlled timing hypothesis based on the original 500 ms list
+            // timer. Not a retry or proof of required firmware timing.
+            std::thread::sleep(Duration::from_millis(500));
+            let polled = session.poll();
+            if matches!(
+                &polled,
+                Err(beacn_link_protocol::session::Error::Reply(
+                    beacn_link_protocol::Error::RejectedHeader
+                ))
+            ) {
+                println!("poll explicitly rejected; retaining source/claim for 10 seconds for observation; no further USB requests before cleanup");
+                std::thread::sleep(Duration::from_secs(10));
+            }
+            match polled.map_err(|e| e.to_string())? {
                 PollReply::NoPayload { ignored_tail } => println!(
                     "poll: no payload; ignored_tail={ignored_tail}; zero semantics remain opaque"
                 ),
