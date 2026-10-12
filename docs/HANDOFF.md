@@ -291,8 +291,18 @@ settings and guest state files match baseline, with handoff graph/registry
 differences retained. See publication docs for hashes and comparison limits.
 This is one successful startup/cycle, not sustained visibility or a proven fix.
 
-**Next work:** inspect the original reader's rejected-marker behavior before
-changing that policy. The owner now requests direct USB handoff automation and
+**Rejected-marker continuation implemented:** focused tracing confirms ACFFFFFF
+returns from the stock poll callback without assignments/counter update or worker/
+timer stop. An explicit `PollPolicy::ReportRejectedMarker` now reports the exact
+marker separately and permits the next scheduled bounded cycle after fresh
+inventory. Strict defaults and transport/partial/malformed failure halts remain.
+It does not infer no-payload, peer health or a decoded firmware meaning. Default
+and native examples built; Linux passed 38 focused Rust cases, two native unit
+checks and 23 Python runner cases. Hardware validation is pending. Latest source:
+`beacn-link-usb-publication-marker-20261012T162455Z/source` in the guest home.
+Free guest disk is about 20.5 GB. Read publication/session docs for hashes/anchors.
+
+The owner now requests direct USB handoff automation and
 explicitly forbids computer-use/mouse automation. Native computer-use inspection
 failed before any UI input and was stopped. Direct live VMware USB control remains
 unverified. Fresh `prepare-connected` / `compare-connected` are now implemented
@@ -313,6 +323,16 @@ pins and guest target count zero. It has not run a protocol attempt. Record a fu
 pre-handoff baseline at session start separately; a connected baseline is not a
 pre-attachment backup. Free guest disk is about 20.7 GB. Read publication docs for
 exact hashes and scope. No UI automation is permitted for future continuation.
+
+**Next work:** a fresh-snapshot 40-cycle observed-marker hardware test. The ignored
+`local/marker_connected_attempt.py` pins this build and composes connected prepare,
+one run and connected comparison through direct SSH. Full host/guest pre-handoff
+backups are separately saved by `local/publication_marker_prepare.py`. Its read-only
+check confirmed target count zero and source pins. The owner should attach once
+and leave Studio in the VM for this testing session; compare after each owned
+claim release, and perform the Windows return comparison at session end. Keep
+Windows Link closed and identify the same exact streaming-PC Applications box.
+Sustained visibility, assignment receipt and audio remain unproven.
 A receiving agent should use this authorization context alongside the current
 owner instructions and applicable execution environment.
 The first acceptance remains one real Linux app visible/routable in Windows App

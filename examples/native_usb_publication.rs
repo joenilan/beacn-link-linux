@@ -76,6 +76,9 @@ fn main() -> std::process::ExitCode {
                 std::thread::sleep(Duration::from_secs(10));
             }
             match polled.map_err(|e| e.to_string())? {
+                PollReply::RejectedMarker { .. } => {
+                    return Err("strict one-shot policy cannot accept a rejected marker".into())
+                }
                 PollReply::NoPayload { ignored_tail } => println!(
                     "poll: no payload; ignored_tail={ignored_tail}; zero semantics remain opaque"
                 ),

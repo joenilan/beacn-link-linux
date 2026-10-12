@@ -95,6 +95,9 @@ impl fmt::Debug for HandshakeReply {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PollReply {
+    /// Exact ACFFFFFF marker, reported only by an explicit observation policy.
+    /// No assignments or peer-state/heartbeat semantics are inferred.
+    RejectedMarker { ignored_tail: usize },
     /// Observed reader accepts AC000000 without calling its record parser.
     /// This is not assignment zero, unroute, or an authoritative empty inventory.
     NoPayload { ignored_tail: usize },
@@ -104,11 +107,24 @@ pub enum PollReply {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PollPolicy {
+    #[default]
+    Strict,
+    /// The inspected Windows callback returns without parsing/updating its
+    /// counter on this marker, while its scheduler keeps running. This policy
+    /// reports that completed observation; it never retries failed native I/O.
+    ReportRejectedMarker,
+}
+
 /// Parse the declared payload only, as the inspected Windows reader does. Require
 /// its entire length to be present (a safety check missing in that reader).
 /// Extra transfer bytes are counted, not treated as another message or record.
 /// The generic exact-sized frame codec deliberately remains unchanged.
 pub fn decode_poll_reply(bytes: &[u8]) -> Result<PollReply, Error> {
+    decode_poll_reply_with_policy(bytes, PollPolicy::Strict)
+}
+pub fn decode_poll_reply_with_policy(bytes: &[u8], policy: PollPolicy) -> Result<PollReply, Error> {
     if bytes.len() > MAX_FRAME {
         return Err(Error::Reply(crate::Error::TrailingData {
             expected: MAX_FRAME,
@@ -122,6 +138,11 @@ pub fn decode_poll_reply(bytes: &[u8]) -> Result<PollReply, Error> {
         }));
     }
     let word = u32::from_le_bytes(bytes[..4].try_into().expect("length checked"));
+    if word == 0xACFFFFFF && policy == PollPolicy::ReportRejectedMarker {
+        return Ok(PollReply::RejectedMarker {
+            ignored_tail: bytes.len() - 4,
+        });
+    }
     if word == 0xAC000000 {
         return Ok(PollReply::NoPayload {
             ignored_tail: bytes.len() - 4,
@@ -144,15 +165,25 @@ pub fn decode_poll_reply(bytes: &[u8]) -> Result<PollReply, Error> {
 }
 
 /// Owns one selected transport, serializing all exchanges through `&mut self`.
-/// Any transport/peer failure halts the session. No automatic retry, reconnect,
+/// Any transport/malformed-reply failure halts the session. Strict default also
+/// halts on the rejected marker; an explicit policy reports it separately.
+/// No automatic retry, reconnect,
 /// publication timer, routing, or hardware access is implemented here.
 pub struct Session<T> {
     transport: T,
     timeout: Duration,
     state: State,
+    poll_policy: PollPolicy,
 }
 impl<T: Transport> Session<T> {
     pub fn new(transport: T, timeout: Duration) -> Result<Self, Error> {
+        Self::new_with_poll_policy(transport, timeout, PollPolicy::Strict)
+    }
+    pub fn new_with_poll_policy(
+        transport: T,
+        timeout: Duration,
+        poll_policy: PollPolicy,
+    ) -> Result<Self, Error> {
         if timeout.is_zero() {
             return Err(Error::ZeroTimeout);
         }
@@ -160,6 +191,7 @@ impl<T: Transport> Session<T> {
             transport,
             timeout,
             state: State::New,
+            poll_policy,
         })
     }
     pub fn state(&self) -> State {
@@ -255,7 +287,7 @@ impl<T: Transport> Session<T> {
             self.write(Step::PollRequest, &ControlWord::Ac01.word().to_le_bytes())?;
             let mut buffer = [0; MAX_FRAME];
             let actual = self.read(Step::PollReply, &mut buffer)?;
-            decode_poll_reply(&buffer[..actual])
+            decode_poll_reply_with_policy(&buffer[..actual], self.poll_policy)
         })();
         self.finish(result)
     }

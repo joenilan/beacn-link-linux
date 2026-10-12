@@ -533,3 +533,66 @@ Shared runner SHA256:
 `bc30dce277b0c272b1b27b37c4ab05b7a788aacaa2dc9720db0b173fc52aafec`.
 Latest guest free disk: 20,746,448,896 bytes. Prior attempts and settings evidence
 remain preserved; no VM/toolchain/configuration changes or new software installs.
+
+## Bounded rejected-marker observation
+
+The stock reader's ACFFFFFF branch releases its critical section and returns
+without parsing records, updating the callback counter or stopping the worker/
+publication timer. See [protocol-session.md](protocol-session.md) for exact binary
+provenance and preferred-VA/file-offset anchors. This supports investigating
+scheduled continuation; it does not establish the marker's firmware meaning,
+peer health or authoritative empty assignments.
+
+The explicit `PollPolicy::ReportRejectedMarker` exists in both the existing
+session and bounded selected-device owner. Default decoders/controllers, one-shot
+publication and bounded-strict policies remain unchanged. An exact marker from a
+successful 4..512-byte transfer becomes a separate typed observation with only
+the ignored tail length. It is never routed or treated as NoPayload/assignment
+zero. Each observation consumes one cycle; subsequent publication still needs
+fresh, strictly increasing inventory with the same owned live application/streams.
+Policy mismatch, identity change, malformed/unsupported frames, short writes and
+uncertain native outcomes stop further submissions. No failed native I/O is
+retried, no recovery command is sent and no bulk deadline is increased.
+
+`native_usb_periodic --authorize-periodic-observed-polls <sysfs-device>
+<expected-cache> <cycles>` explicitly selects observed startup and marker policy.
+The runner requires `--cycles 40 --observed-startup --observe-rejected-polls` on
+an authorized hardware run; it refuses marker observation for source-only,
+metadata and one-shot/default invocations. The example reports rejected-marker
+observations separately, keeps known assignments tied to fresh inventory and
+stops publication on a bound Link 1..4 request without claiming routes applied.
+Its cycle spacing is at least the diagnostic 500 ms wait plus inventory/I/O work;
+this is not a measured reproduction of Windows callback cadence.
+
+Windows passed 38 focused Rust integration cases and 21 Python runner cases (two
+Linux-only cases skipped). Linux passed all 38 integration cases, two native unit
+checks and 23 Python runner cases. Default build and exact native periodic and
+one-shot examples built. New checks cover exact/short/oversize/nearby markers,
+marker then assignment, budget exhaustion, stale/rebound source, controller/gate
+policy mismatch, and partial/unknown/malformed failure after a marker without
+another submission. No redundant routing probe, capture, device or UI action
+occurred during implementation/validation.
+
+Tested code SHA256:
+`a94df6031f9bf4c1799802f3a52da05816320b7ca08a253dbfb66162433a0a75`.
+Source archive SHA256:
+`bb9722c6db69432b345f105f66ce025738e49e042abcd7f373d63f19ef95e095`.
+Linux build/focused-check journal SHA256:
+`74f43ea70bf3466b47bf8a1cae2a58a1ef3491d5e07a8ee72a7b100b8903aa75`.
+Periodic executable SHA256:
+`f3bf1439c95299eaea640b02914a1f56731d6d20af63caf596c667ff844f88e7`.
+Publication runner SHA256:
+`fca1e7044c33e3f9fa90c1749857f266b0b2ace6586b0d202900a88249e6f140`.
+Shared runner remains
+`bc30dce277b0c272b1b27b37c4ab05b7a788aacaa2dc9720db0b173fc52aafec`.
+Latest free guest disk: 20,468,834,304 bytes. All prior artifacts remain intact.
+
+Full pre-handoff host/guest backups are saved privately. The ignored
+`local/marker_connected_attempt.py` pins this source, serves fresh connected
+prepare/run/compare and host snapshots via direct SSH, and opts into marker
+observation. Its read-only check verified the pins and target count zero. Once
+the owner connects Studio, leave it in the VM across tests; owned claim cleanup
+and exact connected comparisons replace per-test physical switching. Save the
+session-end host return comparison separately. No mouse/UI automation is allowed.
+Actual connected-stage/marker hardware validation remains pending; sustained
+visibility, assignment ingestion and audio are not established by these tests.

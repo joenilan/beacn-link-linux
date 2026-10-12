@@ -27,6 +27,14 @@ def objects():
 
 
 class PublicationRunnerTests(unittest.TestCase):
+    def test_marker_policy_requires_explicit_periodic_hardware_startup(self):
+        for extra in ([], ["--cycles", "3"], ["--observed-startup"], ["--cycles", "3", "--observed-startup"]):
+            stage = "source-probe" if len(extra) == 3 else "run"
+            argv = ["test", stage, "--evidence-dir", "unused", "--executor", "unused", "--observe-rejected-polls", *extra]
+            with patch.object(sys, "argv", argv), patch.object(runner.subprocess, "Popen") as child, contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit): runner.main()
+                child.assert_not_called()
+
     def test_missing_completion_journal_blocks_both_comparison_modes(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()

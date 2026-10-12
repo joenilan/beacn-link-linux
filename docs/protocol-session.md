@@ -150,6 +150,29 @@ See [native publication](native-usb-publication.md) for checks and test scope.
 
 ## Implementation and deliberate policies
 
+### Exact rejected-marker observation policy (2026-10-12)
+
+Focused read-only tracing of the same binary confirms `cmp ecx, ACFFFFFF` at
+preferred VA 0x140130D35 / file offset 0x130135, followed by a branch at
+0x140130D3B / file offset 0x13013B to critical-section release/return at
+0x140130DE3 / file offset 0x1301E3. The marker bypasses assignment parsing at
+0x140130DD3 and the counter write at 0x140130DDC. The callback returns void and
+does not stop the independent worker/timer, close/reinitialize the device or
+resubmit the failed callback. This is observed control flow, not a decoded
+firmware meaning or proof of a healthy connection. The read must have succeeded
+with at least four bytes before that branch. Native errors are a different case.
+
+The exact codec and `decode_poll_reply` retain strict rejection by default.
+`PollPolicy::ReportRejectedMarker` is explicit and returns
+`PollReply::RejectedMarker { ignored_tail }` only for the exact marker in a
+successful bounded 4..512-byte reply. It carries no assignments, inferred empty
+inventory, assignment-zero action, counter update or heartbeat semantics.
+Oversize/short/nearby unsupported words and malformed records still fail. Session
+and bounded selected-USB gate must both opt in; a policy mismatch blocks the next
+submission. Every marker consumes one scheduled cycle and another publication
+still requires a fresh pinned inventory. There is no retry of uncertain I/O or
+peer recovery. The default handshake, one-shot and bounded-strict paths stay intact.
+
 `src/session.rs` owns one `Transport` and serializes exchanges through exclusive
 mutable access. `Transport` implementors must report actual byte counts, honor
 the caller's nonzero finite per-operation timeout and perform no hidden retry or

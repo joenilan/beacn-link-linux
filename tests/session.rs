@@ -1,8 +1,8 @@
 use beacn_link_protocol::{
     planner::*,
     session::{
-        decode_poll_reply, PollReply, Session, State, Step, Transport, TransportError, IN_PIPE,
-        OUT_PIPE,
+        decode_poll_reply, decode_poll_reply_with_policy, PollPolicy, PollReply, Session, State,
+        Step, Transport, TransportError, IN_PIPE, OUT_PIPE,
     },
     *,
 };
@@ -88,6 +88,99 @@ fn ready(extra: Vec<Exchange>) -> Session<Script> {
     let mut session = session(exchanges);
     session.initialize().unwrap();
     session
+}
+fn ready_policy(extra: Vec<Exchange>, policy: PollPolicy) -> Session<Script> {
+    let mut exchanges = startup();
+    exchanges.extend(extra);
+    let mut session = Session::new_with_poll_policy(
+        Script {
+            exchanges: exchanges.into(),
+            calls: 0,
+        },
+        TIMEOUT,
+        policy,
+    )
+    .unwrap();
+    session.initialize().unwrap();
+    session
+}
+#[test]
+fn rejected_marker_observation_is_exact_bounded_and_distinct_from_no_payload() {
+    for length in [4, 5, 512] {
+        let mut bytes = word(0xACFFFFFF);
+        bytes.resize(length, 0x5A);
+        assert!(decode_poll_reply(&bytes).is_err());
+        assert_eq!(
+            decode_poll_reply_with_policy(&bytes, PollPolicy::ReportRejectedMarker).unwrap(),
+            PollReply::RejectedMarker {
+                ignored_tail: length - 4
+            }
+        );
+    }
+    for length in [0, 1, 2, 3, 513] {
+        let mut bytes = word(0xACFFFFFF);
+        bytes.resize(length, 0);
+        assert!(decode_poll_reply_with_policy(&bytes, PollPolicy::ReportRejectedMarker).is_err());
+    }
+    for value in [0xABFFFFFF, 0xACFFFFFE, 0xAC01FFFF, 0xAC010000] {
+        assert!(
+            decode_poll_reply_with_policy(&word(value), PollPolicy::ReportRejectedMarker).is_err()
+        );
+    }
+    assert_eq!(
+        decode_poll_reply_with_policy(&word(0xAC000000), PollPolicy::ReportRejectedMarker).unwrap(),
+        PollReply::NoPayload { ignored_tail: 0 }
+    );
+}
+#[test]
+fn explicit_observation_accepts_next_call_after_marker_without_resubmitting_it() {
+    let records = vec![record(1, b"Linux test")];
+    let response = encode_frame(&Frame::Data(encode_records(&records).unwrap())).unwrap();
+    let mut s = ready_policy(
+        vec![
+            write(word(0xAC010000)),
+            read(word(0xACFFFFFF)),
+            write(word(0xAC010000)),
+            read(response),
+        ],
+        PollPolicy::ReportRejectedMarker,
+    );
+    assert!(matches!(
+        s.poll().unwrap(),
+        PollReply::RejectedMarker { .. }
+    ));
+    assert_eq!(s.state(), State::Ready);
+    assert!(
+        matches!(s.poll().unwrap(), PollReply::Records { records: received, .. } if received == records)
+    );
+    let script = s.into_transport();
+    assert_eq!(script.calls, 7);
+    assert!(script.exchanges.is_empty());
+}
+#[test]
+fn marker_policy_never_recovers_transport_partial_or_malformed_failures() {
+    for kind in 0..3 {
+        let mut script = vec![write(word(0xAC010000)), read(word(0xACFFFFFF))];
+        if kind == 0 {
+            script.push(Exchange::Write(word(0xAC010000), Ok(3)));
+        } else {
+            script.push(write(word(0xAC010000)));
+            script.push(if kind == 1 {
+                Exchange::Read(vec![], Err(TransportError::Unknown))
+            } else {
+                read(vec![5, 0, 0, 0xAC, 1])
+            });
+        }
+        let mut s = ready_policy(script, PollPolicy::ReportRejectedMarker);
+        assert!(matches!(
+            s.poll().unwrap(),
+            PollReply::RejectedMarker { .. }
+        ));
+        assert!(s.poll().is_err());
+        assert_eq!(s.state(), State::Halted);
+        assert!(s.poll().is_err());
+        assert_eq!(s.into_transport().calls, if kind == 0 { 6 } else { 7 });
+    }
 }
 fn assert_halted(mut session: Session<Script>, calls: usize) {
     assert_eq!(session.state(), State::Halted);

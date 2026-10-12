@@ -24,6 +24,7 @@ pub struct Publication {
     tracker: crate::lifecycle::InventoryTracker,
     remaining: usize,
     periodic: bool,
+    poll_policy: crate::session::PollPolicy,
 }
 impl Publication {
     pub fn from_inventory(inventory: &crate::planner::Inventory) -> Result<Self, Error> {
@@ -54,17 +55,26 @@ impl Publication {
             tracker,
             remaining: 1,
             periodic: false,
+            poll_policy: crate::session::PollPolicy::Strict,
         })
     }
     /// Explicit test budget; all cycles, including the first, require a newer
     /// inventory after initialization. A version is not proof of OS freshness.
     pub fn bounded(inventory: &crate::planner::Inventory, cycles: usize) -> Result<Self, Error> {
+        Self::bounded_with_poll_policy(inventory, cycles, crate::session::PollPolicy::Strict)
+    }
+    pub fn bounded_with_poll_policy(
+        inventory: &crate::planner::Inventory,
+        cycles: usize,
+        policy: crate::session::PollPolicy,
+    ) -> Result<Self, Error> {
         if !(1..=MAX_PUBLICATION_CYCLES).contains(&cycles) {
             return Err(Error::Publication);
         }
         let mut publication = Self::from_inventory(inventory)?;
         publication.remaining = cycles;
         publication.periodic = true;
+        publication.poll_policy = policy;
         Ok(publication)
     }
     pub fn records(&self) -> &[crate::Record] {
@@ -460,7 +470,14 @@ impl<B: Backend> Transport for Handshake<B> {
                     }
                 } else if phase == Phase::PollReply
                     && n <= MAX_FRAME
-                    && crate::session::decode_poll_reply(&bytes[..n]).is_ok()
+                    && crate::session::decode_poll_reply_with_policy(
+                        &bytes[..n],
+                        self.publication
+                            .as_ref()
+                            .expect("poll requires policy")
+                            .poll_policy,
+                    )
+                    .is_ok()
                 {
                     let publication = self.publication.as_mut().expect("poll requires policy");
                     publication.remaining -= 1;

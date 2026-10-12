@@ -139,11 +139,14 @@ def main():
     parser.add_argument("--expected-cache")
     parser.add_argument("--cycles", type=int, default=0, help="explicit periodic budget 1..40; default one-shot")
     parser.add_argument("--observed-startup", action="store_true", help="explicit pre-bulk vendor-input preparation experiment")
+    parser.add_argument("--observe-rejected-polls", action="store_true", help="explicit bounded rejected-marker observation policy; requires observed-startup")
     args = parser.parse_args()
     if args.cycles and not 1 <= args.cycles <= MAX_CYCLES:
         parser.error("periodic cycle budget outside 1..40")
     if args.observed_startup and (not args.cycles or args.stage != "run"):
         parser.error("observed-startup requires a periodic hardware run")
+    if args.observe_rejected_polls and (not args.observed_startup or not args.cycles or args.stage != "run"):
+        parser.error("rejected-marker observation requires an observed-startup periodic hardware run")
     source_only = args.stage == "source-probe"
     if args.stage not in ("run", "source-probe"):
         journal = Path(args.evidence_dir) / "handshake.json"
@@ -199,7 +202,8 @@ def main():
                                           "expected_cache_sha256": cache_hash, "usb_io_requested": not source_only,
                                           "wire_name": WIRE_NAME, "initial_assignment": 0,
                                           "periodic_cycles": args.cycles,
-                                          "observed_startup": args.observed_startup})
+                                          "observed_startup": args.observed_startup,
+                                          "observe_rejected_polls": args.observe_rejected_polls})
     # PipeWire also creates a '-manager' socket; evidence paths can exceed the
     # Linux Unix-socket limit. mkdtemp retains exclusive 0700 ownership.
     runtime = Path(tempfile.mkdtemp(prefix="beacn-pub-"))
@@ -228,6 +232,7 @@ def main():
     result["usb_io_requested"] = not source_only
     result["periodic_cycles"] = args.cycles
     result["observed_startup"] = args.observed_startup
+    result["observe_rejected_polls"] = args.observe_rejected_polls
     result["private_runtime"] = str(runtime)
 
     def start(name, command, child_env, stdin=None):
@@ -296,7 +301,7 @@ def main():
                 return current
 
             command = ([str(binary), "--check-periodic", str(args.cycles)] if source_only else
-                       [str(binary), "--authorize-periodic-startup" if args.observed_startup else "--authorize-periodic", str(selected), str(pinned), str(args.cycles)])
+                       [str(binary), "--authorize-periodic-observed-polls" if args.observe_rejected_polls else "--authorize-periodic-startup" if args.observed_startup else "--authorize-periodic", str(selected), str(pinned), str(args.cycles)])
             result.update(execute_periodic(command, fresh, args.cycles))
         else:
             command = ([str(binary), "--check-inventory", str(projected), str(inventory["snapshot_id"])] if source_only else

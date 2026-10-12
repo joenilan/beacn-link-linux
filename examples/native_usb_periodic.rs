@@ -5,7 +5,7 @@ fn main() -> std::process::ExitCode {
     use beacn_link_protocol::{
         lifecycle::InventoryTracker,
         native_usb, planner,
-        session::{PollReply, Session},
+        session::{PollPolicy, PollReply, Session},
         snapshot,
         usb_descriptors::MAX_DESCRIPTOR_BYTES,
         usb_handshake::{Publication, Startup, MAX_PUBLICATION_CYCLES},
@@ -18,12 +18,16 @@ fn main() -> std::process::ExitCode {
     let args: Vec<_> = std::env::args().skip(1).collect();
     let offline = args.len() == 2 && args[0] == "--check-periodic";
     let execute = || -> Result<(), String> {
-        let observed_startup = args
+        let observe_markers = args
             .first()
-            .is_some_and(|arg| arg == "--authorize-periodic-startup");
+            .is_some_and(|arg| arg == "--authorize-periodic-observed-polls");
+        let observed_startup = observe_markers
+            || args
+                .first()
+                .is_some_and(|arg| arg == "--authorize-periodic-startup");
         if !offline && (args.len() != 4 || (args[0] != "--authorize-periodic" && !observed_startup))
         {
-            return Err("requires --authorize-periodic or --authorize-periodic-startup <sysfs-device> <expected-cache> <cycles>; or --check-periodic <cycles>".into());
+            return Err("requires --authorize-periodic, --authorize-periodic-startup, or --authorize-periodic-observed-polls <sysfs-device> <expected-cache> <cycles>; or --check-periodic <cycles>".into());
         }
         let cycles = args
             .last()
@@ -70,7 +74,13 @@ fn main() -> std::process::ExitCode {
             snapshot::inventory_from_tsv(id, text)
         };
         let initial = fresh()?;
-        let publication = Publication::bounded(&initial, cycles).map_err(|e| e.to_string())?;
+        let poll_policy = if observe_markers {
+            PollPolicy::ReportRejectedMarker
+        } else {
+            PollPolicy::Strict
+        };
+        let publication = Publication::bounded_with_poll_policy(&initial, cycles, poll_policy)
+            .map_err(|e| e.to_string())?;
         let records = publication.records().to_vec();
         let mut tracker = InventoryTracker::default();
         tracker.advance(&initial).map_err(|e| e.to_string())?;
@@ -103,7 +113,9 @@ fn main() -> std::process::ExitCode {
         } else {
             Startup::SelectedAlternate
         };
-        println!("startup policy: {startup:?}; bulk deadlines unchanged");
+        println!(
+            "startup policy: {startup:?}; poll policy: {poll_policy:?}; bulk deadlines unchanged"
+        );
         let transport = native_usb::open_publication_with_startup(
             Path::new(&args[1]),
             &expected,
@@ -113,7 +125,8 @@ fn main() -> std::process::ExitCode {
         )
         .map_err(|e| e.to_string())?;
         let mut session =
-            Session::new(transport, Duration::from_millis(500)).expect("fixed deadline");
+            Session::new_with_poll_policy(transport, Duration::from_millis(500), poll_policy)
+                .expect("fixed deadline");
         let result = (|| -> Result<(), String> {
             session.initialize().map_err(|e| e.to_string())?;
             println!("initialized; bounded publication active; names and metadata redacted");
@@ -130,6 +143,7 @@ fn main() -> std::process::ExitCode {
                 let current = fresh()?;
                 check_fresh(&current, &mut tracker)?;
                 match reply {
+                    PollReply::RejectedMarker { ignored_tail } => println!("cycle={cycle} rejected_marker ignored_tail={ignored_tail}; no assignments or counter update inferred"),
                     PollReply::NoPayload { ignored_tail } => {
                         println!("cycle={cycle} no_payload ignored_tail={ignored_tail}")
                     }

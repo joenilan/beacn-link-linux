@@ -1,6 +1,6 @@
 use beacn_link_protocol::{
     encode_frame, encode_records,
-    session::{PollReply, Session, Transport, TransportError},
+    session::{PollPolicy, PollReply, Session, Transport, TransportError},
     snapshot,
     usb_handshake::{Backend, Handshake, Observation, Publication},
     Assignment, Frame, Record,
@@ -257,16 +257,184 @@ fn no_payload_is_distinct_from_an_empty_list_and_never_implies_a_route() {
 }
 
 fn periodic(journal: Journal, cycles: usize) -> (Rc<RefCell<Journal>>, Session<Handshake<Fake>>) {
+    periodic_policy(journal, cycles, PollPolicy::Strict, PollPolicy::Strict)
+}
+fn periodic_policy(
+    journal: Journal,
+    cycles: usize,
+    gate_policy: PollPolicy,
+    session_policy: PollPolicy,
+) -> (Rc<RefCell<Journal>>, Session<Handshake<Fake>>) {
     let log = Rc::new(RefCell::new(journal));
     let owner = Handshake::prepare_publication(
         Fake {
             log: log.clone(),
             alt: 0,
         },
-        Publication::bounded(&inventory(), cycles).unwrap(),
+        Publication::bounded_with_poll_policy(&inventory(), cycles, gate_policy).unwrap(),
     )
     .unwrap();
-    (log, Session::new(owner, T).unwrap())
+    (
+        log,
+        Session::new_with_poll_policy(owner, T, session_policy).unwrap(),
+    )
+}
+#[test]
+fn marker_observation_cycles_require_fresh_source_and_exhaust_the_budget() {
+    let (log, mut s) = periodic_policy(
+        Journal {
+            reply: 0xACFFFFFFu32.to_le_bytes().to_vec(),
+            ..Default::default()
+        },
+        2,
+        PollPolicy::ReportRejectedMarker,
+        PollPolicy::ReportRejectedMarker,
+    );
+    s.initialize().unwrap();
+    for id in [2, 3] {
+        let mut next = inventory();
+        next.snapshot_id = id;
+        s.refresh_publication(&next).unwrap();
+        s.publish(&records()).unwrap();
+        assert!(matches!(
+            s.poll().unwrap(),
+            PollReply::RejectedMarker { .. }
+        ));
+    }
+    let mut next = inventory();
+    next.snapshot_id = 4;
+    assert!(s.refresh_publication(&next).is_err());
+    assert_eq!(log.borrow().writes.len(), 6);
+    assert_eq!(log.borrow().reads, 3);
+    assert!(s.into_transport().close().baseline_restored);
+}
+#[test]
+fn marker_then_bound_assignment_uses_current_inventory_without_applying_routes() {
+    let (log, mut s) = periodic_policy(
+        Journal {
+            reply: 0xACFFFFFFu32.to_le_bytes().to_vec(),
+            ..Default::default()
+        },
+        2,
+        PollPolicy::ReportRejectedMarker,
+        PollPolicy::ReportRejectedMarker,
+    );
+    s.initialize().unwrap();
+    let mut next = inventory();
+    next.snapshot_id = 2;
+    s.refresh_publication(&next).unwrap();
+    s.publish(&records()).unwrap();
+    assert!(matches!(
+        s.poll().unwrap(),
+        PollReply::RejectedMarker { .. }
+    ));
+    log.borrow_mut().reply = encode_frame(&Frame::Data(
+        encode_records(&[Record {
+            name: b"Linux test".to_vec(),
+            assignment: Assignment::from_byte(1),
+        }])
+        .unwrap(),
+    ))
+    .unwrap();
+    next.snapshot_id = 3;
+    s.refresh_publication(&next).unwrap();
+    s.publish(&records()).unwrap();
+    let PollReply::Records {
+        records: replies, ..
+    } = s.poll().unwrap()
+    else {
+        panic!("expected records")
+    };
+    let plan = beacn_link_protocol::planner::plan(&next, &replies).unwrap();
+    assert_eq!(plan.snapshot_id, 3);
+    assert_eq!(plan.proposed_routes().count(), 1);
+    assert!(s.into_transport().close().baseline_restored);
+    assert_eq!(log.borrow().writes.len(), 6); // handshake and two pub/poll pairs only
+}
+#[test]
+fn marker_policy_mismatch_and_source_change_cannot_submit_another_cycle() {
+    for kind in 0..4 {
+        let gate = if kind == 0 {
+            PollPolicy::Strict
+        } else {
+            PollPolicy::ReportRejectedMarker
+        };
+        let controller = if kind == 1 {
+            PollPolicy::Strict
+        } else {
+            PollPolicy::ReportRejectedMarker
+        };
+        let (log, mut s) = periodic_policy(
+            Journal {
+                reply: 0xACFFFFFFu32.to_le_bytes().to_vec(),
+                ..Default::default()
+            },
+            2,
+            gate,
+            controller,
+        );
+        s.initialize().unwrap();
+        let mut next = inventory();
+        next.snapshot_id = 2;
+        s.refresh_publication(&next).unwrap();
+        s.publish(&records()).unwrap();
+        let outcome = s.poll();
+        if kind == 1 {
+            assert!(outcome.is_err());
+        } else {
+            assert!(matches!(outcome.unwrap(), PollReply::RejectedMarker { .. }));
+        }
+        next.snapshot_id = if kind == 2 { 2 } else { 3 };
+        if kind == 3 {
+            next.applications[0].streams[0].id.0.push('x');
+        }
+        assert!(s.refresh_publication(&next).is_err());
+        assert!(s.publish(&records()).is_err());
+        assert_eq!(log.borrow().writes.len(), 4);
+        s.into_transport().close();
+    }
+}
+#[test]
+fn uncertain_or_partial_native_submission_after_marker_still_halts_permanently() {
+    for at in [5, 6] {
+        for short in [false, true] {
+            let (log, mut s) = periodic_policy(
+                Journal {
+                    reply: 0xACFFFFFFu32.to_le_bytes().to_vec(),
+                    fail_write: (!short).then_some(at),
+                    short_write: short.then_some(at),
+                    ..Default::default()
+                },
+                3,
+                PollPolicy::ReportRejectedMarker,
+                PollPolicy::ReportRejectedMarker,
+            );
+            s.initialize().unwrap();
+            let mut next = inventory();
+            next.snapshot_id = 2;
+            s.refresh_publication(&next).unwrap();
+            s.publish(&records()).unwrap();
+            assert!(matches!(
+                s.poll().unwrap(),
+                PollReply::RejectedMarker { .. }
+            ));
+            next.snapshot_id = 3;
+            s.refresh_publication(&next).unwrap();
+            if at == 5 {
+                assert!(s.publish(&records()).is_err());
+            } else {
+                s.publish(&records()).unwrap();
+                assert!(s.poll().is_err());
+            }
+            next.snapshot_id = 4;
+            assert!(s.refresh_publication(&next).is_err());
+            assert!(s.publish(&records()).is_err());
+            assert_eq!(log.borrow().writes.len(), at);
+            assert_eq!(log.borrow().reads, 2);
+            assert!(s.into_transport().close().baseline_restored);
+            assert_eq!(log.borrow().releases, 1);
+        }
+    }
 }
 #[test]
 fn periodic_cycles_require_new_inventory_and_exhaust_exact_budget() {
