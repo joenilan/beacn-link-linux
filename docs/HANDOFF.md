@@ -162,8 +162,8 @@ exchange. Claim release and device baseline verification succeeded; attached ver
 post-child guest graph/state files match exactly. The adapter's likely mismatch
 was Linux's sysfs `usbfs` userspace-claim driver versus libusb's inactive-kernel
 report. It now accepts that pair only after its retained handle acknowledges the
-claim. The corrected native build, two unit tests and eight handshake tests pass;
-no corrected hardware attempt has run. Read [native-usb-handshake.md](native-usb-handshake.md)
+claim. The corrected native build, two unit tests and eight handshake tests passed
+before the corrected hardware attempt below. Read [native-usb-handshake.md](native-usb-handshake.md)
 for provenance and distinction between observed failure and inferred cause.
 
 **Completed first return comparison:** guest target is absent and Windows USB
@@ -174,9 +174,29 @@ the same instances with state differences, and MMDevices has 17 changed values
 (16 binary, one string); user audio/policy registry trees match. Preserve all full
 contents/differences; no blind registry rewrite or exact unchanged-baseline claim.
 
-**Next work:** fresh full-content baselines for a separate corrected test are
-saved, awaiting owner-managed connection, under the existing owner authorization.
-Do not automatically retry the original attempt or reuse its evidence directory.
+**Completed corrected hardware handshake:** the owner connected Studio under the
+standing hardware/VM authorization. With a 482-second-old fresh baseline, the
+corrected native executable completed exact four-byte A0/A1 writes and a 512-byte
+A2 reply, released interface 3 and verified the original device baseline. No
+timeout/retry occurred; the child exited 0. Attached-versus-post-child graph and
+state files match exactly. Read-only sysfs confirmed all alternates zero, audio
+drivers preserved and no vendor-interface driver. After owner return, guest target
+is absent and all Windows USB functions report OK. Windows defaults, endpoint
+state/format/volume/mute and sessions match; guest state files match exactly. Guest
+graph settings match after one recreated node/four ports; MMDevices has the same
+kind of 17 recorded value differences, with user audio/policy trees matching.
+No persistence was rewritten. See [native-usb-handshake.md](native-usb-handshake.md)
+for exact hashes and limits. App publication/polling/audio remain untested.
+
+**Next work:** implement a separately enabled, bounded app-list publication and
+assignment-poll mode over the existing session/codec and native USB owner. Retain
+the default handshake-only gate, exact device/claim guards, no automatic retry and
+explicit cleanup. Bind an explicit wire name through the existing inventory and
+lifecycle owners; keep assignment zero opaque and avoid route application during
+this first exchange. Build/test the exact tree, then use fresh full-content
+baselines for a controlled VM test under existing owner authorization. Check
+Windows App visibility with the owner; native transfer success alone does not
+establish it. Preserve both earlier evidence directories.
 A receiving agent should use this authorization context alongside the current
 owner instructions and applicable execution environment.
 The first acceptance remains one real Linux app visible/routable in Windows App
@@ -253,7 +273,8 @@ The original graph checkpoint source is under the user's home in
 beacn-link-graph-20261011T204629Z/source.
 The latest tested USB source is in the existing guest user's home under
 beacn-link-usb-claim-20261012T134712Z/source. Its corrected optional handshake example
-is built. The first runtime attempt used the preserved original source under
+is built and hardware initialization has passed. The first runtime attempt used
+the preserved original source under
 beacn-link-usb-final-20261012T132115Z/source. Library-version/cache-check modes remain
 offline. Latest free disk is about 22.7 GB; continue lightweight builds only.
 Locate the existing isolated Rust homes from local artifacts rather than installing

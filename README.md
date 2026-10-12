@@ -6,13 +6,14 @@ Status: partial static evidence plus a dependency-free offline Rust protocol
 codec, CLI, provider-neutral routing planner, graph/inventory adapters and an
 optional native PipeWire executor restricted to disposable private cores, plus a
 transport-neutral protocol session controller validated with scripted transfers.
-An optional Linux libusb transport now compiles for a guarded one-shot handshake;
-its first hardware attempt stopped during setup before protocol exchange, released
-its claim and verified device cleanup. A claim-observation fix builds and passes
-focused checks; its hardware test is pending. The first return comparison confirms
-logical settings and exact guest state-file restoration, with Windows persistence
-and guest object-identity differences recorded. The transport is separate from the
-ordinary CLI.
+An optional Linux libusb transport completed a real one-shot A0/A1/A2 handshake
+with Studio in the VM, released its interface claim and verified device cleanup.
+The owner returned Studio to Windows; defaults/formats/volumes/mutes/sessions and
+guest persistent files match the backups. Guest graph settings match after
+accounting for recreated objects; Windows device-registry differences are recorded.
+The first attempt had stopped before protocol exchange; its claim-observation fix
+was built and tested before the successful separate attempt. The transport is
+separate from the ordinary CLI.
 The native executor verified A-to-B routing, server rejection, interrupted
 acknowledgments and explicit rollback continuation, with unchanged desktop settings
 and persistent-state hashes after owned cleanup. The suite has 69 Rust integration
@@ -21,8 +22,9 @@ transport batch validates 25 focused Rust tests on Windows, 33 on Linux, the
 native USB feature build/test and 7 Python runner tests on both platforms.
 The probe subsequently validated one owner-authorized physical Studio descriptor
 cache in the VM; the device was returned to Windows with logical settings matching
-and persistent-state/identity differences recorded. Protocol transfers and audio
-interoperability remain untested. The preceding native batch validated
+and persistent-state/identity differences recorded. Hardware initialization is now
+verified; app-list publication, assignment exchange and audio interoperability
+remain untested. The preceding native batch validated
 12 focused recovery tests and actual private-core faults. Linux builds the C adapter against PipeWire
 1.6.2. Normal desktop CLI apply remains disabled.
 An earlier read-only graph preparation preserved two

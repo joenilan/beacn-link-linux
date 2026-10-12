@@ -2,8 +2,10 @@
 
 Updated 2026-10-12. The optional Linux transport now compiles against the existing
 libusb runtime and implements one guarded A0/A1/A2 exchange through the existing
-session controller. The first device attempt stopped during setup, before the
-protocol exchange, and released its claim; details and correction appear below.
+session controller. A corrected native executable completed a real Studio handshake
+in the VM with verified claim release and device baseline restoration. The owner
+returned it to Windows and settings comparisons completed; exact outcomes and
+limits appear below. The first attempt stopped before protocol exchange.
 Ordinary CLI device
 access and route application remain disabled. The earlier authorization covered
 the completed [descriptor observation](usb-descriptor-observation.md) only;
@@ -131,9 +133,9 @@ is useful before enabling broader hardware operation.
 ## Proposed first handshake in the existing VM
 
 The owner authorized this plan and the necessary hardware/VM continuation after
-reviewing the implementation. It was used for the first setup attempt described
-below. No A0/A1/A2 exchange has completed. Refresh baselines older than ten minutes
-before execution.
+reviewing the implementation. It was used for the first setup attempt and separate
+successful corrected attempt described below. Refresh baselines older than ten
+minutes before execution.
 
 1. Keep Studio on Windows while saving fresh host endpoint/default/volume/mute,
    session and registry baselines with full private contents. Save guest filtered
@@ -219,9 +221,9 @@ This does not authorize detachment or ownership of another handle's claim.
 The corrected native example builds on Linux; two unit tests (ABI/version and
 ownership combinations) and eight handshake integration tests pass. Metadata and
 saved physical-cache checks pass without opening a device. Windows formatting and
-diff checks pass. No corrected hardware attempt has run. Keep the old test journal
-and backups. Return comparison is complete; fresh backups for a separate corrected
-cycle are now saved, awaiting owner-managed connection.
+diff checks passed before the corrected hardware attempt below. The old test
+journal and backups remain preserved. After completing the first return comparison,
+fresh backups were saved for the separate corrected cycle.
 
 Original guest baseline SHA256:
 `1c056fae4ed18503d010e948c7af39d8c3f554bec79737aaeaa83958fdbea96a`.
@@ -244,3 +246,62 @@ Corrected Linux validation journal SHA256:
 Corrected native handshake executable SHA256:
 `e89ea6a274902d938a24c8a6c31c8bd50b307c0246c79ccc43932facd5064ed5`.
 Final free disk was 22,678,618,112 bytes; no packages were installed.
+
+## Corrected native hardware result
+
+The owner connected Studio for the separate corrected attempt after full private
+host/guest backups. The code/executable/runner and expected cache hashes above
+were pinned and verified. The baseline was 481.738 seconds old when execution
+started, within the ten-minute bound. One target reported cached speed 480 Mb/s
+and was accessible without permission changes. The retained-handle checks also
+required the native high-speed report, exact descriptor/configuration, device
+identity and driver/alternate state before transfer.
+
+The native example exited 0: A0 and A1 each transferred exactly four bytes,
+A2 transferred exactly 512 bytes with the expected header. The opaque 508-byte
+body was redacted, not persisted or interpreted. Explicit cleanup reported
+successful claim release and baseline restoration. The runner did not time out;
+the child exited. Attached-versus-post-child guest graph and all four tracked
+state-file contents/modes matched exactly. A subsequent read-only sysfs check
+found interface 3 at alternate zero with no driver; interfaces 0–2 remained at
+alternate zero with snd-usb-audio. No publication, polling, audio capture or
+route application occurred. This establishes one native initialization exchange
+with this Studio/VM, not peer-state rollback or end-to-end audio compatibility.
+
+The owner returned Studio to Windows. The first comparison request encountered
+the still-present guest device and refused before saving a comparison; after the
+handoff settled, guest target count was zero and all three Windows USB functions
+were OK. Windows defaults, complete endpoint state/format/volume/mute observations
+and all session observations match the baseline. User audio/policy registry trees
+match. MMDevices has 17 changed values, again 16 binary 16-byte values and one
+string; their cause/meaning remains unresolved. Full private differences and both
+baseline contents are preserved, with no registry writes.
+
+Guest persistent file contents and modes match exactly. Filtered graph counts
+remain five nodes, eight ports, zero links/devices and five metadata objects.
+One node and four ports were recreated, so exact graph equality is false. Removing
+object/client identities and remapping port parent IDs to unique node names yields
+identical properties/parameters and metadata across all kinds. No guest state was
+overwritten. Preserve the distinction between logical restoration and those
+object-identity/Windows persistence differences.
+
+Corrected guest baseline SHA256:
+`79a9021adc690f259b4bc6633890930fd7677b67366a61741b34d0f7ee8508d8`.
+Corrected Windows baseline SHA256:
+`36f3fd94f4e8cc0d64fb1ed9ef561a71cf128b7480dd50ae557835c4a3f2ad0c`.
+Successful native handshake journal SHA256:
+`1d7407c8bd14b6a3e105997bb61e81839f082f5f36303393f91af72ea35c5bda`.
+Corrected guest return comparison SHA256:
+`80ba2ae3be3b1724555bf7b37e3f26e34fe20e21271eb4b002b951da565bd220`.
+Corrected guest semantic comparison SHA256:
+`cad329a7451e91033115ba12279f2b94a24a3f986f18a331b7569f6f2ec9d0c7`.
+Corrected Windows return snapshot SHA256:
+`27058b3b202629dd05aa277c68afa276c67944b465f7699d93c3ed50ef3c72e4`.
+Fourteen private evidence files were downloaded and hashed; all earlier evidence
+and full backups remain preserved outside Git.
+
+Next: separately enabled bounded app-list publication and assignment polling using
+the existing session/codec/inventory owners, then owner-observed Windows App
+visibility. Keep the default one-shot handshake gate and route application
+disabled. Another physical test uses fresh baselines under the standing owner
+authorization, with no automatic retry of an uncertain exchange.
