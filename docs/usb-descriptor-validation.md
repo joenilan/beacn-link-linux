@@ -5,6 +5,11 @@ then native Linux on the gaming PC. This is a test-target preference, not new
 authority for USB passthrough, device I/O, captures or physical routing.
 No BEACN device was attached or accessed in this implementation batch.
 
+**Authorized continuation preflight:** the owner subsequently explicitly approved
+the descriptor-only VM procedure with owner-managed passthrough/return. That
+authorization remains valid; it does not include protocol writes, audio capture
+or routing commands. Preflight found a missing VM prerequisite, recorded below.
+
 ## What is known and what is policy
 
 Windows inventory established VID/PID 33AE:4003 and WinUSB MI_03.
@@ -81,8 +86,9 @@ Raw descriptors and reports should stay outside Git until inspected/sanitized.
 
 ## Concrete first physical test: descriptors only in the existing VM
 
-This procedure is prepared for review; it has not run and is not authorized by
-the prior disposable-PipeWire-core permission.
+The owner has now authorized this procedure separately from disposable-core
+routing. The physical descriptor observation has not run. The existing guest
+has no USB controller, so owner-managed VM setup is needed before passthrough.
 
 1. Agree on a short interruption window and the exact Studio device. Snapshot
    Windows host and guest settings, endpoint channels/formats, routes/defaults,
@@ -145,3 +151,45 @@ used one job; no packages were installed and existing evidence was preserved.
 
 No paid security scan was run. Descriptor parsing is an untrusted-input boundary;
 a narrow security review is a useful later check before enabling a hardware backend.
+
+## Authorized physical-test preflight: prerequisite missing
+
+Read-only host inspection found exactly one present physical VID/PID 33AE:4003
+candidate, status OK, with three present USB function records. Private snapshots
+saved all 58 Windows audio endpoints, 18 active endpoints' mix formats/channel
+masks, master/per-channel volumes and mutes, existing session volumes/mutes, six
+flow/role defaults, and the MMDevices/user audio/persisted-policy registry trees.
+All active endpoint reads succeeded. A second snapshot had identical defaults,
+endpoint state/settings/session records and canonical registry hashes.
+No host settings or routing commands were issued. Independent BEACN hardware
+configuration and the remote streaming PC were not inspected; those are not
+covered by the host registry snapshot.
+
+The running Ubuntu guest's fresh filtered PipeWire baseline contained 5 nodes,
+8 ports, zero links/devices and 4 metadata objects. Relevant WirePlumber state
+hashes were saved. It had zero BEACN targets, zero USB root hubs and zero USB PCI
+controllers. The VM configuration independently shows usb.present, ehci.present
+and usb_xhci.present all FALSE. A private copy of the current VM configuration was
+saved; it was not modified. No device handoff, descriptor probe or hardware test
+was attempted, and no VM shutdown/restart was issued.
+
+Host preflight snapshot SHA256:
+`c5f15f8de91893411b2b1ff296041af83d243539050f22e448c7452a0928e57e`.
+Host comparison snapshot SHA256:
+`bfa9af4fe9b58984dc8f2683cb758d89059f7c433e494b9f5476cafb8a677f2f`.
+Guest preflight snapshot SHA256:
+`f10fc5203144173ea6f90923d620b6d2c8cf1a23c30ab135991c168e386d68bd`.
+The read-only Windows collector uses documented Microsoft MMDevice,
+EndpointVolume, AudioClient and AudioSession APIs; it initializes no audio stream
+and calls no volume/mute/routing setters. Its private helper and endpoint/PnP IDs
+stay outside Git. See [default endpoint API](https://learn.microsoft.com/en-us/windows/win32/api/mmdeviceapi/nf-mmdeviceapi-immdeviceenumerator-getdefaultaudioendpoint),
+[endpoint volume API](https://learn.microsoft.com/en-us/windows/win32/api/endpointvolume/nn-endpointvolume-iaudioendpointvolume)
+and [mix format API](https://learn.microsoft.com/en-us/windows/win32/api/audioclient/nf-audioclient-iaudioclient-getmixformat).
+
+Next prerequisite: the owner adds/enables a USB controller in VMware, managing
+any required guest shutdown/restart rather than implicitly interrupting the
+running VM. Keep physical Studio on Windows during that setup. After the guest
+is ready, refresh both baselines before the already authorized owner-managed
+Studio handoff, then perform the one descriptor observation and return/compare.
+Earlier preflight snapshots are preserved; VM restart can replace graph identities,
+so those snapshots cannot serve as the immediate pre-passthrough baseline.

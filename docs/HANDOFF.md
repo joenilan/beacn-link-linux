@@ -99,8 +99,19 @@ and a reviewable descriptor-only physical test. The owner wants the existing VM
 first, then native Linux on the gaming PC; that preference does not authorize
 passthrough or device I/O.
 
-**Next work:** review/authorize the bounded VM descriptor procedure and establish
-actual descriptors before implementing a Linux transport. The first acceptance remains
+**Authorized hardware preflight:** the owner explicitly authorized the descriptor-only
+VM procedure. Fresh private host/guest baselines were saved; repeated host defaults,
+endpoint formats/volumes/mutes/session settings and persisted audio-policy registry
+hashes matched. One physical target is present on Windows. The VM has no USB
+controller/root hubs (all three VM controller flags FALSE); no handoff or hardware
+probe has run. The owner must add/enable a VMware USB controller and manage any
+needed guest restart. Keep Studio on Windows during setup, refresh baselines afterward,
+then continue the existing descriptor-only authorization. Do not ask for that
+same test permission again. No protocol writes, capture or routing is authorized.
+See the preflight section in [usb-descriptor-validation.md](usb-descriptor-validation.md).
+
+**Next work:** complete the USB-controller prerequisite and authorized descriptor-only
+observation, then establish actual descriptors before implementing a Linux transport. The first acceptance remains
 one real Linux app visible/routable in Windows App with verified audio. Hardware
 attachment/captures/routing need separately scoped approval; current isolated-VM
 authorization does not cover them. Local gaps also remain across native core
