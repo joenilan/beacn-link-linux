@@ -125,8 +125,22 @@ existing descriptor-only authorization. Do not ask for that
 same test permission again. No protocol writes, capture or routing is authorized.
 See the preflight section in [usb-descriptor-validation.md](usb-descriptor-validation.md).
 
-**Next work:** complete owner-managed passthrough and the authorized descriptor-only
-observation, then establish actual descriptors before implementing a Linux transport. The first acceptance remains
+**Completed physical descriptor observation:** one attached Studio validated at
+configuration 1, vendor interface 3, alternate 1, bulk OUT 03 / IN 83 with 512-byte
+max packets. Current alternate was 0, no driver bound on interface 3; audio interfaces
+0–2 were bound to snd-usb-audio. Cached speed reported 480 Mb/s. The owner returned
+the device; guest target count is zero and Windows functions are OK. Defaults,
+formats, volumes/mutes and logical guest settings match, but object identities and
+some Windows/guest persistent state differ. Do not claim an exact unchanged baseline.
+Read [usb-descriptor-observation.md](usb-descriptor-observation.md) for hashes,
+the complete comparison and limits. No protocol/control writes or alternate change
+were performed. Descriptor-only permission is completed; it does not authorize
+a handshake. Preserve full state-file contents in future baselines, not only hashes.
+
+**Next work:** implement and offline-validate an optional selected-device Linux
+transport for the existing session controller. Then prepare a bounded authorized
+interface-3/alternate-1 handshake test, resolving controller/baseline limits first.
+The first acceptance remains
 one real Linux app visible/routable in Windows App with verified audio. Hardware
 attachment/captures/routing need separately scoped approval; current isolated-VM
 authorization does not cover them. Local gaps also remain across native core

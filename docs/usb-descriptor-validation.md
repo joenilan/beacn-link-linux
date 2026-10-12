@@ -5,6 +5,10 @@ then native Linux on the gaming PC. This is a test-target preference, not new
 authority for USB passthrough, device I/O, captures or physical routing.
 No BEACN device was attached or accessed in this implementation batch.
 
+The subsequent authorized physical observation completed and is recorded in
+[usb-descriptor-observation.md](usb-descriptor-observation.md). The assumptions
+and preflight steps below describe the earlier preparation checkpoint.
+
 **Authorized continuation preflight:** the owner subsequently explicitly approved
 the descriptor-only VM procedure with owner-managed passthrough/return. That
 authorization remains valid; it does not include protocol writes, audio capture

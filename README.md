@@ -11,8 +11,10 @@ acknowledgments and explicit rollback continuation, with unchanged desktop setti
 and persistent-state hashes after owned cleanup. The suite has 61 Rust integration
 tests and 20 Python tests; the latest descriptor continuation validates 25 focused
 descriptor/session/codec tests on Windows/Linux and 5 new probe tests on Linux.
-The probe operates on an explicitly named cached sysfs device; hardware use remains
-unauthorized and untested. The preceding native batch validated
+The probe subsequently validated one owner-authorized physical Studio descriptor
+cache in the VM; the device was returned to Windows with logical settings matching
+and persistent-state/identity differences recorded. Protocol transfers and audio
+interoperability remain untested. The preceding native batch validated
 12 focused recovery tests and actual private-core faults. Linux builds the C adapter against PipeWire
 1.6.2. Normal desktop CLI apply remains disabled.
 An earlier read-only graph preparation preserved two
@@ -36,6 +38,7 @@ application can appear in Windows App and be routed from it.
 - [Protocol evidence](docs/protocol.md)
 - [Protocol session, focused static findings and validation](docs/protocol-session.md)
 - [USB descriptor validator and VM-first hardware plan](docs/usb-descriptor-validation.md)
+- [First physical descriptor observation and return comparison](docs/usb-descriptor-observation.md)
 - [Offline codec and usage](docs/offline-codec.md)
 - [Offline routing planner](docs/offline-planner.md)
 - [Offline routing preparation](docs/offline-executor.md)

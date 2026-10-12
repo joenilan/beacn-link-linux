@@ -21,7 +21,10 @@ formats the UTF-16 string VID_%04X&PID_%04X; it is not USB I/O.
   immediately after it, and write N+4 bytes. Normal copy capacity is 512 bytes.
 - WinUsb_WritePipe calls 0x1401306D4/0x140130C2F use pipe ID 0x03.
 - Reads 0x1401307F3/0x140130D11 use pipe ID 0x83.
-- DWORD stores imply little-endian transmission; pipe descriptor type is unverified.
+- DWORD stores imply little-endian transmission. The subsequent owner-authorized
+  [physical cached-descriptor observation](usb-descriptor-observation.md) confirmed
+  bulk OUT 03 / IN 83 on vendor interface 3 alternate 1, max packet 512 each.
+  Real protocol transfers and handshake behavior remain unverified.
 - 0x140130710 writes four-byte DWORDs 0xA0000000 then 0xA1000000, checks
   successful four-byte writes, reads exactly 512 bytes, and requires first
   DWORD 0xA2000000. Initialization-handshake purpose is an inference.
@@ -132,6 +135,8 @@ An [offline codec](offline-codec.md) implements the strict static subset with
 synthetic tests. A [transport-neutral session controller](protocol-session.md)
 adds gated initialization, publication and assignment ingestion over scripted
 transfers. [Native PipeWire routing](native-recovery.md) has been validated on
-a disposable private core. USB discovery and hardware interoperability remain
-untested. Controlled captures or device experiments need separate approval.
+a disposable private core. One physical descriptor cache was subsequently validated
+in the VM and the device returned to Windows, with settings-comparison limits
+documented separately. USB protocol execution and end-to-end hardware interoperability
+remain untested. Controlled captures or further device experiments need scoped approval.
 Keep executables, captures and raw disassembly outside this repository.
