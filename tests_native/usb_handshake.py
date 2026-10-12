@@ -55,6 +55,32 @@ def save(path, value):
         json.dump(value, handle, indent=2)
 
 
+def execute_child(command, timeout=12):
+    """Bounded owned-child supervision shared by the explicit USB test runners."""
+    env = os.environ.copy()
+    env["LIBUSB_DEBUG"] = "0"
+    result = {"timed_out": False}
+    p = subprocess.Popen(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    result["private_child_pid"] = p.pid
+    try:
+        stdout, stderr = p.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        result["timed_out"] = True
+        p.kill()
+        try:
+            stdout, stderr = p.communicate(timeout=2)
+        except subprocess.TimeoutExpired as error:
+            stdout, stderr = error.output or b"", error.stderr or b""
+    result["child_exited"] = p.poll() is not None
+    result.update(exit=p.returncode, stdout=stdout.decode("utf-8", "replace"), stderr=stderr.decode("utf-8", "replace"))
+    if result["child_exited"]:
+        result["after_child"] = snapshot()
+    else:
+        p.stdout.close()
+        p.stderr.close()
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("stage", choices=("prepare", "run", "compare"))
@@ -101,30 +127,8 @@ def main():
         attached = snapshot()
         save(root / "run-started.json", {"binary_sha256": digest,
                                         "expected_cache_sha256": hashlib.sha256(raw).hexdigest(), "snapshot": attached})
-        env = os.environ.copy()
-        env["LIBUSB_DEBUG"] = "0"
-        result = {"timed_out": False, "binary_sha256": digest}
-        p = subprocess.Popen([str(binary), "--authorize-handshake", str(selected), str(pinned)],
-                             env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        result["private_child_pid"] = p.pid
-        try:
-            stdout, stderr = p.communicate(timeout=12)
-        except subprocess.TimeoutExpired:
-            result["timed_out"] = True
-            p.kill()  # Only this owned child, never services/another process.
-            try:
-                stdout, stderr = p.communicate(timeout=2)
-            except subprocess.TimeoutExpired as error:
-                # Kernel-blocked exit is possible. Do not wait indefinitely or
-                # report successful cleanup. Preserve the owned PID for review.
-                stdout, stderr = error.output or b"", error.stderr or b""
-        result["child_exited"] = p.poll() is not None
-        result.update(exit=p.returncode, stdout=stdout.decode("utf-8", "replace"), stderr=stderr.decode("utf-8", "replace"))
-        if result["child_exited"]:
-            result["after_child"] = snapshot()
-        else:
-            p.stdout.close()
-            p.stderr.close()
+        result = execute_child([str(binary), "--authorize-handshake", str(selected), str(pinned)])
+        result["binary_sha256"] = digest
         save(root / "handshake.json", result)
         print(json.dumps({"timed_out": result["timed_out"], "exit": result.get("exit"),
                           "child_exited": result["child_exited"],

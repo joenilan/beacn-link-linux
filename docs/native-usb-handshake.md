@@ -49,12 +49,14 @@ reset or clear-halt API. Configuration/descriptor/ownership observations may
 involve native queries; this is not a cached-descriptor-only execution path.
 Driver ownership or a userspace busy claim stops setup rather than taking ownership.
 
-The handshake gate permits only four-byte A0 then A1 writes on 03 and one
+The default handshake gate permits only four-byte A0 then A1 writes on 03 and one
 512-byte read on 83. The existing session requires exact transferred counts and
 an A2 first DWORD. Every native I/O error is treated as an unknown outcome;
 there is no retry or prefix resend. Short counts stop progression. The transport
 refuses publication, polling, arbitrary writes and a second handshake even after
-successful initialization. A2 metadata is opaque and redacted in output.
+successful initialization. A separately enabled
+[one-list/one-poll mode](native-usb-publication.md) now builds over the same owner;
+hardware publication remains unverified. A2 metadata is opaque and redacted in output.
 
 Positive bulk deadlines are rounded upward to milliseconds and capped at 500 ms;
 zero is never passed because libusb treats it as unlimited. Claim, alternate,

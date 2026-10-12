@@ -13,13 +13,16 @@ guest persistent files match the backups. Guest graph settings match after
 accounting for recreated objects; Windows device-registry differences are recorded.
 The first attempt had stopped before protocol exchange; its claim-observation fix
 was built and tested before the successful separate attempt. The transport is
-separate from the ordinary CLI.
+separate from the ordinary CLI. An explicit one-list/one-poll mode now builds and
+passes focused checks; its real owned Linux source/cleanup probe preserved the
+desktop exactly. Hardware publication and streaming-PC BEACN App visibility
+remain unverified. Windows Link on the gaming PC stays closed during those tests.
 The native executor verified A-to-B routing, server rejection, interrupted
 acknowledgments and explicit rollback continuation, with unchanged desktop settings
-and persistent-state hashes after owned cleanup. The suite has 69 Rust integration
-tests and 27 Python tests, plus two native USB ABI/ownership unit tests. The latest
-transport batch validates 25 focused Rust tests on Windows, 33 on Linux, the
-native USB feature build/test and 7 Python runner tests on both platforms.
+and persistent-state hashes after owned cleanup. The suite has 76 Rust integration
+tests and 33 Python tests, plus two native USB ABI/ownership unit tests. The latest
+publication batch validates 25 focused Rust tests and 13 runner tests on both
+platforms, native Linux builds/unit tests and the actual isolated source probe.
 The probe subsequently validated one owner-authorized physical Studio descriptor
 cache in the VM; the device was returned to Windows with logical settings matching
 and persistent-state/identity differences recorded. Hardware initialization is now
@@ -50,6 +53,7 @@ application can appear in Windows App and be routed from it.
 - [USB descriptor validator and VM-first hardware plan](docs/usb-descriptor-validation.md)
 - [First physical descriptor observation and return comparison](docs/usb-descriptor-observation.md)
 - [Native USB handshake implementation and proposed test](docs/native-usb-handshake.md)
+- [Native USB publication, assignment polling and visibility test](docs/native-usb-publication.md)
 - [Offline codec and usage](docs/offline-codec.md)
 - [Offline routing planner](docs/offline-planner.md)
 - [Offline routing preparation](docs/offline-executor.md)

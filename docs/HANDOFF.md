@@ -188,15 +188,27 @@ kind of 17 recorded value differences, with user audio/policy trees matching.
 No persistence was rewritten. See [native-usb-handshake.md](native-usb-handshake.md)
 for exact hashes and limits. App publication/polling/audio remain untested.
 
-**Next work:** implement a separately enabled, bounded app-list publication and
-assignment-poll mode over the existing session/codec and native USB owner. Retain
-the default handshake-only gate, exact device/claim guards, no automatic retry and
-explicit cleanup. Bind an explicit wire name through the existing inventory and
-lifecycle owners; keep assignment zero opaque and avoid route application during
-this first exchange. Build/test the exact tree, then use fresh full-content
-baselines for a controlled VM test under existing owner authorization. Check
-Windows App visibility with the owner; native transfer success alone does not
-establish it. Preserve both earlier evidence directories.
+**Completed publication implementation:** an explicit native mode permits one
+pinned single-app list and one assignment poll through the existing owners.
+Default handshake-only access stays restricted; zero stays opaque and no routes
+are applied. Windows/Linux focused tests/builds pass. An actual owned `pw-cat`
+stream in a private core was discovered/bound to `BEACN Linux VM Test`; the source
+probe and cleanup restored the private graph and desktop/state files exactly,
+without USB access. Read [native-usb-publication.md](native-usb-publication.md)
+for source owners, final hashes, supervision and remaining limits.
+
+**Current testing constraint:** Windows BEACN Link on the gaming/host PC must be
+closed; the owner closed it and the process check confirmed none. The replacement
+runs in the Linux VM, while BEACN App remains on the Windows streaming PC. Verify
+Link remains closed before each publication attempt; do not launch it to make
+Linux interoperability appear to work.
+
+**Next work:** save fresh full-content host/guest baselines and run one controlled
+hardware publication/poll test under the standing authorization. Owner manages
+physical attachment/return and observes `BEACN Linux VM Test` in the streaming
+PC's BEACN App. Native transfer success alone does not establish visibility.
+Preserve all earlier evidence directories. Hardware publication, remote UI
+visibility and audio routing are not yet validated.
 A receiving agent should use this authorization context alongside the current
 owner instructions and applicable execution environment.
 The first acceptance remains one real Linux app visible/routable in Windows App
@@ -272,11 +284,13 @@ using the existing verified SSH connection, hash-checked, and built in isolated 
 The original graph checkpoint source is under the user's home in
 beacn-link-graph-20261011T204629Z/source.
 The latest tested USB source is in the existing guest user's home under
-beacn-link-usb-claim-20261012T134712Z/source. Its corrected optional handshake example
-is built and hardware initialization has passed. The first runtime attempt used
+beacn-link-usb-publication-final-20261012T143405Z/source. Its publication example is
+built and source/cleanup probe has passed. The corrected handshake source under
+beacn-link-usb-claim-20261012T134712Z/source passed hardware initialization.
+The first runtime attempt used
 the preserved original source under
 beacn-link-usb-final-20261012T132115Z/source. Library-version/cache-check modes remain
-offline. Latest free disk is about 22.7 GB; continue lightweight builds only.
+offline. Latest free disk is about 21.7 GB; continue lightweight builds only.
 Locate the existing isolated Rust homes from local artifacts rather than installing
 another toolchain. Resolve current IP/user/known_hosts/key references locally;
 keep those details and raw evidence out of Git and logs.

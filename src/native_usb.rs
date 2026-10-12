@@ -288,6 +288,16 @@ pub fn open_handshake(
     }
     Handshake::prepare(backend).map_err(OpenError::Setup)
 }
+/// Explicit one-list/one-poll mode. The default opener remains handshake-only.
+/// `publication` must be built from a caller-observed inventory before device I/O.
+pub fn open_publication(
+    sysfs: &Path,
+    expected: &[u8],
+    publication: crate::usb_handshake::Publication,
+    authorized: bool,
+) -> Result<Handshake<NativeUsb>, OpenError> {
+    open_handshake(sysfs, expected, authorized).map(|owner| owner.enable_publication(publication))
+}
 impl NativeUsb {
     fn guard(&self) -> Result<(), i32> {
         if self.handle.is_null() || stamp(&self.sysfs, &self.node)? != self.stamp {

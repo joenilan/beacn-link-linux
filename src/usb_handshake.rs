@@ -1,4 +1,4 @@
-//! One-shot handshake gate over a selected/pinned USB backend. No publication.
+//! Selected/pinned USB gate; handshake-only by default, optional one publication/poll.
 use crate::{
     session::{Transport, TransportError, IN_PIPE, OUT_PIPE},
     usb_descriptors, MAX_FRAME,
@@ -6,6 +6,41 @@ use crate::{
 use std::{fmt, time::Duration};
 
 pub const MAX_TIMEOUT: Duration = Duration::from_millis(500);
+/// One explicit application snapshot and its canonical initial list. Zero is
+/// retained opaquely; this does not assign a route or infer an unroute command.
+pub struct Publication {
+    records: Vec<crate::Record>,
+    frame: Vec<u8>,
+}
+impl Publication {
+    pub fn from_inventory(inventory: &crate::planner::Inventory) -> Result<Self, Error> {
+        let mut tracker = crate::lifecycle::InventoryTracker::default();
+        tracker.advance(inventory).map_err(|_| Error::Publication)?;
+        if inventory.applications.len() != 1 {
+            return Err(Error::Publication);
+        }
+        let app = &inventory.applications[0];
+        if app.streams.is_empty()
+            || app
+                .streams
+                .iter()
+                .any(|s| s.state != crate::planner::StreamState::Live)
+        {
+            return Err(Error::Publication);
+        }
+        let records = vec![crate::Record {
+            name: app.advertised_name.clone(),
+            assignment: crate::Assignment::from_byte(0),
+        }];
+        let payload = crate::encode_records(&records).map_err(|_| Error::Publication)?;
+        let frame =
+            crate::encode_frame(&crate::Frame::Data(payload)).map_err(|_| Error::Publication)?;
+        Ok(Self { records, frame })
+    }
+    pub fn records(&self) -> &[crate::Record] {
+        &self.records
+    }
+}
 #[derive(Clone, PartialEq, Eq)]
 pub struct Observation {
     /// Provider stamp backed by the retained handle, never standalone authority.
@@ -31,6 +66,7 @@ pub trait Backend {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     Profile,
+    Publication,
     Changed,
     Backend { stage: &'static str, code: i32 },
 }
@@ -55,6 +91,9 @@ enum Phase {
     A0,
     A1,
     A2,
+    Publish,
+    PollRequest,
+    PollReply,
     Complete,
     Halted,
 }
@@ -64,6 +103,7 @@ pub struct Handshake<B: Backend> {
     claimed: bool,
     closed: bool,
     phase: Phase,
+    publication: Option<Publication>,
 }
 pub(crate) fn descriptor_profile(bytes: &[u8], configuration: u8) -> Result<(), Error> {
     let d = usb_descriptors::parse(bytes).map_err(|_| Error::Profile)?;
@@ -152,6 +192,7 @@ impl<B: Backend> Handshake<B> {
             claimed: false,
             closed: false,
             phase: Phase::A0,
+            publication: None,
         };
         let result = (|| {
             let observation = this.backend.observe().map_err(|code| Error::Backend {
@@ -179,6 +220,20 @@ impl<B: Backend> Handshake<B> {
                 Err(SetupFailure { error, cleanup })
             }
         }
+    }
+    /// Explicit opt-in to one exact list and one poll after a valid handshake.
+    /// The supplied inventory is caller-observed, not proof of OS freshness.
+    pub fn prepare_publication(backend: B, publication: Publication) -> Result<Self, SetupFailure> {
+        Self::prepare(backend).map(|mut owner| {
+            owner.publication = Some(publication);
+            owner
+        })
+    }
+    #[cfg(all(feature = "native-usb", target_os = "linux"))]
+    pub(crate) fn enable_publication(mut self, publication: Publication) -> Self {
+        // Only the native opener calls this immediately after prepare.
+        self.publication = Some(publication);
+        self
     }
     fn check(&mut self, alternate: u8) -> Result<(), Error> {
         let current = self.backend.observe().map_err(|code| Error::Backend {
@@ -239,22 +294,40 @@ impl<B: Backend> Transport for Handshake<B> {
         bytes: &[u8],
         timeout: Duration,
     ) -> Result<usize, TransportError> {
-        let (phase, word, next) = match self.phase {
-            Phase::A0 => (Phase::A0, 0xA0000000u32, Phase::A1),
-            Phase::A1 => (Phase::A1, 0xA1000000u32, Phase::A2),
+        let (phase, expected, next) = match self.phase {
+            Phase::A0 => (Phase::A0, 0xA0000000u32.to_le_bytes().to_vec(), Phase::A1),
+            Phase::A1 => (Phase::A1, 0xA1000000u32.to_le_bytes().to_vec(), Phase::A2),
+            Phase::Publish => (
+                Phase::Publish,
+                self.publication
+                    .as_ref()
+                    .expect("publication phase requires policy")
+                    .frame
+                    .clone(),
+                Phase::PollRequest,
+            ),
+            Phase::PollRequest => (
+                Phase::PollRequest,
+                0xAC010000u32.to_le_bytes().to_vec(),
+                Phase::PollReply,
+            ),
             _ => {
                 self.phase = Phase::Halted;
                 return Err(TransportError::NoTransfer);
             }
         };
-        if pipe != OUT_PIPE || bytes != word.to_le_bytes() {
+        if pipe != OUT_PIPE || bytes != expected {
             self.phase = Phase::Halted;
             return Err(TransportError::NoTransfer);
         }
         let ms = self.ready(phase, timeout)?;
         match self.backend.write(bytes, ms) {
             Ok(n) => {
-                self.phase = if n == 4 { next } else { Phase::Halted };
+                self.phase = if n == expected.len() {
+                    next
+                } else {
+                    Phase::Halted
+                };
                 Ok(n)
             }
             Err(_) => {
@@ -273,10 +346,27 @@ impl<B: Backend> Transport for Handshake<B> {
             self.phase = Phase::Halted;
             return Err(TransportError::NoTransfer);
         }
-        let ms = self.ready(Phase::A2, timeout)?;
+        let phase = self.phase;
+        if !matches!(phase, Phase::A2 | Phase::PollReply) {
+            self.phase = Phase::Halted;
+            return Err(TransportError::NoTransfer);
+        }
+        let ms = self.ready(phase, timeout)?;
         match self.backend.read(bytes, ms) {
             Ok(n) => {
-                self.phase = if n == MAX_FRAME {
+                self.phase = if phase == Phase::A2
+                    && n == MAX_FRAME
+                    && bytes[..4] == 0xA2000000u32.to_le_bytes()
+                {
+                    if self.publication.is_some() {
+                        Phase::Publish
+                    } else {
+                        Phase::Complete
+                    }
+                } else if phase == Phase::PollReply
+                    && n <= MAX_FRAME
+                    && crate::session::decode_poll_reply(&bytes[..n]).is_ok()
+                {
                     Phase::Complete
                 } else {
                     Phase::Halted
