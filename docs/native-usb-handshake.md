@@ -2,9 +2,13 @@
 
 Updated 2026-10-12. The optional Linux transport now compiles against the existing
 libusb runtime and implements one guarded A0/A1/A2 exchange through the existing
-session controller. Hardware execution has not occurred. Ordinary CLI device
-access and route application remain disabled; the earlier authorization covered
-the completed [descriptor observation](usb-descriptor-observation.md) only.
+session controller. The first device attempt stopped during setup, before the
+protocol exchange, and released its claim; details and correction appear below.
+Ordinary CLI device
+access and route application remain disabled. The earlier authorization covered
+the completed [descriptor observation](usb-descriptor-observation.md) only;
+the owner subsequently authorized the necessary hardware/VM continuation,
+including this handshake and temporary audio interruptions.
 
 ## Source owners and supported profile
 
@@ -126,7 +130,10 @@ is useful before enabling broader hardware operation.
 
 ## Proposed first handshake in the existing VM
 
-This plan is ready for specific owner authorization; it has not run.
+The owner authorized this plan and the necessary hardware/VM continuation after
+reviewing the implementation. It was used for the first setup attempt described
+below. No A0/A1/A2 exchange has completed. Refresh baselines older than ten minutes
+before execution.
 
 1. Keep Studio on Windows while saving fresh host endpoint/default/volume/mute,
    session and registry baselines with full private contents. Save guest filtered
@@ -165,3 +172,54 @@ python3 tests_native/usb_handshake.py compare --evidence-dir /PRIVATE/new-handsh
 Passing this test would establish one initialization exchange and observed cleanup
 for this device/VM. It would not prove remote Windows visibility, publication,
 assignment handling, audible audio, reconnects or native-Linux acceptance.
+
+## First authorized attempt and claim-observation correction
+
+The owner authorized necessary hardware/VM continuation and connected Studio.
+Fresh host and guest baselines included full registry/state-file contents. The
+selected guest device reported cached speed 480 Mb/s and was accessible to the
+existing guest user without permission changes. The original executable ran once
+with a 119-second-old baseline. It exited 2 during setup revalidation, before
+creating the session or submitting A0/A1/A2. Its claim release succeeded and the
+selected-device observation matched the original baseline. No timeout occurred;
+the child exited. The attached-versus-post-child guest graph and all four tracked
+state files matched exactly. A subsequent cached sysfs observation confirmed
+interface 3 alternate zero with no driver, and audio interfaces 0–2 still at
+alternate zero with snd-usb-audio. Host/guest return comparison is pending the
+owner-managed return to Windows; device cleanup is not proof of that comparison.
+
+The setup error returned generic revalidation code -9001 and did not identify
+which native observation failed. The likely cause is the incorrect comparison
+between sysfs driver presence and `libusb_kernel_driver_active`: the
+[Linux libusb implementation](https://github.com/libusb/libusb/blob/v1.0.29/libusb/os/linux_usbfs.c)
+reports `usbfs` userspace claims as inactive kernel drivers. The original adapter
+rejected a nonempty sysfs driver whenever that query returned zero. This is a
+source-derived explanation; the failed attempt did not log the claimed driver.
+
+The adapter now tracks only its retained handle's acknowledged claim and accepts
+the `usbfs`/inactive pair only while that claim is held. It refuses `usbfs` before
+its own claim, inconsistent observations, and missing ownership after claim.
+Successful release clears that state; the baseline must again have no driver.
+This does not authorize detachment or ownership of another handle's claim.
+
+The corrected native example builds on Linux; two unit tests (ABI/version and
+ownership combinations) and eight handshake integration tests pass. Metadata and
+saved physical-cache checks pass without opening a device. Windows formatting and
+diff checks pass. No corrected hardware attempt has run. Keep the old test journal
+and backups; complete return comparison before preparing a fresh controlled cycle.
+
+Original guest baseline SHA256:
+`1c056fae4ed18503d010e948c7af39d8c3f554bec79737aaeaa83958fdbea96a`.
+Original host baseline SHA256:
+`d0c31e4aa3c39306b90683750cad8100d691339435799f636fab3c2ee4f7a4fa`.
+First handshake journal SHA256:
+`143f1c6bfe8173599a1252f55b73027982e819fee42347eb88c868f48d814242`.
+Corrected tested code SHA256:
+`94f396e153fe322735fd71e1f49bc5e60e2f26c7ba9428ee2333ec3c684e9ec5`.
+Corrected source archive SHA256:
+`a1af43cc33e774b1aa83a81976f3c4a573f0f1b99a4fbe79b850379448c917d6`.
+Corrected Linux validation journal SHA256:
+`a619d1628287b48844a64f418d16ec8da78342442ff1ea53ac42a9147ea4045d`.
+Corrected native handshake executable SHA256:
+`e89ea6a274902d938a24c8a6c31c8bd50b307c0246c79ccc43932facd5064ed5`.
+Final free disk was 22,678,618,112 bytes; no packages were installed.

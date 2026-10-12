@@ -111,6 +111,19 @@ fn result(code: i32) -> Result<(), i32> {
         Ok(())
     }
 }
+fn kernel_ownership(kernel: i32, driver: &str, claimed: bool) -> Result<bool, i32> {
+    if kernel < 0 {
+        return Err(kernel);
+    }
+    // Linux exposes our usbfs userspace claim as a sysfs driver, while
+    // libusb_kernel_driver_active deliberately reports usbfs as inactive.
+    // Accept it only after this retained handle acknowledged its own claim.
+    match (kernel != 0, driver, claimed) {
+        (false, "", false) | (false, "usbfs", true) => Ok(false),
+        (true, name, _) if !name.is_empty() && name != "usbfs" => Ok(true),
+        _ => Err(FOREIGN),
+    }
+}
 fn cached(path: &Path, limit: usize) -> Result<Vec<u8>, i32> {
     let mut bytes = Vec::new();
     File::open(path)
@@ -191,6 +204,7 @@ pub struct NativeUsb {
     expected: Vec<u8>,
     bus: u8,
     address: u8,
+    claimed: bool,
     _single_threaded: PhantomData<Rc<()>>,
 }
 /// Explicit mutation-bearing entry point. `authorized` acknowledges external
@@ -253,6 +267,7 @@ pub fn open_handshake(
         expected: expected.to_vec(),
         bus,
         address,
+        claimed: false,
         _single_threaded: PhantomData,
     };
     // ABI from public libusb 1.0.29 header; Linux-only NO_DEVICE_DISCOVERY=2.
@@ -380,12 +395,7 @@ impl Backend for NativeUsb {
         }
         let (alternate, driver) = self.interface(3)?;
         let kernel = unsafe { libusb_kernel_driver_active(self.handle, 3) };
-        if kernel < 0 {
-            return Err(kernel);
-        }
-        if (kernel != 0) != (!driver.is_empty()) {
-            return Err(FOREIGN);
-        }
+        let kernel_bound = kernel_ownership(kernel, &driver, self.claimed)?;
         let mut audio_interfaces = Vec::new();
         for n in 0..3 {
             let (a, d) = self.interface(n)?;
@@ -397,13 +407,15 @@ impl Backend for NativeUsb {
             descriptors: cache,
             configuration: 1,
             alternate,
-            kernel_bound: kernel != 0,
+            kernel_bound,
             audio_interfaces,
         })
     }
     fn claim_three(&mut self) -> Result<(), i32> {
         self.guard()?;
-        unsafe { result(libusb_claim_interface(self.handle, 3)) }
+        unsafe { result(libusb_claim_interface(self.handle, 3)) }?;
+        self.claimed = true;
+        Ok(())
     }
     fn select_one(&mut self) -> Result<(), i32> {
         self.guard()?;
@@ -426,7 +438,9 @@ impl Backend for NativeUsb {
     fn release_three(&mut self) -> Result<(), i32> {
         // Retained handle/claim is the authority even if sysfs disappears.
         // Never target a replacement device. Release restores first alt (zero).
-        unsafe { result(libusb_release_interface(self.handle, 3)) }
+        unsafe { result(libusb_release_interface(self.handle, 3)) }?;
+        self.claimed = false;
+        Ok(())
     }
     fn close(&mut self) {
         unsafe {
@@ -452,6 +466,19 @@ impl Drop for NativeUsb {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn usbfs_is_accepted_only_for_the_acknowledged_retained_claim() {
+        assert_eq!(kernel_ownership(0, "", false), Ok(false));
+        assert_eq!(kernel_ownership(0, "usbfs", true), Ok(false));
+        assert!(kernel_ownership(0, "usbfs", false).is_err());
+        assert!(kernel_ownership(0, "", true).is_err());
+        assert_eq!(kernel_ownership(1, "snd_usb_audio", false), Ok(true));
+        assert_eq!(kernel_ownership(1, "snd_usb_audio", true), Ok(true));
+        assert!(kernel_ownership(1, "usbfs", true).is_err());
+        assert!(kernel_ownership(1, "", false).is_err());
+        assert!(kernel_ownership(0, "other", true).is_err());
+        assert_eq!(kernel_ownership(-4, "", false), Err(-4));
+    }
     #[test]
     fn public_abi_layout_and_runtime_version_without_device_access() {
         assert_eq!(std::mem::size_of::<DeviceDescriptor>(), 18);

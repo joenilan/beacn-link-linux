@@ -148,14 +148,32 @@ Read [native-usb-handshake.md](native-usb-handshake.md) for exact hashes, limita
 and a prepared one-shot hardware test with full persistent-file backups. The normal
 CLI remains disabled. No hardware handshake or new passthrough occurred.
 
-**Next work:** obtain specific authorization for that one interface-3/alternate-1
-A0/A1/A2 VM handshake and owned cleanup, using fresh host/guest baselines and full
-state-file contents. Owner manages physical connection/return. Generic continuation
-and completed descriptor-only permission do not authorize this protocol execution.
-The first acceptance remains
-one real Linux app visible/routable in Windows App with verified audio. Hardware
-attachment/captures/routing need separately scoped approval; current isolated-VM
-authorization does not cover them. Local gaps also remain across native core
+**Current owner authorization:** after reviewing the completed USB implementation,
+the owner explicitly authorized the hardware and VM operations needed to get the
+replacement working, including temporary audio interruptions. Continue necessary
+implementation and bounded hardware tests without repeated routine approval
+requests. Preserve settings snapshots and unrelated work. Ask before database
+edits or deleting applications/system files. This authorization comes from the
+current owner conversation, not from the earlier descriptor-only permission.
+
+**First authorized handshake attempt:** the owner connected Studio after fresh
+full-content baselines. Setup stopped on revalidation before any A0/A1/A2 bulk
+exchange. Claim release and device baseline verification succeeded; attached versus
+post-child guest graph/state files match exactly. The adapter's likely mismatch
+was Linux's sysfs `usbfs` userspace-claim driver versus libusb's inactive-kernel
+report. It now accepts that pair only after its retained handle acknowledges the
+claim. The corrected native build, two unit tests and eight handshake tests pass;
+no corrected hardware attempt has run. Read [native-usb-handshake.md](native-usb-handshake.md)
+for provenance and distinction between observed failure and inferred cause.
+
+**Next work:** complete the host/guest return comparison after the requested
+owner-managed return to Windows. Preserve the first journal; then prepare fresh
+baselines for a controlled corrected test, under the existing owner authorization.
+Do not automatically retry the original attempt or reuse its evidence directory.
+A receiving agent should use this authorization context alongside the current
+owner instructions and applicable execution environment.
+The first acceptance remains one real Linux app visible/routable in Windows App
+with verified audio. Local gaps also remain across native core
 disconnect/restart, long-lived registry cleanup and capacity. Withheld acknowledgment
 delivery is not proof of packet-loss handling. Keep desktop apply disabled.
 The original batch below records the first native implementation.
@@ -227,9 +245,10 @@ using the existing verified SSH connection, hash-checked, and built in isolated 
 The original graph checkpoint source is under the user's home in
 beacn-link-graph-20261011T204629Z/source.
 The latest tested USB source is in the existing guest user's home under
-beacn-link-usb-final-20261012T132115Z/source. Its optional handshake example is built;
-do not execute device mode until authorized. Library-version/cache-check modes
-remain offline. Latest free disk is about 22.8 GB; continue lightweight builds only.
+beacn-link-usb-claim-20261012T134712Z/source. Its corrected optional handshake example
+is built. The first runtime attempt used the preserved original source under
+beacn-link-usb-final-20261012T132115Z/source. Library-version/cache-check modes remain
+offline. Latest free disk is about 22.7 GB; continue lightweight builds only.
 Locate the existing isolated Rust homes from local artifacts rather than installing
 another toolchain. Resolve current IP/user/known_hosts/key references locally;
 keep those details and raw evidence out of Git and logs.
@@ -279,7 +298,7 @@ because of that historical orchestration failure.
 2. Reconcile against implementation commit 39d36a3 and read canonical docs.
 3. Verify existing Windows/VM access read-only, toolchain and current disk space.
 4. Follow the current next-work note: the one-shot USB implementation is complete,
-   and its physical handshake requires specific owner authorization. The original
+   and the owner authorized the necessary hardware/VM continuation. The original
    native fault/recovery batch is implemented. Keep progress factual and report
    implemented / built / runtime-tested / pushed separately.
 5. Leave Jawjack, Haiwire, AI benchmarks and other agents' processes alone.

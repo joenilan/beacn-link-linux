@@ -7,11 +7,14 @@ codec, CLI, provider-neutral routing planner, graph/inventory adapters and an
 optional native PipeWire executor restricted to disposable private cores, plus a
 transport-neutral protocol session controller validated with scripted transfers.
 An optional Linux libusb transport now compiles for a guarded one-shot handshake;
-it has not executed against hardware and is separate from the ordinary CLI.
+its first hardware attempt stopped during setup before protocol exchange, released
+its claim and verified device cleanup. A claim-observation fix builds and passes
+focused checks; its hardware test and the first host/guest return comparison are
+pending. The transport is separate from the ordinary CLI.
 The native executor verified A-to-B routing, server rejection, interrupted
 acknowledgments and explicit rollback continuation, with unchanged desktop settings
 and persistent-state hashes after owned cleanup. The suite has 69 Rust integration
-tests and 27 Python tests, plus one native USB ABI/library unit test. The latest
+tests and 27 Python tests, plus two native USB ABI/ownership unit tests. The latest
 transport batch validates 25 focused Rust tests on Windows, 33 on Linux, the
 native USB feature build/test and 7 Python runner tests on both platforms.
 The probe subsequently validated one owner-authorized physical Studio descriptor
