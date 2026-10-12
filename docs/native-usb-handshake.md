@@ -42,10 +42,11 @@ so no replacement/fallback device is opened if the original disappears.
 
 ## Native calls and completion
 
-The backend initializes one libusb context with NO_DEVICE_DISCOVERY, wraps the
+The default backend startup initializes one libusb context with NO_DEVICE_DISCOVERY, wraps the
 explicit fd, claims only interface 3 and selects alternate 1. It uses no device
 enumeration/open-by-VID/PID, configuration setter, kernel-driver detach, auto-detach,
-reset or clear-halt API. Configuration/descriptor/ownership observations may
+whole-device reset or clear-halt API. The explicit startup experiment below adds
+only vendor IN 83 clear-halt. Configuration/descriptor/ownership observations may
 involve native queries; this is not a cached-descriptor-only execution path.
 Driver ownership or a userspace busy claim stops setup rather than taking ownership.
 
@@ -56,7 +57,14 @@ there is no retry or prefix resend. Short counts stop progression. The transport
 refuses publication, polling, arbitrary writes and a second handshake even after
 successful initialization. A separately enabled
 [one-list/one-poll mode](native-usb-publication.md) now builds over the same owner;
-hardware publication remains unverified. A2 metadata is opaque and redacted in output.
+one hardware publication/no-payload poll and brief remote visibility have passed;
+assignment receipt and audio remain unverified. A2 metadata is opaque and redacted in output.
+
+The default setup remains unchanged. An explicit observed-Windows startup
+experiment is documented in [native-usb-publication.md](native-usb-publication.md):
+vendor alternate zero, a 1 ms wait, alternate one and vendor IN 83 clear-halt
+before bulk I/O. Its endpoint preparation is not automatic error recovery and
+does not authorize a whole-device reset or audio-interface changes.
 
 Positive bulk deadlines are rounded upward to milliseconds and capped at 500 ms;
 zero is never passed because libusb treats it as unlimited. Claim, alternate,

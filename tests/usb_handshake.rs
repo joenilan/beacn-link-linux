@@ -25,6 +25,8 @@ struct State {
     change_at: Option<(usize, &'static str)>,
     claim_error: bool,
     alt_error: bool,
+    zero_error: bool,
+    clear_error: bool,
     release_error: bool,
     write_error: bool,
     read_error: bool,
@@ -79,6 +81,25 @@ impl Backend for Fake {
             Ok(())
         } // May have changed despite missing completion.
     }
+    fn select_zero(&mut self) -> Result<(), i32> {
+        let mut state = self.shared.borrow_mut();
+        state.calls.push("alternate:3:0".into());
+        self.current.alternate = 0;
+        if state.zero_error {
+            Err(-7)
+        } else {
+            Ok(())
+        }
+    }
+    fn clear_input_halt(&mut self) -> Result<(), i32> {
+        let mut state = self.shared.borrow_mut();
+        state.calls.push("clear-input:83".into());
+        if state.clear_error {
+            Err(-7)
+        } else {
+            Ok(())
+        }
+    }
     fn write(&mut self, bytes: &[u8], ms: u32) -> Result<usize, i32> {
         let mut state = self.shared.borrow_mut();
         state.calls.push(format!(
@@ -127,6 +148,99 @@ fn setup(state: State) -> (Rc<RefCell<State>>, Result<Handshake<Fake>, SetupFail
         current: baseline(),
     });
     (shared, result)
+}
+fn observed_setup(state: State) -> (Rc<RefCell<State>>, Result<Handshake<Fake>, SetupFailure>) {
+    let shared = Rc::new(RefCell::new(state));
+    let result = Handshake::prepare_with_startup(
+        Fake {
+            shared: shared.clone(),
+            current: baseline(),
+        },
+        beacn_link_protocol::usb_handshake::Startup::ObservedWindows,
+    );
+    (shared, result)
+}
+#[test]
+fn explicit_observed_startup_prepares_only_vendor_input_before_handshake() {
+    let (shared, transport) = observed_setup(State::default());
+    let mut s = Session::new(transport.unwrap(), TIMEOUT).unwrap();
+    s.initialize().unwrap();
+    assert!(s.into_transport().close().baseline_restored);
+    assert_eq!(
+        shared.borrow().calls,
+        [
+            "claim:3",
+            "alternate:3:0",
+            "alternate:3:1",
+            "clear-input:83",
+            "write:A0000000:500",
+            "write:A1000000:500",
+            "read:512:500",
+            "release:3:restore:0",
+            "close",
+        ]
+    );
+}
+#[test]
+fn observed_startup_failures_never_send_bulk_or_repeat_preparation() {
+    for field in ["zero", "one", "clear"] {
+        let state = State {
+            zero_error: field == "zero",
+            alt_error: field == "one",
+            clear_error: field == "clear",
+            ..Default::default()
+        };
+        let (shared, result) = observed_setup(state);
+        let failure = result.err().unwrap();
+        assert!(failure.cleanup.baseline_restored);
+        let calls = &shared.borrow().calls;
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|s| s.as_str() == "release:3:restore:0")
+                .count(),
+            1
+        );
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|s| s.as_str() == "alternate:3:0")
+                .count(),
+            1
+        );
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|s| s.as_str() == "clear-input:83")
+                .count(),
+            usize::from(field == "clear")
+        );
+        assert!(!calls
+            .iter()
+            .any(|s| s.starts_with("write:") || s.starts_with("read:")));
+    }
+}
+#[test]
+fn fresh_identity_is_required_at_each_observed_startup_boundary() {
+    for at in 2..=6 {
+        let (shared, result) = observed_setup(State {
+            change_at: Some((at, "instance")),
+            ..Default::default()
+        });
+        let failure = result.err().unwrap();
+        assert!(!failure.cleanup.baseline_restored);
+        let calls = &shared.borrow().calls;
+        assert!(!calls
+            .iter()
+            .any(|s| s.starts_with("write:") || s.starts_with("read:")));
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|s| s.as_str() == "release:3:restore:0")
+                .count(),
+            1
+        );
+    }
 }
 #[test]
 fn full_session_uses_exact_handshake_and_restores_only_its_claim() {

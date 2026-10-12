@@ -265,13 +265,40 @@ passed. Latest build source is
 `beacn-link-usb-publication-periodic-errors-20261012T153706Z/source` under the guest
 home. This diagnostic change has not been tested on hardware. Free disk: 21.1 GB.
 
-**Next work:** inspect original worker startup/reconnect ordering and the failed
-versus successful run conditions, then select a bounded test that captures the
-actual native error. Do not repeat the failed attempt or use a longer timeout as
-an assumed fix. No reconnection is currently requested from the owner. Sustained
-publication and assignment receipt remain pending. The stock 500 ms timer supports
-the experiment; brief appearance does not establish expiry or root cause.
-Routing/audio acceptance remains unproven. Preserve all earlier evidence.
+**Focused startup continuation:** the pinned Windows constructor explicitly
+selects alternate zero, waits until the next millisecond tick, selects alternate
+one, then resets vendor IN 83 before A0/A1/A2. The previously omitted wait and
+pipe preparation are now an explicit `Startup::ObservedWindows` experiment;
+defaults are unchanged. Retained identity/profile checks bracket each operation;
+any error releases only the owned claim and stops before bulk. There is no device
+reset, audio-interface mutation, automatic stall recovery or increased timeout.
+The worker starts after initialization, so its scheduling cannot explain this
+A2 failure. Full reconnect discovery remains untraced. Read
+[protocol-session.md](protocol-session.md) for anchors, provenance and limits.
+
+Windows/Linux focused validation passed 31 Rust integration cases; Linux also
+passed two native unit checks and 17 Python runner cases. Exact Linux examples
+built under `beacn-link-usb-publication-startup-20261012T154756Z/source` in the
+existing guest home. Free disk is about 20.9 GB. This startup option is not yet
+hardware validated; passing a test would not establish the earlier failure cause.
+
+**Observed-startup hardware result:** initialization completed and cycle 1
+published/polled successfully (512-byte no-payload response, 508 ignored tail).
+Cycle 2's poll returned ACFFFFFF; the current policy halted without retry. No
+assignment records or routes were applied. Claim/baseline, private graph and both
+owned process exits were verified. Studio returned to Windows; host checked audio
+settings and guest state files match baseline, with handoff graph/registry
+differences retained. See publication docs for hashes and comparison limits.
+This is one successful startup/cycle, not sustained visibility or a proven fix.
+
+**Next work:** inspect the original reader's rejected-marker behavior before
+changing that policy. The owner now requests direct USB handoff automation and
+explicitly forbids computer-use/mouse automation. Native computer-use inspection
+failed before any UI input and was stopped. Direct live VMware USB control remains
+unverified. Add fresh connected-state prepare/compare so Studio can remain in the
+VM across tests; return only at the end of the testing session. Keep one attempt
+per evidence directory and no automatic USB retries. Sustained publication,
+assignment receipt and audio remain pending; ordinary apply stays disabled.
 A receiving agent should use this authorization context alongside the current
 owner instructions and applicable execution environment.
 The first acceptance remains one real Linux app visible/routable in Windows App

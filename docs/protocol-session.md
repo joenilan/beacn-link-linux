@@ -91,6 +91,49 @@ with argument 1000 at 0x140130F24–0x140130F2D.
 
 ## Derivations, hypotheses and unknowns
 
+### Focused startup/worker continuation (2026-10-12)
+
+The same pinned binary and pefile/Capstone versions above were traced read-only;
+no proprietary executable, REA, capture or device I/O was run for this analysis.
+The constructor's alternate-zero call at 0x140131190 is followed by timeGetTime
+at 0x140131196. It passes that tick plus one to 0x1401E2500 at 0x1401311CA–1CD,
+before alternate one (0x1401311D8) and IN 83 reset (0x1401311E4).
+The wait helper at 0x1401E2500–0x1401E25A5, file offset 0x1E1900, loops until
+timeGetTime reaches the supplied tick. This establishes a next-tick wait rather
+than a guessed long device-settle timeout. Scheduler granularity/jitter is unknown.
+
+Microsoft documents [WinUsb_ResetPipe](https://learn.microsoft.com/en-us/windows/win32/api/winusb/nf-winusb-winusb_resetpipe)
+as clearing pipe stall state and resetting the data toggle. The tested libusb
+1.0.29 [Linux adapter](https://github.com/libusb/libusb/blob/v1.0.29/libusb/os/linux_usbfs.c#L1470)
+implements clear-halt through USBFS; current Linux
+[endpoint handling](https://github.com/torvalds/linux/blob/master/drivers/usb/core/message.c)
+sends endpoint CLEAR_FEATURE and resets endpoint state after success. This supports
+a narrowly scoped Linux preparation experiment; it does not prove VM/firmware
+equivalence or that omitted preparation caused the earlier unknown A2 failure.
+
+The thread vtable slot at 0x140405408 points to 0x140130E20. Contiguous tracing
+joins unwind fragments 0x140130E20–E39, E39–EB6 and EB6–EBC; the joined range
+starts at file offset 0x130220. The loop checks its stop byte at +0x1ED,
+atomically sets the callback's pending flag at 0x140130E69, invokes scheduling
+helper 0x1401EC690 at 0x140130E77, then invokes wait helper 0x1401E1420 at
+0x140130E96. Its constant at VA 0x140426C58 / file offset 0x425658 is double
+500.0. The scheduling path is asynchronous; this is not measured poll cadence.
+Initialization precedes thread startup at 0x1401312DA. The inspected loop contains
+no new A0/A1/A2 call or reconnect handling; discovery/reconstruction elsewhere
+remains untraced. The worker cannot explain a read failure before its startup.
+
+Successful versus failed native journals use the same descriptor-cache hash,
+selected vendor endpoints and bulk deadlines. Both restored their device/profile
+and owned private processes. The failed run stopped at A2 before list/periodic
+policy activation; its native error code was not retained. Do not infer timeout,
+stall, device disconnect, or a proven fix from those journals.
+
+An explicit `Startup::ObservedWindows` option now performs alternate zero, a
+conservative 1 ms sleep, alternate one and vendor IN 83 clear-halt before any
+handshake bulk transfer. It revalidates the retained identity/audio profile at
+each boundary, performs no post-error recovery, and leaves default setup unchanged.
+See [native publication](native-usb-publication.md) for checks and test scope.
+
 - A short successful poll transfer can make the Windows copy consume bytes
   beyond the received portion of its reused buffer. This is a static derivation,
   not a reproduced device fault or exploit.

@@ -7,6 +7,15 @@ use std::{fmt, time::Duration};
 
 pub const MAX_TIMEOUT: Duration = Duration::from_millis(500);
 pub const MAX_PUBLICATION_CYCLES: usize = 40;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Startup {
+    #[default]
+    SelectedAlternate,
+    /// Explicit experiment matching the observed Windows constructor order:
+    /// alternate zero, 1 ms wait, alternate one, clear vendor input halt/toggle.
+    /// This is preparation before any bulk I/O, never recovery after failure.
+    ObservedWindows,
+}
 /// One explicit application snapshot and its canonical initial list. Zero is
 /// retained opaquely; this does not assign a route or infer an unroute command.
 pub struct Publication {
@@ -78,6 +87,14 @@ pub trait Backend {
     fn observe(&mut self) -> Result<Observation, i32>;
     fn claim_three(&mut self) -> Result<(), i32>;
     fn select_one(&mut self) -> Result<(), i32>;
+    /// Optional observed-startup operations. Unsupported by default; neither
+    /// accepts an arbitrary interface/endpoint nor grants authority to retry.
+    fn select_zero(&mut self) -> Result<(), i32> {
+        Err(-12)
+    }
+    fn clear_input_halt(&mut self) -> Result<(), i32> {
+        Err(-12)
+    }
     fn write(&mut self, bytes: &[u8], timeout_ms: u32) -> Result<usize, i32>;
     fn read(&mut self, bytes: &mut [u8], timeout_ms: u32) -> Result<usize, i32>;
     /// Releases only this backend's successful claim; restores alternate zero.
@@ -236,6 +253,9 @@ impl<B: Backend> Handshake<B> {
     /// Mutation-bearing setup. Caller must have explicit authority for claim,
     /// alternate selection, two writes/read and release restoration.
     pub fn prepare(backend: B) -> Result<Self, SetupFailure> {
+        Self::prepare_with_startup(backend, Startup::SelectedAlternate)
+    }
+    pub fn prepare_with_startup(backend: B, startup: Startup) -> Result<Self, SetupFailure> {
         let mut this = Self {
             backend,
             baseline: None,
@@ -257,11 +277,32 @@ impl<B: Backend> Handshake<B> {
             })?;
             this.claimed = true;
             this.check(0)?;
+            if startup == Startup::ObservedWindows {
+                this.backend.select_zero().map_err(|code| Error::Backend {
+                    stage: "alternate-zero",
+                    code,
+                })?;
+                this.check(0)?;
+                // A conservative 1 ms wait models the observed next-tick wait,
+                // not the original Windows scheduler or a protocol requirement.
+                std::thread::sleep(Duration::from_millis(1));
+                this.check(0)?;
+            }
             this.backend.select_one().map_err(|code| Error::Backend {
                 stage: "alternate",
                 code,
             })?;
-            this.check(1)
+            this.check(1)?;
+            if startup == Startup::ObservedWindows {
+                this.backend
+                    .clear_input_halt()
+                    .map_err(|code| Error::Backend {
+                        stage: "clear-input-halt",
+                        code,
+                    })?;
+                this.check(1)?;
+            }
+            Ok(())
         })();
         match result {
             Ok(()) => Ok(this),

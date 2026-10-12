@@ -376,3 +376,98 @@ diagnostics, before another owner-coordinated hardware attempt. Reconnection is
 not presently requested. The A2 failure does not negate the earlier successful
 handshake/list/no-payload poll and brief owner-observed app visibility, but the
 periodic hardware and assignment milestones remain unproven.
+
+## Explicit observed-startup option (2026-10-12)
+
+Focused tracing of the pinned Windows binary establishes alternate zero, a wait
+until timeGetTime reaches the prior tick plus one, alternate one, then IN 83 pipe
+reset before initialization. The worker is started after initialization and has
+no handshake/reconnect call in its inspected loop. See
+[protocol-session.md](protocol-session.md) for exact VAs/file offsets/tool versions.
+The successful and failed native journals used the same descriptor cache and
+deadlines; the failed read's native code was absent. The startup difference is
+an experiment target, not a demonstrated failure cause.
+
+`Startup::ObservedWindows` is explicit. The existing default startup and one-shot
+constructors remain unchanged. The gate requires a successful interface-3 claim
+and fresh exact identity/profile at every preparation boundary; it selects vendor
+alternate zero, waits 1 ms, selects one, clears only fixed vendor IN 83, and checks
+the profile again before A0. The sleep approximates the observed next-tick wait;
+it does not reproduce Windows scheduler granularity. Native clear-halt uses the
+retained claimed handle; arbitrary endpoints, audio-interface claims, whole-device
+reset, retry, disconnect recovery and longer bulk deadlines are not added.
+
+The explicit native CLI is `--authorize-periodic-startup <sysfs-device>
+<expected-cache> <cycles>`. The supervising runner opts in with `--cycles 40
+--observed-startup`, records that policy in private journals, and refuses it for
+one-shot/default, source-only and metadata stages. Any optional operation that
+fails, has an unknown outcome, or observes identity change stops preparation;
+only the acknowledged claim is released. No bulk is then submitted. Blocking
+libusb setup/clear calls remain subject to the existing 50-second supervisor,
+rather than being misrepresented as bounded by the 500 ms bulk timeout.
+
+Windows passed 31 focused Rust integration cases and eight Python runner cases
+(two Linux-only supervisor cases skipped). Linux passed all 31 integration cases,
+two native USB unit checks and 17 Python runner cases. Exact native periodic and
+one-shot examples built. Added tests cover optional preparation order, no bulk or
+retry after each preparation failure, fresh identities at each boundary, default
+compatibility, and invalid startup-mode refusal before process/device execution.
+The previous three-cycle private-source probe remains evidence for the unchanged
+IPC/source/cleanup path; it was not repeated in this startup-only batch.
+
+Tested code SHA256:
+`2f0e2a019f5ebc619c23d0e48a4f5894926d1f2c7ab80f6ba84c61804b51bfba`.
+Source archive SHA256:
+`75252db7bfce77cffde132f2c62f8a1a6aba8e65944ae3a148ed5e5e1afcd8fb`.
+Linux build/focused-check journal SHA256:
+`a9aa32586e7a949496c61db8f6d30bcbfcde666625b52a851a2395d577a54fca`.
+Periodic executable SHA256:
+`26fbe3a6922683f8d46b65f9b15586a014a18030f636ebbad33b08150b218008`.
+Runner SHA256:
+`c3926192600d835e2b2165edda40cc58e4d3ffd636fdcdf70af7b1926129224c`.
+Shared runner remains
+`ed84dcec98fcb906069615b31787f802c51eac88ac761d55b254b16708e31583`.
+Latest free guest disk: 20,946,313,216 bytes. No packages installed or artifacts deleted.
+
+Next is a fresh-snapshot, owner-coordinated 40-cycle hardware test of this explicit
+preparation policy, with full native failure diagnostics and no automatic retry.
+Keep Windows Link closed; Studio remains on Windows until that handoff. Use the
+same exact remote Applications box and synthetic entry/Link In assignment as
+above. Endpoint preparation equivalence, sustained publication, assignment receipt
+and audio remain hardware-unverified for this new option.
+
+### Observed-startup hardware attempt
+
+Fresh full host/guest backups preceded the physical handoff. Windows Link was
+absent. Explicit vendor preparation and A0/A1/A2 completed; cycle 1 published and
+received a valid 512-byte AC000000 response with 508 ignored tail. Cycle 2 then
+published and received ACFFFFFF from its poll. The existing strict rejection
+policy halted the session. Four fresh inventory requests were served. No retry,
+assignment application or audio routing occurred. Visibility was not reported
+by the owner for this attempt. This is a successful initialization/first cycle;
+it does not establish sustained publication or the cause of the prior A2 failure.
+
+The child exited 2 without supervisor timeout. Claim release/profile restoration,
+owned source preservation, private graph restoration and both process exits
+passed. Studio returned to Windows. Host defaults, endpoint states/formats/
+volumes/mutes and sessions match the pre-handoff baseline, with no snapshot errors.
+Guest persistent-state files match exactly; its graph exact comparison differs
+across the physical handoff. Sixteen machine-audio registry values differ; user
+audio/policy trees match. Preserve the full private differences with no rewrite.
+
+Hardware journal SHA256:
+`850c6ffc9dcf9fee4f7fcd049ca13522d9c142ae87dbdb71f4c6853dc089917a`.
+Guest return comparison SHA256:
+`54133a497ac163262f0c1a5466de924b81f72e4b6deeb3808d16824e7a995e8c`.
+Windows return snapshot SHA256:
+`4a7f5e4a65a74d5ef86084fb4fbdbbf3c288a632d0506a799ff6c5c26da9a041`.
+
+Before another protocol test, inspect the stock reader's behavior for ACFFFFFF;
+do not silently classify it as no-payload or weaken unknown-I/O handling.
+The owner requested direct handoff automation, then explicitly prohibited the
+computer-use skill and mouse/UI automation. No UI input was sent. VMware vmrun
+1.17.0.25688693 exposes named-device commands, but live USB support has not been
+verified. The native computer-use pipe was unavailable and that path was stopped.
+Use direct controls only. A connected-state test baseline can remove per-attempt
+physical handoffs while retaining full snapshots, claim cleanup and exact local
+comparisons; perform the host-return comparison once at session end.

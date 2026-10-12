@@ -27,6 +27,13 @@ def objects():
 
 
 class PublicationRunnerTests(unittest.TestCase):
+    def test_observed_startup_is_refused_for_default_and_source_only_modes(self):
+        for stage, cycles in (("run", "0"), ("source-probe", "3"), ("prepare", "3")):
+            argv = ["test", stage, "--evidence-dir", "unused", "--executor", "unused", "--observed-startup", "--cycles", cycles]
+            with patch.object(sys, "argv", argv), patch.object(runner.subprocess, "Popen") as child, contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit): runner.main()
+                child.assert_not_called()
+
     def test_periodic_ipc_encoding_is_bounded_and_preserves_generation(self):
         inventory = runner.owned_inventory(objects(), 123, "owned-source", 7)
         message = runner.inventory_message(inventory)

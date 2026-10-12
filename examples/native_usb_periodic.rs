@@ -8,7 +8,7 @@ fn main() -> std::process::ExitCode {
         session::{PollReply, Session},
         snapshot,
         usb_descriptors::MAX_DESCRIPTOR_BYTES,
-        usb_handshake::{Publication, MAX_PUBLICATION_CYCLES},
+        usb_handshake::{Publication, Startup, MAX_PUBLICATION_CYCLES},
     };
     use std::{
         io::{BufRead, Read, Write},
@@ -18,8 +18,12 @@ fn main() -> std::process::ExitCode {
     let args: Vec<_> = std::env::args().skip(1).collect();
     let offline = args.len() == 2 && args[0] == "--check-periodic";
     let execute = || -> Result<(), String> {
-        if !offline && (args.len() != 4 || args[0] != "--authorize-periodic") {
-            return Err("requires --authorize-periodic <sysfs-device> <expected-cache> <cycles>; or --check-periodic <cycles>".into());
+        let observed_startup = args
+            .first()
+            .is_some_and(|arg| arg == "--authorize-periodic-startup");
+        if !offline && (args.len() != 4 || (args[0] != "--authorize-periodic" && !observed_startup))
+        {
+            return Err("requires --authorize-periodic or --authorize-periodic-startup <sysfs-device> <expected-cache> <cycles>; or --check-periodic <cycles>".into());
         }
         let cycles = args
             .last()
@@ -94,9 +98,20 @@ fn main() -> std::process::ExitCode {
                     .read_to_end(&mut expected)
             })
             .map_err(|_| "expected cache refused")?;
-        let transport =
-            native_usb::open_publication(Path::new(&args[1]), &expected, publication, true)
-                .map_err(|e| e.to_string())?;
+        let startup = if observed_startup {
+            Startup::ObservedWindows
+        } else {
+            Startup::SelectedAlternate
+        };
+        println!("startup policy: {startup:?}; bulk deadlines unchanged");
+        let transport = native_usb::open_publication_with_startup(
+            Path::new(&args[1]),
+            &expected,
+            publication,
+            true,
+            startup,
+        )
+        .map_err(|e| e.to_string())?;
         let mut session =
             Session::new(transport, Duration::from_millis(500)).expect("fixed deadline");
         let result = (|| -> Result<(), String> {

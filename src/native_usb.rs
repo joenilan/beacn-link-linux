@@ -1,5 +1,5 @@
 //! Opt-in Linux libusb adapter. Only a selected fd is wrapped; no discovery API.
-use crate::usb_handshake::{Backend, Handshake, Observation, SetupFailure};
+use crate::usb_handshake::{Backend, Handshake, Observation, SetupFailure, Startup};
 use std::{
     ffi::{c_int, c_uint, c_void},
     fs::{File, OpenOptions},
@@ -93,6 +93,7 @@ unsafe extern "C" {
         alternate: c_int,
     ) -> c_int;
     fn libusb_release_interface(handle: *mut c_void, interface: c_int) -> c_int;
+    fn libusb_clear_halt(handle: *mut c_void, endpoint: u8) -> c_int;
     fn libusb_bulk_transfer(
         handle: *mut c_void,
         endpoint: u8,
@@ -214,6 +215,16 @@ pub fn open_handshake(
     expected: &[u8],
     authorized: bool,
 ) -> Result<Handshake<NativeUsb>, OpenError> {
+    open_handshake_with_startup(sysfs, expected, authorized, Startup::SelectedAlternate)
+}
+/// Explicit startup experiment, bounded externally like other blocking libusb
+/// setup calls. No device reset, audio interface claim or post-error recovery.
+pub fn open_handshake_with_startup(
+    sysfs: &Path,
+    expected: &[u8],
+    authorized: bool,
+    startup: Startup,
+) -> Result<Handshake<NativeUsb>, OpenError> {
     if !authorized {
         return Err(OpenError::Refused);
     }
@@ -286,7 +297,7 @@ pub fn open_handshake(
         ))
         .map_err(OpenError::Local)?;
     }
-    Handshake::prepare(backend).map_err(OpenError::Setup)
+    Handshake::prepare_with_startup(backend, startup).map_err(OpenError::Setup)
 }
 /// Explicit publication policy: one-shot normally, capped cycles only through
 /// Publication::bounded. The default opener remains handshake-only.
@@ -297,7 +308,23 @@ pub fn open_publication(
     publication: crate::usb_handshake::Publication,
     authorized: bool,
 ) -> Result<Handshake<NativeUsb>, OpenError> {
-    open_handshake(sysfs, expected, authorized).map(|owner| owner.enable_publication(publication))
+    open_publication_with_startup(
+        sysfs,
+        expected,
+        publication,
+        authorized,
+        Startup::SelectedAlternate,
+    )
+}
+pub fn open_publication_with_startup(
+    sysfs: &Path,
+    expected: &[u8],
+    publication: crate::usb_handshake::Publication,
+    authorized: bool,
+    startup: Startup,
+) -> Result<Handshake<NativeUsb>, OpenError> {
+    open_handshake_with_startup(sysfs, expected, authorized, startup)
+        .map(|owner| owner.enable_publication(publication))
 }
 impl NativeUsb {
     fn guard(&self) -> Result<(), i32> {
@@ -353,7 +380,10 @@ impl NativeUsb {
         Ok((alternate, driver))
     }
     fn bulk(&mut self, endpoint: u8, bytes: *mut u8, length: usize, ms: u32) -> Result<usize, i32> {
-        self.guard()?;
+        self.guard().map_err(|code| {
+            eprintln!("native USB bulk guard refusal: endpoint=0x{endpoint:02x} code={code}; no bulk submission");
+            code
+        })?;
         if length > crate::MAX_FRAME || ms == 0 || ms > 500 {
             return Err(FOREIGN);
         }
@@ -438,6 +468,22 @@ impl Backend for NativeUsb {
         self.guard()?;
         unsafe { result(libusb_set_interface_alt_setting(self.handle, 3, 1)) }
     }
+    fn select_zero(&mut self) -> Result<(), i32> {
+        self.guard()?;
+        if !self.claimed || self.interface(3)?.0 != 0 {
+            return Err(FOREIGN);
+        }
+        unsafe { result(libusb_set_interface_alt_setting(self.handle, 3, 0)) }
+    }
+    fn clear_input_halt(&mut self) -> Result<(), i32> {
+        self.guard()?;
+        if !self.claimed || self.interface(3)?.0 != 1 {
+            return Err(FOREIGN);
+        }
+        // Fixed vendor IN endpoint from the pinned descriptor profile. No
+        // pending bulk I/O exists during preparation; never clear on failure.
+        unsafe { result(libusb_clear_halt(self.handle, crate::session::IN_PIPE)) }
+    }
     fn write(&mut self, bytes: &[u8], ms: u32) -> Result<usize, i32> {
         // libusb's C ABI is mutable for both directions; pass an owned copy so
         // no C function can mutate Rust's shared slice.
@@ -507,6 +553,10 @@ mod tests {
         assert!(library_version() >= (1, 0, 27));
         assert!(matches!(
             open_handshake(Path::new("/unused"), &[], false),
+            Err(OpenError::Refused)
+        ));
+        assert!(matches!(
+            open_handshake_with_startup(Path::new("/unused"), &[], false, Startup::ObservedWindows),
             Err(OpenError::Refused)
         ));
     }
