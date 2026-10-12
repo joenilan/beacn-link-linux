@@ -112,7 +112,16 @@ post-controller guest and Windows baselines are saved. The next action is owner-
 Studio connection through VMware's Removable Devices menu, followed by the one
 bounded cache probe and owner-managed return/compare. USB 1.1 is only a candidate
 for this descriptor observation; device fallback is unverified and it does not
-qualify later audio operation. Continue the existing authorization. Do not ask for that
+qualify later audio operation. The owner then attempted connection and received
+VMware's ideal-controller/fallback warning. A read-only guest query timed out;
+Windows still reported the physical target and three USB functions. No cached
+descriptors were read. Host defaults/formats/volumes/mutes and per-user audio/policy
+trees match the refreshed baseline, but a Chatterino session appeared and 17
+MMDevices registry values changed (16 binary fields plus one endpoint-reference
+string). Their cause/semantics are unresolved; do not call this an exact unchanged
+baseline or blindly rewrite registry values. Return/keep Studio on Windows and
+resolve the USB compatibility setting before another handoff. Continue the
+existing descriptor-only authorization. Do not ask for that
 same test permission again. No protocol writes, capture or routing is authorized.
 See the preflight section in [usb-descriptor-validation.md](usb-descriptor-validation.md).
 

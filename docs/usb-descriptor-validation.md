@@ -207,3 +207,24 @@ descriptor observation if Studio enumerates. USB 1.1 fallback is not established
 this does not qualify a later audio test. If VMware refuses or the guest has no
 target after the owner-managed handoff, stop and return it rather than changing
 controllers, drivers, alternates or other devices during the test.
+
+**Connection warning:** the owner's subsequent VMware connection attempt showed
+an ideal-controller warning proposing the best available controller fallback.
+The bounded read-only guest presence query timed out while the dialog was shown.
+Windows still reported one physical target and three present functions. No
+descriptor cache was read, and no protocol, audio capture or routing operation
+was issued by the agent. Do not report guest attachment or compatibility success.
+Resolve the controller compatibility setting before another handoff; owner-managed
+return to Windows remains part of the existing authorization.
+
+Host comparison snapshot SHA256:
+`a390f0999efbf89b8102e65d9e70daf2bf330e4d6b2a6775968225f7be87720d`.
+Default endpoint IDs, endpoint states/formats, master/channel volumes and mutes,
+and user audio/persisted-policy trees match the refreshed baseline. One existing
+render endpoint gained a Chatterino session. The MMDevices tree differs in 17
+values: 16 binary values in property family 194EF948-7CDB-403E-9F47-19418F7B24FD
+and one string in family 24DBB0FC-9311-4B3D-9CF0-18FF155639D4, PID 0. The string
+changed between two known endpoint references. Meanings and causality are not
+established; these changes must not be labeled harmless, silently filtered or
+blindly restored. Private before/after values and differences are preserved.
+There is no claim of a fully unchanged/restored baseline after this attempt.
