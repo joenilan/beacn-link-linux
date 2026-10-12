@@ -10,6 +10,7 @@ description = "Offline BEACN Link codecs and provider-neutral routing proposals"
 default = []
 native-pipewire = []
 native-test-faults = ["native-pipewire"]
+native-usb = []
 
 [lib]
 name = "beacn_link_protocol"

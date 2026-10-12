@@ -1,6 +1,23 @@
 use std::{env, path::PathBuf, process::Command};
 
 fn main() {
+    if env::var_os("CARGO_FEATURE_NATIVE_USB").is_some() {
+        assert_eq!(
+            env::var("CARGO_CFG_TARGET_POINTER_WIDTH").unwrap(),
+            "64",
+            "native-usb currently requires a 64-bit target"
+        );
+        assert_eq!(
+            env::var("CARGO_CFG_TARGET_OS").unwrap(),
+            "linux",
+            "native-usb requires Linux"
+        );
+        assert_eq!(
+            env::var("HOST").unwrap(),
+            env::var("TARGET").unwrap(),
+            "native USB cross compilation is unsupported"
+        );
+    }
     println!("cargo:rerun-if-changed=native/pipewire.c");
     if env::var_os("CARGO_FEATURE_NATIVE_PIPEWIRE").is_none() {
         return;

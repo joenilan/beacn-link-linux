@@ -307,5 +307,11 @@ pub mod session;
 /// Offline cached USB descriptor validation; never opens or claims a device.
 pub mod usb_descriptors;
 
+/// Guarded one-shot USB handshake lifecycle; native access is separately gated.
+pub mod usb_handshake;
+
+#[cfg(all(feature = "native-usb", target_os = "linux"))]
+pub mod native_usb;
+
 #[cfg(all(feature = "native-pipewire", target_os = "linux"))]
 pub mod native_pipewire;

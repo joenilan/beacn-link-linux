@@ -6,11 +6,14 @@ Status: partial static evidence plus a dependency-free offline Rust protocol
 codec, CLI, provider-neutral routing planner, graph/inventory adapters and an
 optional native PipeWire executor restricted to disposable private cores, plus a
 transport-neutral protocol session controller validated with scripted transfers.
+An optional Linux libusb transport now compiles for a guarded one-shot handshake;
+it has not executed against hardware and is separate from the ordinary CLI.
 The native executor verified A-to-B routing, server rejection, interrupted
 acknowledgments and explicit rollback continuation, with unchanged desktop settings
-and persistent-state hashes after owned cleanup. The suite has 61 Rust integration
-tests and 20 Python tests; the latest descriptor continuation validates 25 focused
-descriptor/session/codec tests on Windows/Linux and 5 new probe tests on Linux.
+and persistent-state hashes after owned cleanup. The suite has 69 Rust integration
+tests and 27 Python tests, plus one native USB ABI/library unit test. The latest
+transport batch validates 25 focused Rust tests on Windows, 33 on Linux, the
+native USB feature build/test and 7 Python runner tests on both platforms.
 The probe subsequently validated one owner-authorized physical Studio descriptor
 cache in the VM; the device was returned to Windows with logical settings matching
 and persistent-state/identity differences recorded. Protocol transfers and audio
@@ -39,6 +42,7 @@ application can appear in Windows App and be routed from it.
 - [Protocol session, focused static findings and validation](docs/protocol-session.md)
 - [USB descriptor validator and VM-first hardware plan](docs/usb-descriptor-validation.md)
 - [First physical descriptor observation and return comparison](docs/usb-descriptor-observation.md)
+- [Native USB handshake implementation and proposed test](docs/native-usb-handshake.md)
 - [Offline codec and usage](docs/offline-codec.md)
 - [Offline routing planner](docs/offline-planner.md)
 - [Offline routing preparation](docs/offline-executor.md)

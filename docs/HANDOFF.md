@@ -1,5 +1,5 @@
 # BEACN Link Linux — continuation handoff
-Updated 2026-10-11. Resume development; do not restart the investigation.
+Updated 2026-10-12. Resume development; do not restart the investigation.
 
 ## Objective
 Keep the streaming PC on Windows with BEACN App / Mix Create / Studio.
@@ -137,9 +137,21 @@ the complete comparison and limits. No protocol/control writes or alternate chan
 were performed. Descriptor-only permission is completed; it does not authorize
 a handshake. Preserve full state-file contents in future baselines, not only hashes.
 
-**Next work:** implement and offline-validate an optional selected-device Linux
-transport for the existing session controller. Then prepare a bounded authorized
-interface-3/alternate-1 handshake test, resolving controller/baseline limits first.
+**Completed native USB implementation:** `native-usb` now builds a selected-fd
+libusb adapter with discovery disabled. `usb_handshake` permits only A0/A1/A2,
+revalidates exact profile/ownership/audio state, never retries and reports claim
+release/restoration. Publication/polling remain refused. Windows default build and
+25 focused tests passed; Linux default/optional builds, 33 focused tests, 1 ABI unit
+test and 7 runner tests passed. Final runner tests also pass on Windows. Saved
+physical descriptors pass the strict profile with no new device access.
+Read [native-usb-handshake.md](native-usb-handshake.md) for exact hashes, limitations
+and a prepared one-shot hardware test with full persistent-file backups. The normal
+CLI remains disabled. No hardware handshake or new passthrough occurred.
+
+**Next work:** obtain specific authorization for that one interface-3/alternate-1
+A0/A1/A2 VM handshake and owned cleanup, using fresh host/guest baselines and full
+state-file contents. Owner manages physical connection/return. Generic continuation
+and completed descriptor-only permission do not authorize this protocol execution.
 The first acceptance remains
 one real Linux app visible/routable in Windows App with verified audio. Hardware
 attachment/captures/routing need separately scoped approval; current isolated-VM
@@ -183,7 +195,8 @@ After native local routing is proven:
 - Multi-app/four-stereo-pair lifecycle, reconnects, rate changes and error recovery.
 
 Hardware captures, USB passthrough and driver/firmware changes need separately
-scoped authorization; there has been no hardware runtime validation.
+scoped authorization. Physical cached descriptors are validated; hardware protocol
+execution and audio interoperability remain unverified.
 
 ## Static findings worth preserving
 Installed Windows Link studied: 1.0.4.0, native AMD64 PE, JUCE 7.0.6.
@@ -203,14 +216,20 @@ Windows has the checkout and existing dedicated SSH setup for the Ubuntu guest.
 VMware VM is under D:\VMs\BEACN-Link-Linux.
 Guest was upgraded by the owner from Ubuntu 24.04.5 to 26.04.1; current evidence
 uses Ubuntu 26.04.1, PipeWire 1.6.2, Rust/Cargo 1.88.0 and Python 3.14.4.
-VM configuration at last inspection: 2 vCPU, 4 GiB RAM, 40 GiB growable virtual disk,
-NAT networking; no USB, physical sound passthrough or shared folders.
+VM configuration at the original graph checkpoint: 2 vCPU, 4 GiB RAM,
+40 GiB growable virtual disk, NAT networking; no USB, physical sound passthrough
+or shared folders. The owner subsequently enabled USB 1.1 for the completed
+descriptor test; current device ownership must be checked before new execution.
 Use SSH for commands. Screen lock does not stop SSH; VM suspension/host sleep does.
 
 No GitHub credentials were installed in the guest. Sources were archived, transferred
 using the existing verified SSH connection, hash-checked, and built in isolated dirs.
-Latest guest source is under the user's home in
+The original graph checkpoint source is under the user's home in
 beacn-link-graph-20261011T204629Z/source.
+The latest tested USB source is in the existing guest user's home under
+beacn-link-usb-final-20261012T132115Z/source. Its optional handshake example is built;
+do not execute device mode until authorized. Library-version/cache-check modes
+remain offline. Latest free disk is about 22.8 GB; continue lightweight builds only.
 Locate the existing isolated Rust homes from local artifacts rather than installing
 another toolchain. Resolve current IP/user/known_hosts/key references locally;
 keep those details and raw evidence out of Git and logs.
@@ -225,7 +244,7 @@ Private Windows evidence beside the existing VM host-SSH setup includes:
 - private-core-routing-result.json
 - private-core-routing-verification.json
 plus source manifests/build logs. Verify actual filenames before using them.
-The last guest free-space result was roughly 24 GB decimal, below the owner's
+The earlier graph checkpoint free-space result was roughly 24 GB decimal, below the owner's
 25 GB heavy-build threshold. These were lightweight single-job builds, not a
 permission to launch large builds. Measure current space/resource use first.
 
@@ -259,7 +278,8 @@ because of that historical orchestration failure.
    Fast-forward only if safe; preserve any local changes.
 2. Reconcile against implementation commit 39d36a3 and read canonical docs.
 3. Verify existing Windows/VM access read-only, toolchain and current disk space.
-4. Continue the native fault/recovery work in the completed-continuation note.
-   The original native batch is implemented. Keep progress factual and report
+4. Follow the current next-work note: the one-shot USB implementation is complete,
+   and its physical handshake requires specific owner authorization. The original
+   native fault/recovery batch is implemented. Keep progress factual and report
    implemented / built / runtime-tested / pushed separately.
 5. Leave Jawjack, Haiwire, AI benchmarks and other agents' processes alone.

@@ -103,10 +103,9 @@ committed. Previous evidence and settings snapshots remain intact.
 
 ## Next implementation and authority boundary
 
-Implement an optional selected-device Linux transport for the existing session
-controller, using the confirmed advertised profile and preserving audio-interface
-ownership. Keep it disabled in the normal CLI, refuse kernel-driver ownership,
-auto-detach, resets and fallback, and compile/test the exact software tree offline.
+The subsequent [native USB handshake implementation](native-usb-handshake.md)
+compiles and passes focused offline checks using the confirmed advertised profile.
+It preserves audio-interface ownership and remains disabled in the normal CLI.
 Before another physical test, preserve full state-file backups and resolve the
 controller configuration and baseline-comparison limits above.
 
