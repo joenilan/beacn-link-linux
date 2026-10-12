@@ -322,3 +322,57 @@ right of Outgoing Studio Link Assignments. While `BEACN Linux VM Test` is visibl
 drag that test entry into the first `Link In` channel. Verify an actual bound
 assignment record and compare settings after returning Studio to Windows.
 Sustained visibility, assignment receipt and audio remain unverified in this batch.
+
+## First periodic hardware attempt: A2 failure, no publication
+
+Fresh full-content host/guest snapshots preceded the owner-managed USB handoff;
+Windows Link remained closed. The 40-cycle attempt used the final executable
+above. The initial live-inventory request succeeded, A0/A1 completed, and A2 read
+returned `TransportError::Unknown`. The native layer did not retain the libusb
+error code or transferred-byte count, so timeout/stall/disconnect cannot be
+distinguished from this evidence. Do not label it a timeout or infer a periodic
+loop defect: the failure occurred before that loop or any list/poll submission.
+
+There was no retry. Native cleanup reported release success and baseline restored;
+the child exited 2 without supervisor timeout. The owned source remained valid,
+the private graph was restored, and both owned processes stopped. The connected
+desktop graph and all four tracked persistent-state files matched exactly before
+versus after owned cleanup. The owner returned Studio without another test.
+
+After return, Windows defaults and endpoint states/formats/volumes/mutes/sessions
+match the pre-handoff snapshot; Windows snapshot errors are empty. Guest tracked
+state files match exactly, but its desktop graph exact comparison differs across
+handoff. Machine-audio registry values differ in 16 places; user audio/policy trees
+match. Preserve the complete differences outside Git with no blind rewrite or
+whole-system exact rollback claim. Private guest evidence was downloaded.
+
+Failed hardware journal SHA256:
+`92bc2eee5caf79fbb7750d678e5c5624ca8c95c5fba8d53254c1489029007e13`.
+Guest return comparison SHA256:
+`766956fc39bc9c0f9c8ba4a5d15da23c0658f1ef540145af08f187616b36c6c6`.
+Windows return snapshot SHA256:
+`0bd956e1d74b7848d8bb6de73ae312c8b4770b173cdd917ebdfa5b7162888be2`.
+
+The diagnostic follow-up preserves native failed-bulk endpoint, error code,
+requested length and transferred count in stderr; it never logs payload/device
+metadata, retries, or interprets partial error transfers as successful completion.
+Protocol/gate behavior and deadlines are unchanged. Its exact Linux periodic and
+one-shot examples built and both native unit checks passed. Earlier focused matrix
+and private-source probe remain the evidence for unchanged periodic/runner behavior;
+no extra hardware attempt or repeated routing probe occurred.
+
+Diagnostic code SHA256:
+`306398e4ba3051884acef4be1e874f822a311daea2fe283d92d7e77668c00842`.
+Diagnostic archive SHA256:
+`13d2cde66d4c298697168f7127466dd3c69945d33c3abbe57463111ec697f46c`.
+Diagnostic Linux build/unit journal SHA256:
+`b0857cd0bf61ff544eff913d49924d492fc8bb5820c6e116680d0ae069dfe51a`.
+Diagnostic periodic executable SHA256:
+`0a9a1021131b76d953ea0240bc4ea808dedebbd3093efc0be2ef00920e7235d9`.
+Latest guest free disk: 21,142,679,552 bytes. Earlier attempts/artifacts remain intact.
+
+Next work is focused startup/reconnect analysis plus meaningful native failure
+diagnostics, before another owner-coordinated hardware attempt. Reconnection is
+not presently requested. The A2 failure does not negate the earlier successful
+handshake/list/no-payload poll and brief owner-observed app visibility, but the
+periodic hardware and assignment milestones remain unproven.

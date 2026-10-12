@@ -358,15 +358,21 @@ impl NativeUsb {
             return Err(FOREIGN);
         }
         let mut transferred = 0;
-        unsafe {
-            result(libusb_bulk_transfer(
+        let code = unsafe {
+            libusb_bulk_transfer(
                 self.handle,
                 endpoint,
                 bytes,
                 length as c_int,
                 &mut transferred,
                 ms,
-            ))?;
+            )
+        };
+        if code < 0 {
+            // Preserve diagnostic evidence without interpreting acknowledged
+            // bytes as success, exposing payloads, or retrying uncertain I/O.
+            eprintln!("native USB bulk failure: endpoint=0x{endpoint:02x} code={code} transferred={transferred} requested={length}");
+            return Err(code);
         }
         if transferred < 0 || transferred as usize > length {
             return Err(FOREIGN);

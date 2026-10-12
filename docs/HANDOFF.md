@@ -247,12 +247,30 @@ Final source is `beacn-link-usb-publication-periodic-final-20261012T153055Z/sour
 under the existing guest home. See [native-usb-publication.md](native-usb-publication.md)
 for hashes and precise validation scope. Guest free disk is about 21.3 GB.
 
-**Next work:** fresh snapshots and a 40-cycle hardware test under the standing
-authorization, with Windows Link closed. Before connection, point to the exact
-streaming-PC ASSIGNMENTS / Applications box containing `obs64 System`. Ask the
-owner to drag `BEACN Linux VM Test` into the first `Link In` channel while visible;
-observe whether assignment 1 reaches Linux. The stock 500 ms publication timer
-supports this experiment; brief appearance does not establish expiry or root cause.
+**Hardware attempt stopped before publication:** the owner connected Studio and
+was ready at the exact Applications box. A0/A1 completed, but the A2 native read
+returned an unknown transport outcome. No list, periodic cycle, assignment or
+route was submitted afterward; no retry occurred. Device release/baseline,
+private graph restoration and both owned process exits passed. Connected desktop
+and all tracked state files matched exactly after cleanup. Studio is back on
+Windows; Windows defaults/endpoint states/formats/volumes/mutes/sessions and guest
+state files match the pre-test baseline. Guest graph exact comparison differs
+across handoff; 16 machine-audio registry values differ and remain preserved.
+See [native-usb-publication.md](native-usb-publication.md) for hashes and limits.
+
+The native read path had discarded libusb's error code/transferred count. These
+are now logged on failed bulk I/O without payloads, retry or treating partial
+bytes as success. The new exact tree was built in Linux; both native unit checks
+passed. Latest build source is
+`beacn-link-usb-publication-periodic-errors-20261012T153706Z/source` under the guest
+home. This diagnostic change has not been tested on hardware. Free disk: 21.1 GB.
+
+**Next work:** inspect original worker startup/reconnect ordering and the failed
+versus successful run conditions, then select a bounded test that captures the
+actual native error. Do not repeat the failed attempt or use a longer timeout as
+an assumed fix. No reconnection is currently requested from the owner. Sustained
+publication and assignment receipt remain pending. The stock 500 ms timer supports
+the experiment; brief appearance does not establish expiry or root cause.
 Routing/audio acceptance remains unproven. Preserve all earlier evidence.
 A receiving agent should use this authorization context alongside the current
 owner instructions and applicable execution environment.
