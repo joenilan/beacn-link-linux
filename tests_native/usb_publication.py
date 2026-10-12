@@ -130,7 +130,7 @@ def stop_owned(process):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("stage", choices=("prepare", "source-probe", "run", "compare"))
+    parser.add_argument("stage", choices=("prepare", "prepare-connected", "source-probe", "run", "compare", "compare-connected"))
     parser.add_argument("--evidence-dir", required=True)
     parser.add_argument("--executor", required=True)
     parser.add_argument("--authorize-publication", action="store_true")
@@ -147,13 +147,17 @@ def main():
     source_only = args.stage == "source-probe"
     if args.stage not in ("run", "source-probe"):
         journal = Path(args.evidence_dir) / "handshake.json"
-        if args.stage == "compare" and journal.exists():
+        if args.stage in ("compare", "compare-connected") and (Path(args.evidence_dir) / "run-started.json").exists() and not journal.exists():
+            parser.error("attempt completion unconfirmed; manual review required before comparison")
+        if args.stage in ("compare", "compare-connected") and journal.exists():
             state = json.loads(journal.read_text())
             if state.get("retained_private_process_pids") or not all(state.get("owned_processes_stopped", [False])):
                 parser.error("owned private process exit unconfirmed; manual review required")
         previous = sys.argv
         try:
             sys.argv = ["shared-usb-runner", args.stage, "--evidence-dir", args.evidence_dir, "--executor", args.executor]
+            if args.stage == "prepare-connected" and args.sysfs_device:
+                sys.argv += ["--sysfs-device", args.sysfs_device]
             return base.main()
         finally:
             sys.argv = previous
@@ -180,6 +184,8 @@ def main():
         selected = Path(args.sysfs_device).resolve(strict=True)
         if len(found) != 1 or found[0].resolve() != selected:
             parser.error("selected target absent or ambiguous")
+        if before.get("scope") == "connected" and base.connected_binding(selected) != before["binding"]:
+            parser.error("connected target differs from baseline")
         with Path(args.expected_cache).open("rb") as handle:
             raw = handle.read(256 * 1024 + 1)
         if len(raw) > 256 * 1024:

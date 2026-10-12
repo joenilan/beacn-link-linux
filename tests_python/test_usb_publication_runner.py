@@ -27,6 +27,16 @@ def objects():
 
 
 class PublicationRunnerTests(unittest.TestCase):
+    def test_missing_completion_journal_blocks_both_comparison_modes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            (root / "run-started.json").write_text("{}")
+            for stage in ("compare", "compare-connected"):
+                argv = ["test", stage, "--evidence-dir", str(root), "--executor", "unused"]
+                with patch.object(sys, "argv", argv), patch.object(runner.base, "main") as shared, contextlib.redirect_stderr(io.StringIO()):
+                    with self.assertRaises(SystemExit): runner.main()
+                    shared.assert_not_called()
+
     def test_observed_startup_is_refused_for_default_and_source_only_modes(self):
         for stage, cycles in (("run", "0"), ("source-probe", "3"), ("prepare", "3")):
             argv = ["test", stage, "--evidence-dir", "unused", "--executor", "unused", "--observed-startup", "--cycles", cycles]
@@ -123,7 +133,7 @@ class PublicationRunnerTests(unittest.TestCase):
                 shared.assert_not_called()
 
     def test_metadata_stages_use_existing_snapshot_owner_and_restore_arguments(self):
-        for stage in ("prepare", "compare"):
+        for stage in ("prepare", "compare", "prepare-connected", "compare-connected"):
             argv = ["test", stage, "--evidence-dir", "not-existing-test-path", "--executor", "unused"]
             with patch.object(sys, "argv", argv), patch.object(runner.base, "main", return_value=0) as shared:
                 self.assertEqual(runner.main(), 0); shared.assert_called_once_with(); self.assertIs(sys.argv, argv)

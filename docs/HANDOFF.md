@@ -295,10 +295,24 @@ This is one successful startup/cycle, not sustained visibility or a proven fix.
 changing that policy. The owner now requests direct USB handoff automation and
 explicitly forbids computer-use/mouse automation. Native computer-use inspection
 failed before any UI input and was stopped. Direct live VMware USB control remains
-unverified. Add fresh connected-state prepare/compare so Studio can remain in the
-VM across tests; return only at the end of the testing session. Keep one attempt
+unverified. Fresh `prepare-connected` / `compare-connected` are now implemented
+and use the existing snapshot/cache owners, so Studio can remain in the VM across
+tests; return only at the end of the testing session. Keep one attempt
 per evidence directory and no automatic USB retries. Sustained publication,
 assignment receipt and audio remain pending; ordinary apply stays disabled.
+
+Connected-workflow source built at
+`beacn-link-usb-publication-connected-final-20261012T160535Z/source` in the existing
+guest home. Linux passed 22 runner tests; Windows passed 20 with two Linux-only
+cases skipped. Native examples rebuilt; Rust behavior is unchanged from the
+31-case startup checks. Actual connected-stage hardware validation is pending.
+The ignored `local/connected_usb_attempt.py` composes fresh connected prepare,
+one authorized run, connected compare and host snapshots through direct SSH,
+without switching USB or invoking any UI. Its read-only `check` verified source
+pins and guest target count zero. It has not run a protocol attempt. Record a full
+pre-handoff baseline at session start separately; a connected baseline is not a
+pre-attachment backup. Free guest disk is about 20.7 GB. Read publication docs for
+exact hashes and scope. No UI automation is permitted for future continuation.
 A receiving agent should use this authorization context alongside the current
 owner instructions and applicable execution environment.
 The first acceptance remains one real Linux app visible/routable in Windows App

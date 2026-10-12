@@ -58,6 +58,53 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(result, 0)
         run.assert_not_called()
 
+    def cache_sample(self, alternate=0):
+        return ((1, 2), {"bConfigurationValue": 1}, [{"number": n, "alternate": alternate if n == 3 else 0, "driver": None} for n in range(4)], b"synthetic-descriptor")
+
+    def test_connected_prepare_and_compare_need_no_usb_handoff_or_execution(self):
+        with patch.object(runner.usb_cache, "sample", return_value=self.cache_sample()):
+            result, run = self.invoke("prepare-connected", ("--sysfs-device", str(self.device)), [self.device])
+            self.assertEqual(result, 0); run.assert_not_called()
+            data = json.loads((self.root / "baseline.json").read_text())
+            self.assertEqual(data["scope"], "connected")
+            self.assertEqual(data["snapshot"], self.snapshot)
+            result, run = self.invoke("compare-connected", targets=[self.device])
+            self.assertEqual(result, 0); run.assert_not_called()
+            report = json.loads((self.root / "connected-comparison.json").read_text())
+            self.assertTrue(report["connected_binding_equal"])
+            self.assertFalse(report["guest_target_absent"])
+
+    def test_connected_stages_refuse_missing_ambiguous_owned_or_replaced_target(self):
+        with self.assertRaises(SystemExit): self.invoke("prepare-connected", targets=[self.device])
+        for found, sample in (([], self.cache_sample()), ([self.device, self.device], self.cache_sample()), ([self.device], self.cache_sample(1))):
+            with patch.object(runner.usb_cache, "sample", return_value=sample):
+                with self.assertRaises(RuntimeError): self.invoke("prepare-connected", ("--sysfs-device", str(self.device)), found)
+        with patch.object(runner.usb_cache, "sample", return_value=self.cache_sample()):
+            self.invoke("prepare-connected", ("--sysfs-device", str(self.device)), [self.device])
+        changed = self.cache_sample(); changed = ((1, 3), *changed[1:])
+        with patch.object(runner.usb_cache, "sample", return_value=changed):
+            with self.assertRaises(SystemExit): self.invoke("compare-connected", targets=[self.device])
+        with self.assertRaises(RuntimeError): self.invoke("compare-connected", targets=[])
+        self.assertFalse((self.root / "connected-comparison.json").exists())
+
+    def test_connected_comparison_preserves_concurrent_work_and_refuses_foreign_scope(self):
+        self.prepare()
+        with self.assertRaises(SystemExit): self.invoke("compare-connected", targets=[self.device])
+        self.root = self.parent / "connected-evidence"
+        changed = {"desktop": {"Node": [{"id": 9}]}, "state_files": self.snapshot["state_files"]}
+        with patch.object(runner.usb_cache, "sample", return_value=self.cache_sample()):
+            self.invoke("prepare-connected", ("--sysfs-device", str(self.device)), [self.device])
+            result, run = self.invoke("compare-connected", targets=[self.device], after=changed)
+        self.assertEqual(result, 2); run.assert_not_called()
+        self.assertEqual(json.loads((self.root / "connected-comparison.json").read_text())["after"], changed)
+        self.assertEqual(json.loads((self.root / "baseline.json").read_text())["snapshot"], self.snapshot)
+
+    def test_missing_completion_journal_blocks_comparison(self):
+        self.prepare()
+        (self.root / "run-started.json").write_text("{}")
+        with self.assertRaises(SystemExit): self.invoke("compare")
+        self.assertFalse((self.root / "comparison.json").exists())
+
     def run_args(self):
         return ("--authorize-handshake", "--sysfs-device", str(self.device), "--expected-cache", str(self.cache))
 

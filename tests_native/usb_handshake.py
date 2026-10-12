@@ -15,6 +15,7 @@ sys.dont_write_bytecode = True
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "tools"))
 import pipewire_inventory as inventory
+import usb_descriptor_probe as usb_cache
 spec = importlib.util.spec_from_file_location("private_core", REPO / "tests_native/private_core.py")
 core = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(core)
@@ -55,6 +56,22 @@ def save(path, value):
         json.dump(value, handle, indent=2)
 
 
+def connected_binding(directory):
+    """Read-only comparison stamp, never authority for a claim or deletion."""
+    selected = Path(directory).resolve(strict=True)
+    found = targets()
+    if len(found) != 1 or found[0].resolve() != selected:
+        raise RuntimeError("connected target absent or ambiguous")
+    first = usb_cache.sample(selected)
+    if usb_cache.sample(selected) != first:
+        raise RuntimeError("connected target changed during observation")
+    instance, attributes, interfaces, raw = first
+    if attributes["bConfigurationValue"] != 1 or [(i["number"], i["alternate"]) for i in interfaces] != [(0, 0), (1, 0), (2, 0), (3, 0)] or interfaces[-1]["driver"] is not None:
+        raise RuntimeError("connected target is not in its released baseline profile")
+    return {"sysfs_device": str(selected), "instance": list(instance), "attributes": attributes,
+            "interfaces": interfaces, "descriptor_sha256": hashlib.sha256(raw).hexdigest()}
+
+
 def execute_child(command, timeout=12):
     """Bounded owned-child supervision shared by the explicit USB test runners."""
     env = os.environ.copy()
@@ -83,7 +100,7 @@ def execute_child(command, timeout=12):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("stage", choices=("prepare", "run", "compare"))
+    parser.add_argument("stage", choices=("prepare", "prepare-connected", "run", "compare", "compare-connected"))
     parser.add_argument("--evidence-dir", required=True)
     parser.add_argument("--executor", required=True)
     parser.add_argument("--authorize-handshake", action="store_true")
@@ -95,11 +112,19 @@ def main():
         parser.error("requires Linux and private evidence outside the repository")
     binary = Path(args.executor).resolve(strict=True)
     digest = hashlib.sha256(binary.read_bytes()).hexdigest()
-    if args.stage == "prepare":
-        if targets():
+    if args.stage in ("prepare", "prepare-connected"):
+        connected = args.stage == "prepare-connected"
+        if connected and not args.sysfs_device:
+            parser.error("prepare-connected requires an exact selected sysfs device")
+        binding = connected_binding(args.sysfs_device) if connected else None
+        if not connected and targets():
             parser.error("prepare while Studio is still on Windows")
         root.mkdir(mode=0o700, parents=False, exist_ok=False)
-        save(root / "baseline.json", {"time": time.time(), "binary_sha256": digest, "snapshot": snapshot()})
+        observed = snapshot()
+        if connected and connected_binding(args.sysfs_device) != binding:
+            parser.error("connected target changed across baseline snapshot")
+        save(root / "baseline.json", {"time": time.time(), "binary_sha256": digest, "snapshot": observed,
+                                      "scope": "connected" if connected else "pre-handoff", "binding": binding})
         print("baseline and complete tracked state-file backups saved; no device I/O")
         return 0
     before = json.loads((root / "baseline.json").read_text())
@@ -116,6 +141,8 @@ def main():
         found = targets()
         if len(found) != 1 or found[0].resolve() != selected:
             parser.error("exact selected target absent or ambiguous")
+        if before.get("scope") == "connected" and connected_binding(selected) != before["binding"]:
+            parser.error("connected target differs from baseline")
         expected = Path(args.expected_cache).resolve(strict=True)
         with expected.open("rb") as handle:
             raw = handle.read(256 * 1024 + 1)
@@ -135,16 +162,28 @@ def main():
                           "next": "owner returns Studio to Windows, then compare"}))
         return 0 if result.get("exit") == 0 and not result["timed_out"] else 2
     journal = root / "handshake.json"
+    if (root / "run-started.json").exists() and not journal.exists():
+        parser.error("attempt completion unconfirmed; manual review required before comparison")
     if journal.exists() and not json.loads(journal.read_text())["child_exited"]:
         parser.error("owned child exit was unconfirmed; manual review required before comparison")
-    if targets():
+    connected = args.stage == "compare-connected"
+    if connected and before.get("scope") != "connected":
+        parser.error("compare-connected requires a connected-state baseline")
+    binding = connected_binding(before["binding"]["sysfs_device"]) if connected else None
+    if connected and binding != before["binding"]:
+        parser.error("connected target differs from baseline")
+    if not connected and targets():
         parser.error("compare only after owner return to Windows")
     after = snapshot()
-    comparison = {"guest_target_absent": True,
+    if connected and connected_binding(before["binding"]["sysfs_device"]) != binding:
+        parser.error("connected target changed across comparison snapshot")
+    comparison = {"guest_target_absent": not connected,
+                  "baseline_scope": before.get("scope", "pre-handoff"),
+                  "connected_binding_equal": True if connected else None,
                   "desktop_exact_equal": after["desktop"] == before["snapshot"]["desktop"],
                   "state_files_exact_equal": after["state_files"] == before["snapshot"]["state_files"],
                   "after": after}
-    save(root / "comparison.json", comparison)
+    save(root / ("connected-comparison.json" if connected else "comparison.json"), comparison)
     print(json.dumps({k: v for k, v in comparison.items() if k != "after"}))
     # Preserve differences. Never automatically overwrite live persistent state.
     return 0 if comparison["desktop_exact_equal"] and comparison["state_files_exact_equal"] else 2

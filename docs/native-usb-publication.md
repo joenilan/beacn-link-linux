@@ -471,3 +471,65 @@ verified. The native computer-use pipe was unavailable and that path was stopped
 Use direct controls only. A connected-state test baseline can remove per-attempt
 physical handoffs while retaining full snapshots, claim cleanup and exact local
 comparisons; perform the host-return comparison once at session end.
+
+## Connected-state test workflow
+
+The owner explicitly prohibits computer-use/mouse automation. Native UI
+inspection sent no input and stopped; no foreground/mouse automation is used.
+Direct VMware USB switching remains unverified. Instead, leave Studio in the VM
+throughout a testing session, release only the owned vendor-interface claim after
+each attempt, and perform the physical return/host comparison once at session end.
+This avoids per-test switching without claiming an automatic VMware USB API.
+
+The shared runner now implements `prepare-connected --sysfs-device <selected>`
+and `compare-connected`. The publication runner delegates those stages to the
+existing owner. Preparation still saves full desktop graph and tracked persistent
+contents/modes/hashes. It reuses `usb_descriptor_probe.sample` for bounded cached
+device/interface observations before and after the snapshot: exactly one selected
+target, configuration 1, alternates zero and vendor interface unclaimed. Its
+comparison stamp is not claim/deletion authority; native transfers retain their
+separate selected-handle/descriptor/identity gate. A later connected run refuses
+a changed stamp. Comparison requires the same released profile/stamp across its
+snapshot, confirmed child completion, and confirmed private-process cleanup.
+Missing completion journals after a started attempt now block both comparison
+modes rather than allowing a premature cleanup claim.
+
+Every attempt still uses a fresh exclusive evidence directory, pinned binary,
+ten-minute baseline limit, one used-attempt marker, bounded child supervision and
+no automatic retry. Connected comparison writes `connected-comparison.json`, so
+the final host-return comparison can be preserved separately. Graph or persistent
+differences are saved without rewriting concurrent work. Default pre-handoff
+prepare/returned comparison behavior stays intact. Keep the full pre-handoff
+baseline at session start: an attached baseline does not cover the physical
+handoff or prove whole-system rollback after it.
+
+The ignored private `local/connected_usb_attempt.py` composes fresh connected
+prepare, a single authorized observed-startup publication run, connected compare
+and host connected snapshots via strict SSH. It never switches USB, executes
+Windows Link, invokes UI automation or retries a failed native attempt. Unknown
+outer execution remains unconfirmed and is recorded for review. Its read-only
+`check` verified the final executable/runner pins and no guest target; no connected
+protocol attempt was run. Hardware qualification of the new prepare/compare stages
+remains pending until the next useful protocol test.
+
+Linux passed 22 focused Python runner tests; Windows passed 20 and skipped the
+two Linux-only pipe-supervisor cases. Added cases cover exact connected snapshots,
+missing/ambiguous/claimed/replaced targets, invalid baseline scope, preserved
+concurrent graph changes and missing completion journals. Exact native periodic
+and one-shot examples were rebuilt. Rust behavior is unchanged from the previous
+31-case startup matrix; no redundant routing or USB experiment was run.
+
+Tested code SHA256:
+`0037b100ac54795ebfed90f4bc5fb26030e2f728ae1bf736618ee548bbee0c89`.
+Source archive SHA256:
+`0e99606183c7a62f74f37fa70a4995ffba7a1d5b53238fbac0bfc9d364b6d115`.
+Linux build/runner-check journal SHA256:
+`d14654c9e4d7cffa7189c21f0c7b329698a0d5288e56228b8ed3cd5eece14ea9`.
+Periodic executable SHA256:
+`760b847e9bbd290a88d996e2e052df2ad4e9dfedb431e40bbb8a4d1f29d7cfbe`.
+Publication runner SHA256:
+`ca3dede64a7ab9f4a48c35bbc0dc59122ef5fd89535b1bb03bc20a355b6c0b5b`.
+Shared runner SHA256:
+`bc30dce277b0c272b1b27b37c4ab05b7a788aacaa2dc9720db0b173fc52aafec`.
+Latest guest free disk: 20,746,448,896 bytes. Prior attempts and settings evidence
+remain preserved; no VM/toolchain/configuration changes or new software installs.
