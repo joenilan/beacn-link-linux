@@ -185,8 +185,22 @@ selected-device observation matched the original baseline. No timeout occurred;
 the child exited. The attached-versus-post-child guest graph and all four tracked
 state files matched exactly. A subsequent cached sysfs observation confirmed
 interface 3 alternate zero with no driver, and audio interfaces 0–2 still at
-alternate zero with snd-usb-audio. Host/guest return comparison is pending the
-owner-managed return to Windows; device cleanup is not proof of that comparison.
+alternate zero with snd-usb-audio. The owner then returned Studio to Windows:
+guest target count is zero and all three Windows USB functions report OK.
+Windows defaults and complete endpoint state/format/volume/mute observations
+match. All four tracked guest state-file contents and modes match exactly.
+The filtered guest graph differs by one recreated node and four ports; after
+removing object/client identities and remapping parent node IDs to unique node
+names, all graph properties/parameters and metadata match. No links or devices
+were present in either filtered graph. The exact graph comparison remains false.
+
+Windows session count stays 30, with the same instances and only session-state
+differences. User audio and policy registry trees match. MMDevices differs in
+17 values: 16 binary values of 16 bytes and one string. Their cause/meaning is
+unresolved. Full before/after contents and private differences are preserved;
+no registry or guest state was overwritten. This is observed logical restoration
+with recorded Windows persistence and object-identity differences, not an exact
+unchanged host/guest baseline.
 
 The setup error returned generic revalidation code -9001 and did not identify
 which native observation failed. The likely cause is the incorrect comparison
@@ -206,7 +220,8 @@ The corrected native example builds on Linux; two unit tests (ABI/version and
 ownership combinations) and eight handshake integration tests pass. Metadata and
 saved physical-cache checks pass without opening a device. Windows formatting and
 diff checks pass. No corrected hardware attempt has run. Keep the old test journal
-and backups; complete return comparison before preparing a fresh controlled cycle.
+and backups. Return comparison is complete; fresh backups for a separate corrected
+cycle are now saved, awaiting owner-managed connection.
 
 Original guest baseline SHA256:
 `1c056fae4ed18503d010e948c7af39d8c3f554bec79737aaeaa83958fdbea96a`.
@@ -214,6 +229,12 @@ Original host baseline SHA256:
 `d0c31e4aa3c39306b90683750cad8100d691339435799f636fab3c2ee4f7a4fa`.
 First handshake journal SHA256:
 `143f1c6bfe8173599a1252f55b73027982e819fee42347eb88c868f48d814242`.
+First guest return comparison SHA256:
+`ed20756fefc3edbf0bd881fcc5716500daa47851401a34c13fd585327f60a189`.
+First guest semantic comparison SHA256:
+`c6ceff9c0f0495f9634ff6851b6d0e3c1789b744cacb31104392b7d772160c99`.
+First Windows return snapshot SHA256:
+`428b31872c1dad453ad007f1582f98a72f73ea8b65e598954e8ce973fc58a157`.
 Corrected tested code SHA256:
 `94f396e153fe322735fd71e1f49bc5e60e2f26c7ba9428ee2333ec3c684e9ec5`.
 Corrected source archive SHA256:

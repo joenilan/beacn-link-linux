@@ -166,9 +166,16 @@ claim. The corrected native build, two unit tests and eight handshake tests pass
 no corrected hardware attempt has run. Read [native-usb-handshake.md](native-usb-handshake.md)
 for provenance and distinction between observed failure and inferred cause.
 
-**Next work:** complete the host/guest return comparison after the requested
-owner-managed return to Windows. Preserve the first journal; then prepare fresh
-baselines for a controlled corrected test, under the existing owner authorization.
+**Completed first return comparison:** guest target is absent and Windows USB
+functions report OK. Windows defaults/formats/volumes/mutes match; guest state-file
+contents/modes match exactly. Guest graph properties/parameters and metadata match
+after accounting for one recreated node and four ports. Windows sessions retain
+the same instances with state differences, and MMDevices has 17 changed values
+(16 binary, one string); user audio/policy registry trees match. Preserve all full
+contents/differences; no blind registry rewrite or exact unchanged-baseline claim.
+
+**Next work:** fresh full-content baselines for a separate corrected test are
+saved, awaiting owner-managed connection, under the existing owner authorization.
 Do not automatically retry the original attempt or reuse its evidence directory.
 A receiving agent should use this authorization context alongside the current
 owner instructions and applicable execution environment.

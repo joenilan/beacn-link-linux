@@ -9,8 +9,10 @@ transport-neutral protocol session controller validated with scripted transfers.
 An optional Linux libusb transport now compiles for a guarded one-shot handshake;
 its first hardware attempt stopped during setup before protocol exchange, released
 its claim and verified device cleanup. A claim-observation fix builds and passes
-focused checks; its hardware test and the first host/guest return comparison are
-pending. The transport is separate from the ordinary CLI.
+focused checks; its hardware test is pending. The first return comparison confirms
+logical settings and exact guest state-file restoration, with Windows persistence
+and guest object-identity differences recorded. The transport is separate from the
+ordinary CLI.
 The native executor verified A-to-B routing, server rejection, interrupted
 acknowledgments and explicit rollback continuation, with unchanged desktop settings
 and persistent-state hashes after owned cleanup. The suite has 69 Rust integration
