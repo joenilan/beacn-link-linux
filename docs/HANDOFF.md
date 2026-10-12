@@ -105,12 +105,18 @@ endpoint formats/volumes/mutes/session settings and persisted audio-policy regis
 hashes matched. One physical target is present on Windows. The VM has no USB
 controller/root hubs (all three VM controller flags FALSE); no handoff or hardware
 probe has run. The owner must add/enable a VMware USB controller and manage any
-needed guest restart. Keep Studio on Windows during setup, refresh baselines afterward,
-then continue the existing descriptor-only authorization. Do not ask for that
+needed guest restart. The owner subsequently enabled USB 1.1 and restarted the
+guest. Read-only checks confirm one UHCI controller (class 0x0c0300, uhci_hcd)
+and one 12 Mb/s root hub; still no BEACN target is present in the guest. Fresh
+post-controller guest and Windows baselines are saved. The next action is owner-managed
+Studio connection through VMware's Removable Devices menu, followed by the one
+bounded cache probe and owner-managed return/compare. USB 1.1 is only a candidate
+for this descriptor observation; device fallback is unverified and it does not
+qualify later audio operation. Continue the existing authorization. Do not ask for that
 same test permission again. No protocol writes, capture or routing is authorized.
 See the preflight section in [usb-descriptor-validation.md](usb-descriptor-validation.md).
 
-**Next work:** complete the USB-controller prerequisite and authorized descriptor-only
+**Next work:** complete owner-managed passthrough and the authorized descriptor-only
 observation, then establish actual descriptors before implementing a Linux transport. The first acceptance remains
 one real Linux app visible/routable in Windows App with verified audio. Hardware
 attachment/captures/routing need separately scoped approval; current isolated-VM

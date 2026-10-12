@@ -193,3 +193,17 @@ is ready, refresh both baselines before the already authorized owner-managed
 Studio handoff, then perform the one descriptor observation and return/compare.
 Earlier preflight snapshots are preserved; VM restart can replace graph identities,
 so those snapshots cannot serve as the immediate pre-passthrough baseline.
+
+**Controller follow-up, 2026-10-12:** the owner enabled USB 1.1 and restarted the
+guest. It now exposes one UHCI PCI controller (class 0x0c0300, driver uhci_hcd)
+and one 12 Mb/s root hub. No BEACN target is attached yet. Refreshed private
+Windows and post-controller guest baselines are saved, including new guest
+graph identities. Post-controller guest snapshot SHA256:
+`3096f8dacc69ba79010afc32135b1aff4d0069874ce09f90abbe5c2f9ebabc4d`.
+Host baseline SHA256:
+`0ecd24eb012c28f9202d0a3e8888b1c7f74fcde07e805e8540ad99c0830bf867`.
+The current controller can be tried once for the already authorized cached
+descriptor observation if Studio enumerates. USB 1.1 fallback is not established;
+this does not qualify a later audio test. If VMware refuses or the guest has no
+target after the owner-managed handoff, stop and return it rather than changing
+controllers, drivers, alternates or other devices during the test.
