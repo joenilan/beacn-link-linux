@@ -740,3 +740,62 @@ Free guest disk after build: 20,000,448,512 bytes. All prior evidence is preserv
 Next: one announced owner-ready interaction to elicit a record with the new
 comparison, then assess whether explicit Windows string compatibility is justified.
 Do not bind a record based on name length, NUL count or assignment byte alone.
+
+## Explicit received-name compatibility and hardware assignment resolution
+
+The next owner-ready prefix run received eight assignment-1 records, each with
+NUL at index 19, five opaque bytes after it and an exact prefix match to the owned
+19-byte name. It completed all 40 cycles and 81 fresh inventories; A2 took 484 ms.
+No matching rule was changed during this diagnostic. Journal SHA256:
+`9cbdbd98780d4544c1ca9e9ddc13920b6797183a035f8673256174a0ef6eee2b`.
+
+`session::ReceivedNamePolicy` now provides default ExactBytes and explicit
+WindowsCString planning adaptation. The raw wire record remains unchanged;
+existing ASCII validation, exact inventory name binding, lifecycle guard and
+planner resolution rules still apply. The opaque suffix is not parsed as device
+identity, PID or a routing command. The explicit native mode
+`--authorize-periodic-c-string-names` selects this policy along with observed
+startup, marker observations and bounded initialization. Runner flag
+`--windows-c-string-names` requires the existing initialization-diagnostic periodic
+hardware options and is refused in default/source-only/nonhardware modes. The
+chosen policy is recorded privately. All default modes still match raw bytes.
+
+Windows/Linux passed all 19 session cases, including four new tests of default
+and raw preservation, normalized-name collisions, opaque/unknown values,
+unsupported prefixes, stale streams and stale plans. Linux passed all 25 Python
+runner cases; Windows passed 23 with two Linux-only skips. Default and exact
+native periodic builds passed, along with formatting and diff checks. No
+unchanged full routing/USB matrix was repeated.
+
+The separate owner-ready compatibility run received a bound assignment 1 at
+cycle 5. The existing planner produced one proposal for the owned application
+and its live private-core stream. Publication stopped rather than resending
+unapplied zero; the child held five seconds, required one more fresh inventory
+and cleaned up. It made 12 fresh inventory requests. A2 took 535 ms. The owner
+reports the entry disappeared while dragging; successful UI drop/retention is
+not established. This proves hardware assignment ingestion and planner
+resolution, not actual native route application or audible interoperability.
+Journal SHA256:
+`c7df87df0d415bd55a4dd101c1b89d249fd3aa1e000b2b68e20cca434b93e9f6`.
+Both runs preserved the source, released the claim, stopped owned processes,
+restored the private core and passed every connected local comparison. The
+streaming PC's state remains outside those comparisons. Studio stays in the VM.
+
+Tested code SHA256:
+`957d840c004b09e6a0783eb4c8e9215925e3012b052fd4729336c82beb2acc3a`.
+Archive SHA256:
+`1819546ff2eaf3dcaac6fd554575bcfe5fcb0ac479a08a4509285effb90ed3a6`.
+Linux build/focused-check journal SHA256:
+`97dfac66424deb1f068a7e89aea12b1e4d132222d261702886ca7d16d834ffd6`.
+Native periodic executable SHA256:
+`297fdee5cc3de0c68650331837f9b01261ffcda342986f0add8e5924afa975f9`.
+Runner SHA256:
+`411ef1cab9939c9035ee606a5fc9c6a024eef6382093e7579c1d8c33fd53b6b8`.
+Guest source: beacn-link-usb-publication-c-string-20261013T135803Z/source.
+Free guest disk: 19,808,038,912 bytes. All earlier evidence remains intact.
+
+Next: extend test lifetime and integrate the existing native executor on owned
+private-core destinations. Continued publication must report only a freshly
+verified actual assignment, using existing identity and receipt owners. It must
+not silently acknowledge a desired route or overwrite it with unapplied zero.
+Virtual private-core links remain distinct from physical Studio audio acceptance.

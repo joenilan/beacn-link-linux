@@ -5,7 +5,7 @@ fn main() -> std::process::ExitCode {
     use beacn_link_protocol::{
         lifecycle::InventoryTracker,
         native_usb, planner,
-        session::{PollPolicy, PollReply, Session},
+        session::{PollPolicy, PollReply, ReceivedNamePolicy, Session},
         snapshot,
         usb_descriptors::MAX_DESCRIPTOR_BYTES,
         usb_handshake::{
@@ -20,9 +20,18 @@ fn main() -> std::process::ExitCode {
     let args: Vec<_> = std::env::args().skip(1).collect();
     let offline = args.len() == 2 && args[0] == "--check-periodic";
     let execute = || -> Result<(), String> {
-        let initialization_diagnostic = args
+        let windows_names = args
             .first()
-            .is_some_and(|arg| arg == "--authorize-periodic-initialization-diagnostic");
+            .is_some_and(|arg| arg == "--authorize-periodic-c-string-names");
+        let name_policy = if windows_names {
+            ReceivedNamePolicy::WindowsCString
+        } else {
+            ReceivedNamePolicy::ExactBytes
+        };
+        let initialization_diagnostic = windows_names
+            || args
+                .first()
+                .is_some_and(|arg| arg == "--authorize-periodic-initialization-diagnostic");
         let observe_markers = initialization_diagnostic
             || args
                 .first()
@@ -33,7 +42,7 @@ fn main() -> std::process::ExitCode {
                 .is_some_and(|arg| arg == "--authorize-periodic-startup");
         if !offline && (args.len() != 4 || (args[0] != "--authorize-periodic" && !observed_startup))
         {
-            return Err("requires an explicit --authorize-periodic[-startup|-observed-polls|-initialization-diagnostic] <sysfs-device> <expected-cache> <cycles>; or --check-periodic <cycles>".into());
+            return Err("requires an explicit --authorize-periodic[-startup|-observed-polls|-initialization-diagnostic|-c-string-names] <sysfs-device> <expected-cache> <cycles>; or --check-periodic <cycles>".into());
         }
         let cycles = args
             .last()
@@ -126,7 +135,7 @@ fn main() -> std::process::ExitCode {
         };
         let initial_read_ms = if initialization_diagnostic { 5000 } else { 500 };
         println!(
-            "startup policy: {startup:?}; poll policy: {poll_policy:?}; initial_read_ms={initial_read_ms}; writes_and_later_reads_ms=500"
+            "startup policy: {startup:?}; poll policy: {poll_policy:?}; received_name_policy: {name_policy:?}; initial_read_ms={initial_read_ms}; writes_and_later_reads_ms=500"
         );
         let transport = native_usb::open_publication_with_startup(
             Path::new(&args[1]),
@@ -168,11 +177,15 @@ fn main() -> std::process::ExitCode {
                         records: replies,
                         ignored_tail,
                     } => {
-                        let plan = planner::plan(&current, &replies).map_err(|e| e.to_string())?;
+                        let planning_records: Vec<_> = replies
+                            .iter()
+                            .map(|record| name_policy.for_planning(record))
+                            .collect();
+                        let plan = planner::plan(&current, &planning_records).map_err(|e| e.to_string())?;
                         tracker
                             .require_current_snapshot(&plan)
                             .map_err(|e| e.to_string())?;
-                        let assignments: Vec<_> = replies
+                        let assignments: Vec<_> = planning_records
                             .iter()
                             .filter(|r| r.name == records[0].name)
                             .map(|r| r.assignment.byte())
@@ -180,8 +193,8 @@ fn main() -> std::process::ExitCode {
                         let known = assignments.iter().any(|a| (1..=4).contains(a));
                         println!("cycle={cycle} records={} bound_assignments={assignments:?} proposed_routes={} ignored_tail={ignored_tail}; no routes applied", replies.len(), plan.proposed_routes().count());
                         // Bound diagnostic output independently of the peer's
-                        // record count. Preserve exact-name matching; do not
-                        // invent aliases from prefixes or embedded NULs.
+                        // record count. Raw bytes remain available for diagnostics
+                        // even when explicit C-string planning is selected.
                         for (index, record) in replies.iter().take(4).enumerate() {
                             let nul_index = record.name.iter().position(|b| *b == 0);
                             let c_string_name = &record.name[..nul_index.unwrap_or(record.name.len())];

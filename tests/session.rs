@@ -1,8 +1,8 @@
 use beacn_link_protocol::{
     planner::*,
     session::{
-        decode_poll_reply, decode_poll_reply_with_policy, PollPolicy, PollReply, Session, State,
-        Step, Transport, TransportError, IN_PIPE, OUT_PIPE,
+        decode_poll_reply, decode_poll_reply_with_policy, PollPolicy, PollReply,
+        ReceivedNamePolicy, Session, State, Step, Transport, TransportError, IN_PIPE, OUT_PIPE,
     },
     *,
 };
@@ -563,4 +563,133 @@ fn uninitialized_or_closed_session_cannot_access_transport() {
         Err(session::Error::WrongState(State::Closed))
     );
     assert_eq!(session.into_transport().calls, 0);
+}
+
+fn name_policy_inventory() -> Inventory {
+    Inventory {
+        snapshot_id: 42,
+        applications: vec![Application {
+            id: ApplicationId("owned-app".into()),
+            advertised_name: b"BEACN Linux VM Test".to_vec(),
+            streams: vec![Stream {
+                id: StreamId("owned-stream".into()),
+                state: StreamState::Live,
+            }],
+        }],
+    }
+}
+
+#[test]
+fn c_string_policy_resolves_observed_shape_without_changing_wire_decode_or_default() {
+    // Authored fixture with the hardware-observed shape; opaque tail invented.
+    let mut frame = word(0xAC00001C);
+    frame.extend([25, 1]);
+    frame.extend_from_slice(b"BEACN Linux VM Test\0TAIL!");
+    frame.push(0);
+    let PollReply::Records { records, .. } = decode_poll_reply(&frame).unwrap() else {
+        panic!()
+    };
+    let raw = records[0].clone();
+    assert_eq!(raw.name.len(), 25);
+    assert_eq!(ReceivedNamePolicy::default().for_planning(&raw), raw);
+    let inventory = name_policy_inventory();
+    let strict = plan(&inventory, &records).unwrap();
+    assert!(matches!(
+        strict.resolutions[0].outcome,
+        Outcome::UnsupportedName { .. }
+    ));
+    let resolved = ReceivedNamePolicy::WindowsCString.for_planning(&raw);
+    let compatible = plan(&inventory, &[resolved]).unwrap();
+    let route = compatible.proposed_routes().next().unwrap();
+    assert_eq!(route.application_id, inventory.applications[0].id);
+    assert_eq!(route.stream_ids, vec![StreamId("owned-stream".into())]);
+    assert_eq!(route.link, Link::One);
+    assert_eq!(records[0], raw);
+    let mut tracker = lifecycle::InventoryTracker::default();
+    tracker.advance(&inventory).unwrap();
+    tracker.require_current_snapshot(&compatible).unwrap();
+    let mut newer = inventory.clone();
+    newer.snapshot_id += 1;
+    tracker.advance(&newer).unwrap();
+    assert!(tracker.require_current_snapshot(&compatible).is_err());
+}
+
+#[test]
+fn c_string_alias_collisions_keep_conflict_and_duplicate_planner_rules() {
+    let policy = ReceivedNamePolicy::WindowsCString;
+    let first = record(1, b"BEACN Linux VM Test\0first");
+    let second = record(2, b"BEACN Linux VM Test\0second");
+    let records = [policy.for_planning(&first), policy.for_planning(&second)];
+    let conflict = plan(&name_policy_inventory(), &records).unwrap();
+    assert_eq!(conflict.proposed_routes().count(), 0);
+    assert!(
+        matches!(&conflict.resolutions[0].outcome, Outcome::ConflictingAssignments { values } if values == &[1, 2])
+    );
+    let duplicate = plan(
+        &name_policy_inventory(),
+        &[
+            records[0].clone(),
+            policy.for_planning(&record(1, &second.name)),
+        ],
+    )
+    .unwrap();
+    assert_eq!(duplicate.proposed_routes().count(), 1);
+    assert_eq!(duplicate.resolutions[0].occurrences, 2);
+}
+
+#[test]
+fn c_string_policy_keeps_opaque_assignments_and_exact_unknown_names() {
+    let policy = ReceivedNamePolicy::WindowsCString;
+    for assignment in [0, 5, 255] {
+        let resolved =
+            policy.for_planning(&record(assignment, b"BEACN Linux VM Test\0\xff\x01tail"));
+        let result = plan(&name_policy_inventory(), &[resolved]).unwrap();
+        assert!(
+            matches!(result.resolutions[0].outcome, Outcome::OpaqueAssignment { value } if value == assignment)
+        );
+        assert_eq!(result.proposed_routes().count(), 0);
+    }
+    for name in [
+        b"beacn Linux VM Test\0tail".as_slice(),
+        b"BEACN Linux VM Test extra\0tail",
+        b"another app\0BEACN Linux VM Test",
+        b"BEACN Linux VM Test extra",
+    ] {
+        let resolved = policy.for_planning(&record(1, name));
+        let result = plan(&name_policy_inventory(), &[resolved]).unwrap();
+        assert_eq!(result.resolutions[0].outcome, Outcome::UnknownName);
+    }
+}
+
+#[test]
+fn c_string_policy_never_makes_empty_unsupported_or_stale_names_routable() {
+    let policy = ReceivedNamePolicy::WindowsCString;
+    for name in [
+        b"\0BEACN Linux VM Test".as_slice(),
+        b"\xff\0tail",
+        b"BEACN\nLinux VM Test\0tail",
+    ] {
+        let result = plan(
+            &name_policy_inventory(),
+            &[policy.for_planning(&record(1, name))],
+        )
+        .unwrap();
+        assert!(matches!(
+            result.resolutions[0].outcome,
+            Outcome::UnsupportedName { .. }
+        ));
+        assert_eq!(result.proposed_routes().count(), 0);
+    }
+    let mut stale = name_policy_inventory();
+    stale.applications[0].streams[0].state = StreamState::Stale;
+    let result = plan(
+        &stale,
+        &[policy.for_planning(&record(1, b"BEACN Linux VM Test\0tail"))],
+    )
+    .unwrap();
+    assert!(matches!(
+        result.resolutions[0].outcome,
+        Outcome::UnavailableStreams { .. }
+    ));
+    assert_eq!(result.proposed_routes().count(), 0);
 }

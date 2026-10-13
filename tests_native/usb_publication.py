@@ -141,6 +141,7 @@ def main():
     parser.add_argument("--observed-startup", action="store_true", help="explicit pre-bulk vendor-input preparation experiment")
     parser.add_argument("--observe-rejected-polls", action="store_true", help="explicit bounded rejected-marker observation policy; requires observed-startup")
     parser.add_argument("--initialization-diagnostic", action="store_true", help="single A2 read with a five-second diagnostic limit; all later bulk deadlines stay 500 ms")
+    parser.add_argument("--windows-c-string-names", action="store_true", help="explicit received-name compatibility; requires initialization diagnostic periodic hardware mode")
     args = parser.parse_args()
     if args.cycles and not 1 <= args.cycles <= MAX_CYCLES:
         parser.error("periodic cycle budget outside 1..40")
@@ -150,6 +151,8 @@ def main():
         parser.error("rejected-marker observation requires an observed-startup periodic hardware run")
     if args.initialization_diagnostic and not args.observe_rejected_polls:
         parser.error("initialization diagnostic requires explicit observed marker/startup policy")
+    if args.windows_c_string_names and not args.initialization_diagnostic:
+        parser.error("Windows C-string names require explicit initialization diagnostic policy")
     source_only = args.stage == "source-probe"
     if args.stage not in ("run", "source-probe"):
         journal = Path(args.evidence_dir) / "handshake.json"
@@ -207,7 +210,8 @@ def main():
                                           "periodic_cycles": args.cycles,
                                           "observed_startup": args.observed_startup,
                                           "observe_rejected_polls": args.observe_rejected_polls,
-                                          "initialization_diagnostic": args.initialization_diagnostic})
+                                          "initialization_diagnostic": args.initialization_diagnostic,
+                                          "windows_c_string_names": args.windows_c_string_names})
     # PipeWire also creates a '-manager' socket; evidence paths can exceed the
     # Linux Unix-socket limit. mkdtemp retains exclusive 0700 ownership.
     runtime = Path(tempfile.mkdtemp(prefix="beacn-pub-"))
@@ -237,6 +241,7 @@ def main():
     result["periodic_cycles"] = args.cycles
     result["observed_startup"] = args.observed_startup
     result["observe_rejected_polls"] = args.observe_rejected_polls
+    result["windows_c_string_names"] = args.windows_c_string_names
     result["initialization_diagnostic"] = args.initialization_diagnostic
     result["private_runtime"] = str(runtime)
 
@@ -306,7 +311,7 @@ def main():
                 return current
 
             command = ([str(binary), "--check-periodic", str(args.cycles)] if source_only else
-                       [str(binary), "--authorize-periodic-initialization-diagnostic" if args.initialization_diagnostic else "--authorize-periodic-observed-polls" if args.observe_rejected_polls else "--authorize-periodic-startup" if args.observed_startup else "--authorize-periodic", str(selected), str(pinned), str(args.cycles)])
+                       [str(binary), "--authorize-periodic-c-string-names" if args.windows_c_string_names else "--authorize-periodic-initialization-diagnostic" if args.initialization_diagnostic else "--authorize-periodic-observed-polls" if args.observe_rejected_polls else "--authorize-periodic-startup" if args.observed_startup else "--authorize-periodic", str(selected), str(pinned), str(args.cycles)])
             result.update(execute_periodic(command, fresh, args.cycles))
         else:
             command = ([str(binary), "--check-inventory", str(projected), str(inventory["snapshot_id"])] if source_only else

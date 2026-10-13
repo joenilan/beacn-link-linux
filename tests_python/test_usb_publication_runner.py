@@ -27,6 +27,13 @@ def objects():
 
 
 class PublicationRunnerTests(unittest.TestCase):
+    def test_c_string_names_refuse_unselected_or_nonhardware_modes(self):
+        for stage, extra in (("run", []), ("run", ["--cycles", "3", "--observed-startup", "--observe-rejected-polls"]), ("source-probe", ["--cycles", "3", "--observed-startup", "--observe-rejected-polls", "--initialization-diagnostic"]), ("prepare-connected", ["--initialization-diagnostic"])):
+            argv = ["test", stage, "--evidence-dir", "unused", "--executor", "unused", "--windows-c-string-names", *extra]
+            with patch.object(sys, "argv", argv), patch.object(runner.subprocess, "Popen") as child, contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit): runner.main()
+                child.assert_not_called()
+
     def test_initialization_diagnostic_requires_explicit_marker_policy(self):
         argv = ["test", "run", "--evidence-dir", "unused", "--executor", "unused", "--cycles", "3", "--observed-startup", "--initialization-diagnostic"]
         with patch.object(sys, "argv", argv), patch.object(runner.subprocess, "Popen") as child, contextlib.redirect_stderr(io.StringIO()):

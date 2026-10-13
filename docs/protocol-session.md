@@ -100,6 +100,25 @@ redacted; codec bytes and planner bindings remain unchanged. Its first passive
 40-cycle run received no records, so the prefix hypothesis is still untested.
 No routing or matching-policy change has been made from the observed shape alone.
 
+The subsequent owner-ready prefix run confirmed eight records with first NUL
+at byte 19, five opaque tail bytes and an exact prefix match to the owned name;
+all carried assignment 1. The compatibility implementation therefore exposes
+`ReceivedNamePolicy::{ExactBytes, WindowsCString}`. `for_planning` produces a
+separate record preserving the assignment byte and using the selected name
+interpretation. It neither modifies wire decoding/raw records nor case-folds,
+guesses suffix meanings or finds applications by loose prefix. Empty/non-ASCII
+prefixes still fail planner name validation; unknown names, duplicate conflicts,
+opaque assignment values and stale streams retain their existing outcomes.
+Normalized collisions are passed together to the existing planner, which
+coalesces identical values or blocks conflicting values. Default policy stays
+ExactBytes; this is an explicit interoperability choice at the planning boundary.
+
+Four authored-fixture tests prove raw/default preservation, hardware-shaped
+resolution with current-generation guards, collision handling, unknown/opaque
+values and unsupported/stale refusal. The fixture tail is invented, not captured.
+The native hardware mode subsequently resolved a real assignment-1 record to
+one owned-stream proposal; it applied no route. See publication docs for scope.
+
 The constructor calls alternate setting 0, then 1 (0x140131190/0x1401311D8),
 resets IN 83 (0x1401311E4), and invokes initialization (0x1401311F5).
 It does not test the helper's return before setting policies and starting its

@@ -117,6 +117,33 @@ pub enum PollPolicy {
     ReportRejectedMarker,
 }
 
+/// Explicit interpretation at the planning boundary, never a wire-codec change.
+/// The planner still validates printable ASCII and exact current inventory names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ReceivedNamePolicy {
+    #[default]
+    ExactBytes,
+    /// Match the inspected Windows string consumers: bytes before the first NUL.
+    /// Remaining bytes are opaque, not an alias, PID or routing instruction.
+    WindowsCString,
+}
+impl ReceivedNamePolicy {
+    pub fn for_planning(self, record: &Record) -> Record {
+        let length = match self {
+            Self::ExactBytes => record.name.len(),
+            Self::WindowsCString => record
+                .name
+                .iter()
+                .position(|b| *b == 0)
+                .unwrap_or(record.name.len()),
+        };
+        Record {
+            assignment: record.assignment,
+            name: record.name[..length].to_vec(),
+        }
+    }
+}
+
 /// Parse the declared payload only, as the inspected Windows reader does. Require
 /// its entire length to be present (a safety check missing in that reader).
 /// Extra transfer bytes are counted, not treated as another message or record.

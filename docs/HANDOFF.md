@@ -50,7 +50,35 @@ The exact native example built in the guest; this diagnostic has not run on hard
 Source: beacn-link-usb-publication-reply-20261013T133631Z/source. See publication
 docs for hashes. No unchanged test matrix or hardware attempt was repeated for it.
 
-Latest hardware diagnostic: owner again reported Link In unavailable. Three
+**Resolved name interpretation (2026-10-13):** the owner-ready prefix diagnostic
+received eight assignment-1 records whose first 19 bytes exactly matched the
+owned test name, followed by a NUL and five opaque bytes. An explicit
+`ReceivedNamePolicy::WindowsCString` now adapts received names at the planning
+boundary; wire decoding retains all raw bytes and default matching stays exact.
+The existing planner still guards exact inventory names, stream liveness,
+duplicate/conflicting assignments, opaque zero/unsupported values and generation.
+Windows/Linux passed 19 focused session tests including four new compatibility
+cases. Linux passed all 25 runner cases; Windows passed 23 with two Linux-only
+skips. Default and exact native builds passed.
+
+A separate owner-ready compatibility hardware run recognized assignment 1 at
+cycle 5 and produced one existing-planner proposal for the owned stream. It
+stopped publication, held five seconds, rechecked inventory, released its claim
+and cleaned up; all connected local comparisons passed. The owner reports the
+entry disappeared while being dragged, so UI retention/drop acceptance remains
+unverified. No route was applied. Source:
+beacn-link-usb-publication-c-string-20261013T135803Z/source. Free guest disk:
+19,808,038,912 bytes; continue lightweight builds. Read publication/session docs
+for hashes, explicit flags and limits.
+
+Next native integration: keep the bounded test source alive during interaction,
+apply a resolved assignment only on the selected private core through existing
+native observations/preparation/receipts, and advertise an assignment only after
+actual local-route verification. Do not keep sending unapplied zero over a
+received assignment or claim physical audio from a virtual target. Physical
+BEACN endpoints and ordinary desktop apply remain outside this private-core slice.
+
+Historical preceding diagnostic: owner again reported Link In unavailable. Three
 replies carried assignment 1 and 25-byte names with one NUL, none matching the
 19-byte test name exactly. A new diagnostic reports first-NUL position, opaque
 tail length and whether the preceding bytes match the owned name. Its native
@@ -60,8 +88,8 @@ publication/session docs for hashes and focused static string-copy/comparator
 evidence. Latest source: beacn-link-usb-publication-reply-nul-20261013T134722Z/source;
 free guest disk is about 20.0 GB. Codec and planner still preserve exact raw names.
 
-Next: obtain an announced owner-ready interaction with the prefix diagnostic;
-do not infer an alias from the 25-byte shape. Resolve why the visible source is
+The prefix diagnostic and name-resolution hardware milestones above supersede
+the prior next-work note. Resolve why the visible source is
 not assignable to Link In, then
 test a correctly identified remote assignment. Receiving and resolving that
 assignment precedes physical audio routing. Ordinary desktop apply stays disabled.
