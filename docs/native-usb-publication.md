@@ -704,3 +704,39 @@ Native periodic executable SHA256:
 Guest free disk after the lightweight build: 20,088,913,920 bytes. Earlier code,
 private evidence and settings snapshots remain preserved. Keep the Link routing
 acceptance target; the offered Aux/Music/System choices are not yet mapped to it.
+
+## Embedded-NUL reply investigation
+
+The owner-ready diagnostic run again showed the test app with Link In unavailable.
+Native A2 completed in 859 ms, followed by all 40 cycles and 81 fresh inventories.
+Three one-record replies each reported assignment 1, 25 name bytes, one NUL,
+non-printable-ASCII status and no exact bound-name match. These are raw assignment
+records, not resolved assignments for the test source. Journal SHA256:
+`f0c39fd2ee4ed1209e3874db74a8237e72da75e78b228a34dc3ecd6c8e86dc62`.
+
+The example now additionally reports first-NUL position, opaque bytes after it
+and an exact comparison of the preceding bytes to the owned advertised name.
+It preserves raw decoding and strict planner matching; the extra comparison is
+diagnostic only. A separate passive run completed A2 in 534 ms, all 40 cycles
+and 81 inventories but received no records, so it could not test the new
+comparison. Journal SHA256:
+`5ee09430d6818b674865fcbbfdd7c90ec68c69d8002279bee801e85df26cd295`.
+Both attempts released the claim, preserved the source, stopped both owned
+processes, restored the private core and passed every connected local comparison.
+No streaming-PC profile comparison or Link assignment/audio acceptance is claimed.
+
+The exact new native example built offline on Linux. Formatting/diff checks
+passed; no unchanged matrix rerun. Code SHA256:
+`b63f3abe733562b295e696e42f892580c42b29bded4e2f4d3b98a079672759a0`.
+Archive SHA256:
+`f33d05458fb5d25e0670e2b8f64c46af15efc9f489287c1e53fd10491014a64d`.
+Linux build journal SHA256:
+`33d13865137e44adbcc119564b353911e7d831fc2fd1e20f5cd9d9e3782aa9bd`.
+Native periodic executable SHA256:
+`acfced433b5566b05ec4b06916b70a3d4ac807ba4b63f733f9d8a03fb16f77b6`.
+Guest source: beacn-link-usb-publication-reply-nul-20261013T134722Z/source.
+Free guest disk after build: 20,000,448,512 bytes. All prior evidence is preserved.
+
+Next: one announced owner-ready interaction to elicit a record with the new
+comparison, then assess whether explicit Windows string compatibility is justified.
+Do not bind a record based on name length, NUL count or assignment byte alone.

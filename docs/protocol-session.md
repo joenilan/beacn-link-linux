@@ -77,6 +77,29 @@ is returned to the caller as a nonzero boolean (0x140130B1D–0x140130B24).
 The field labels, their authority and the meaning of the boolean are unknown.
 The Linux controller retains the entire 508-byte body opaquely and redacts Debug.
 
+### Embedded-NUL name investigation (2026-10-13)
+
+A bounded diagnostic hardware run received three records with assignment 1,
+25 name bytes, one embedded NUL and a failed exact match to the 19-byte owned
+test name. The owner again reported that Link In was unavailable. The record
+names were redacted; their identity, NUL position and suffix meaning were not
+observed in this run. Do not call these resolved assignments for the test app.
+
+Focused tracing of the same pinned binary/tools joins the string-copy helper's
+unwind fragments at preferred VAs 0x1401E1FA0–0x1401E2031, starting file offset
+0x1E13A0. It copies the supplied name length at 0x1401E1FF0 and appends a local
+NUL at 0x1401E1FF5. The existing exact UTF-8 comparator at
+0x1400567B0–0x1400568C2, starting file offset 0x55BB0, returns equality when
+both decoded characters are zero at 0x14005689E–0x1400568AC. These observations
+support investigating first-NUL comparison, not automatically adding aliases or
+reinterpreting suffix bytes as a PID, source kind or routing instruction.
+
+The periodic example now reports first-NUL position, opaque tail byte count and
+whether the prefix equals the exact owned advertised name. All names remain
+redacted; codec bytes and planner bindings remain unchanged. Its first passive
+40-cycle run received no records, so the prefix hypothesis is still untested.
+No routing or matching-policy change has been made from the observed shape alone.
+
 The constructor calls alternate setting 0, then 1 (0x140131190/0x1401311D8),
 resets IN 83 (0x1401311E4), and invokes initialization (0x1401311F5).
 It does not test the helper's return before setting policies and starting its

@@ -50,7 +50,18 @@ The exact native example built in the guest; this diagnostic has not run on hard
 Source: beacn-link-usb-publication-reply-20261013T133631Z/source. See publication
 docs for hashes. No unchanged test matrix or hardware attempt was repeated for it.
 
-Next: use the redacted reply evidence to investigate why the visible source is
+Latest hardware diagnostic: owner again reported Link In unavailable. Three
+replies carried assignment 1 and 25-byte names with one NUL, none matching the
+19-byte test name exactly. A new diagnostic reports first-NUL position, opaque
+tail length and whether the preceding bytes match the owned name. Its native
+build passed; a passive run received no records, leaving that comparison untested.
+All connected local comparisons and owned cleanup passed in both runs. See
+publication/session docs for hashes and focused static string-copy/comparator
+evidence. Latest source: beacn-link-usb-publication-reply-nul-20261013T134722Z/source;
+free guest disk is about 20.0 GB. Codec and planner still preserve exact raw names.
+
+Next: obtain an announced owner-ready interaction with the prefix diagnostic;
+do not infer an alias from the 25-byte shape. Resolve why the visible source is
 not assignable to Link In, then
 test a correctly identified remote assignment. Receiving and resolving that
 assignment precedes physical audio routing. Ordinary desktop apply stays disabled.

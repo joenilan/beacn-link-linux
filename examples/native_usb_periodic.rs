@@ -183,13 +183,17 @@ fn main() -> std::process::ExitCode {
                         // record count. Preserve exact-name matching; do not
                         // invent aliases from prefixes or embedded NULs.
                         for (index, record) in replies.iter().take(4).enumerate() {
+                            let nul_index = record.name.iter().position(|b| *b == 0);
+                            let c_string_name = &record.name[..nul_index.unwrap_or(record.name.len())];
+                            let tail_bytes = nul_index.map_or(0, |i| record.name.len() - i - 1);
                             println!(
-                                "cycle={cycle} record_index={index} name_bytes={} assignment={} bound_name_match={} nul_bytes={} printable_ascii={}; name redacted",
+                                "cycle={cycle} record_index={index} name_bytes={} assignment={} bound_name_match={} nul_bytes={} printable_ascii={} first_nul={nul_index:?} tail_bytes={tail_bytes} bound_c_string_match={}; name redacted",
                                 record.name.len(),
                                 record.assignment.byte(),
                                 record.name == records[0].name,
                                 record.name.iter().filter(|b| **b == 0).count(),
                                 record.name.iter().all(|b| (0x20..=0x7e).contains(b)),
+                                c_string_name == records[0].name,
                             );
                         }
                         if replies.len() > 4 {
