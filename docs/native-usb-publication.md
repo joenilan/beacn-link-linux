@@ -1,6 +1,8 @@
 # Native USB app-list publication and assignment poll
 
-Updated 2026-10-12. This batch adds an explicitly enabled one-list/one-poll mode
+Updated 2026-10-13. The latest checkpoint is recorded under Initialization deadline
+diagnostic below; earlier sections retain their historical validation scope.
+This batch adds an explicitly enabled one-list/one-poll mode
 to the existing Linux USB owner. Builds, focused tests and a real private-core
 source probe pass. A native app-list write and valid no-payload poll now pass;
 the owner saw `BEACN Linux VM Test` briefly in the streaming PC's BEACN App.
@@ -596,3 +598,83 @@ and exact connected comparisons replace per-test physical switching. Save the
 session-end host return comparison separately. No mouse/UI automation is allowed.
 Actual connected-stage/marker hardware validation remains pending; sustained
 visibility, assignment ingestion and audio are not established by these tests.
+
+## Initialization deadline diagnostic
+
+The first connected marker-policy hardware attempt on 2026-10-13 completed A0/A1
+but timed out on A2: libusb -7, transferred zero, requested 512. It published
+nothing. Claim release, private-process cleanup and all connected local comparisons
+passed. Journal SHA256:
+`4fb565a84a5e5e87921062da633858453c259c81066900a5639cc0dc2d48d6bc`.
+
+The explicit `--authorize-periodic-initialization-diagnostic` native mode selects
+observed startup, typed rejected-marker observation and a fixed five-second A2
+read. Runner `--initialization-diagnostic` requires `--cycles`, `--observed-startup`,
+`--observe-rejected-polls` and the existing explicit hardware authorization. It
+refuses source-only/one-shot/metadata combinations. A0/A1, publication writes,
+poll writes and subsequent reads retain 500 ms limits. The initial native read
+allowance is consumed before the call; no failed transfer is repeated. Positive
+timeout, phase, count, header, device identity and inventory gates remain intact.
+The only added native diagnostic contains elapsed time, deadline, error code and
+transfer counts; A2 metadata and names remain redacted. See
+[protocol-session.md](protocol-session.md) for the focused Windows timeout evidence.
+
+Windows and Linux passed 42 focused Rust integration cases: session 15,
+handshake 11, publication 16. Linux also passed two native ABI/ownership unit
+checks and 24 Python runner cases; Windows passed 22 with two Linux-only skips.
+Default build and both exact native examples passed. New cases prove that the
+longer allowance applies only to opted-in A2, never writes or later reads; default
+and over-limit calls refuse before backend I/O, zero timeouts submit nothing,
+and failed initialization never retries. Formatting and diff checks passed.
+
+The first diagnostic hardware attempt received valid A2 in 669 ms and completed
+40 cycles: seven NoPayload replies with 508 ignored bytes, 33 exact rejected
+markers with zero ignored bytes, 81 fresh inventory requests, no records. This
+proves that a valid initial reply can exceed the default 500 ms in this VM.
+It does not establish a firmware five-second requirement or marker meaning.
+Its journal SHA256:
+`cc902e54a418a7920e5f3a5b253767447773bd0e5cb66f044bb0c34fd052d5d9`.
+
+Two subsequent observation attempts received A2 in 439 ms and 584 ms and completed
+all 40 cycles. The first had two one-record replies, neither matching the bound
+test name; names were redacted and their identity is unknown. The second had no
+records. The owner confirms seeing BEACN Linux VM Test, with offered destinations
+Aux 2, Music, System and Aux 1; Link In was unavailable. The owner did not attempt
+the suggested Aux 2 drag. Remote source classification and correct assignment
+mapping are unresolved; no assignment ingestion or audio acceptance is claimed.
+Observation-attempt journal SHA256 values, respectively:
+`2de8408cc613fbf5f8e3f0275b5ad542899024192540c079792fb37c351ed953` and
+`5d3c6241055c4eba7c0be6c97b1b1fd2fbc31b9147c445eccab85fc831e1ea47`.
+
+All four attempts used fresh connected guest/host snapshots and separate exclusive
+evidence directories. Owned claims released, source identities remained valid,
+both private processes stopped, and private-core cleanup plus guest binding,
+desktop graph/state and host audio/registry comparisons passed exactly. Connected
+comparison SHA256 (identical content across these attempts):
+`b3a65323bf71a29726810720d99a614578885fa6d62a1d6f41b21ccf4d56641f`.
+These are local comparisons, not streaming-PC settings comparisons or proof of
+remote entry withdrawal. Studio remains in the VM; no physical handoff, mouse/UI
+automation, capture or audio routing occurred. Session-end Windows return
+comparison remains separate. An attached baseline does not cover the handoff.
+
+Tested code SHA256:
+`4feac3d93745977de2855347ed883700cc09cea2608991e320273edc61e6c867`.
+Source archive SHA256:
+`29ff14882653b68548e3687262fdf1f5cd3a602e460cb0713f3c1c998b1e785b`.
+Linux build/focused-check journal SHA256:
+`b5637edfef361b421da1b2b3eacaa68d2c6f1314d61c842d1dbd212d335db60d`.
+Native periodic executable SHA256:
+`ea8f2bebdcec5e3dc7986bdaff18899df070f0ce47a180adccf8aedada1d972c`.
+Publication runner SHA256:
+`5e2037970b8fa22a379e2940f7ad7719537ff06fd29edad8a84ca94243c7d70d`.
+Shared runner SHA256:
+`bc30dce277b0c272b1b27b37c4ab05b7a788aacaa2dc9720db0b173fc52aafec`.
+Guest source: beacn-link-usb-publication-initialization-20261013T131603Z/source.
+Latest free guest disk: 20,186,005,504 bytes. Prior archives and private settings
+evidence remain intact; no toolchain install, VM configuration change or workflow.
+
+For another UI experiment, first state the exact target and reason, wait for owner
+readiness, announce the run start/end, and obtain the observation while it is
+fresh. Do not prescribe arbitrary mixer channels as a substitute for the Link
+acceptance path. Add redacted per-record assignment/name-match diagnostics before
+testing another changed hypothesis; current count-only logs cannot resolve it.

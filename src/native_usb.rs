@@ -206,6 +206,8 @@ pub struct NativeUsb {
     bus: u8,
     address: u8,
     claimed: bool,
+    initial_read_limit_ms: u32,
+    initial_read_used: bool,
     _single_threaded: PhantomData<Rc<()>>,
 }
 /// Explicit mutation-bearing entry point. `authorized` acknowledges external
@@ -224,6 +226,15 @@ pub fn open_handshake_with_startup(
     expected: &[u8],
     authorized: bool,
     startup: Startup,
+) -> Result<Handshake<NativeUsb>, OpenError> {
+    open_selected(sysfs, expected, authorized, startup, 500)
+}
+fn open_selected(
+    sysfs: &Path,
+    expected: &[u8],
+    authorized: bool,
+    startup: Startup,
+    initial_read_limit_ms: u32,
 ) -> Result<Handshake<NativeUsb>, OpenError> {
     if !authorized {
         return Err(OpenError::Refused);
@@ -279,6 +290,8 @@ pub fn open_handshake_with_startup(
         bus,
         address,
         claimed: false,
+        initial_read_limit_ms,
+        initial_read_used: false,
         _single_threaded: PhantomData,
     };
     // ABI from public libusb 1.0.29 header; Linux-only NO_DEVICE_DISCOVERY=2.
@@ -323,8 +336,14 @@ pub fn open_publication_with_startup(
     authorized: bool,
     startup: Startup,
 ) -> Result<Handshake<NativeUsb>, OpenError> {
-    open_handshake_with_startup(sysfs, expected, authorized, startup)
-        .map(|owner| owner.enable_publication(publication))
+    open_selected(
+        sysfs,
+        expected,
+        authorized,
+        startup,
+        publication.initialization_timeout().as_millis() as u32,
+    )
+    .map(|owner| owner.enable_publication(publication))
 }
 impl NativeUsb {
     fn guard(&self) -> Result<(), i32> {
@@ -379,15 +398,23 @@ impl NativeUsb {
         }
         Ok((alternate, driver))
     }
-    fn bulk(&mut self, endpoint: u8, bytes: *mut u8, length: usize, ms: u32) -> Result<usize, i32> {
+    fn bulk(
+        &mut self,
+        endpoint: u8,
+        bytes: *mut u8,
+        length: usize,
+        ms: u32,
+        maximum_ms: u32,
+    ) -> Result<usize, i32> {
         self.guard().map_err(|code| {
             eprintln!("native USB bulk guard refusal: endpoint=0x{endpoint:02x} code={code}; no bulk submission");
             code
         })?;
-        if length > crate::MAX_FRAME || ms == 0 || ms > 500 {
+        if length > crate::MAX_FRAME || ms == 0 || ms > maximum_ms {
             return Err(FOREIGN);
         }
         let mut transferred = 0;
+        let started = std::time::Instant::now();
         let code = unsafe {
             libusb_bulk_transfer(
                 self.handle,
@@ -398,6 +425,9 @@ impl NativeUsb {
                 ms,
             )
         };
+        if maximum_ms > 500 {
+            eprintln!("native USB initial input diagnostic: elapsed_ms={} timeout_ms={ms} code={code} transferred={transferred} requested={length}", started.elapsed().as_millis());
+        }
         if code < 0 {
             // Preserve diagnostic evidence without interpreting acknowledged
             // bytes as success, exposing payloads, or retrying uncertain I/O.
@@ -493,10 +523,24 @@ impl Backend for NativeUsb {
             owned.as_mut_ptr(),
             owned.len(),
             ms,
+            500,
         )
     }
     fn read(&mut self, bytes: &mut [u8], ms: u32) -> Result<usize, i32> {
-        self.bulk(crate::session::IN_PIPE, bytes.as_mut_ptr(), bytes.len(), ms)
+        let maximum = if self.initial_read_used {
+            500
+        } else {
+            self.initial_read_limit_ms
+        };
+        // Consume before calling the backend, including unknown/refused outcomes.
+        self.initial_read_used = true;
+        self.bulk(
+            crate::session::IN_PIPE,
+            bytes.as_mut_ptr(),
+            bytes.len(),
+            ms,
+            maximum,
+        )
     }
     fn release_three(&mut self) -> Result<(), i32> {
         // Retained handle/claim is the authority even if sysfs disappears.

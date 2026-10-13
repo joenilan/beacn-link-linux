@@ -16,6 +16,7 @@ enum Exchange {
 struct Script {
     exchanges: VecDeque<Exchange>,
     calls: usize,
+    read_timeouts: VecDeque<Duration>,
 }
 impl Transport for Script {
     fn write(
@@ -38,7 +39,11 @@ impl Transport for Script {
         bytes: &mut [u8],
         timeout: Duration,
     ) -> Result<usize, TransportError> {
-        assert_eq!((pipe, timeout, bytes.len()), (IN_PIPE, TIMEOUT, 512));
+        let expected_timeout = self.read_timeouts.pop_front().unwrap_or(TIMEOUT);
+        assert_eq!(
+            (pipe, timeout, bytes.len()),
+            (IN_PIPE, expected_timeout, 512)
+        );
         self.calls += 1;
         let Some(Exchange::Read(reply, result)) = self.exchanges.pop_front() else {
             panic!("unexpected read");
@@ -71,6 +76,7 @@ fn session(exchanges: Vec<Exchange>) -> Session<Script> {
         Script {
             exchanges: exchanges.into(),
             calls: 0,
+            read_timeouts: VecDeque::new(),
         },
         TIMEOUT,
     )
@@ -96,6 +102,7 @@ fn ready_policy(extra: Vec<Exchange>, policy: PollPolicy) -> Session<Script> {
         Script {
             exchanges: exchanges.into(),
             calls: 0,
+            read_timeouts: VecDeque::new(),
         },
         TIMEOUT,
         policy,
@@ -131,6 +138,52 @@ fn rejected_marker_observation_is_exact_bounded_and_distinct_from_no_payload() {
         decode_poll_reply_with_policy(&word(0xAC000000), PollPolicy::ReportRejectedMarker).unwrap(),
         PollReply::NoPayload { ignored_tail: 0 }
     );
+}
+#[test]
+fn diagnostic_initialization_deadline_changes_only_the_first_read() {
+    let mut exchanges = startup();
+    exchanges.extend([write(word(0xAC010000)), read(word(0xAC000000))]);
+    let mut s = Session::new(
+        Script {
+            exchanges: exchanges.into(),
+            calls: 0,
+            read_timeouts: [Duration::from_secs(5)].into(),
+        },
+        TIMEOUT,
+    )
+    .unwrap();
+    s.initialize_with_read_timeout(Duration::from_secs(5))
+        .unwrap();
+    assert!(matches!(s.poll().unwrap(), PollReply::NoPayload { .. }));
+    assert_eq!(s.into_transport().calls, 5);
+}
+#[test]
+fn diagnostic_initialization_zero_or_failed_read_never_retries() {
+    let mut exchanges = startup();
+    exchanges.pop();
+    exchanges.push(Exchange::Read(vec![], Err(TransportError::Unknown)));
+    let mut s = Session::new(
+        Script {
+            exchanges: exchanges.into(),
+            calls: 0,
+            read_timeouts: [Duration::from_secs(5)].into(),
+        },
+        TIMEOUT,
+    )
+    .unwrap();
+    assert_eq!(
+        s.initialize_with_read_timeout(Duration::ZERO),
+        Err(session::Error::ZeroTimeout)
+    );
+    assert_eq!(s.state(), State::New);
+    assert!(s
+        .initialize_with_read_timeout(Duration::from_secs(5))
+        .is_err());
+    assert_eq!(s.state(), State::Halted);
+    assert!(s
+        .initialize_with_read_timeout(Duration::from_secs(5))
+        .is_err());
+    assert_eq!(s.into_transport().calls, 3);
 }
 #[test]
 fn explicit_observation_accepts_next_call_after_marker_without_resubmitting_it() {
@@ -487,7 +540,8 @@ fn uninitialized_or_closed_session_cannot_access_transport() {
         Session::new(
             Script {
                 exchanges: VecDeque::new(),
-                calls: 0
+                calls: 0,
+                read_timeouts: VecDeque::new(),
             },
             Duration::ZERO
         ),

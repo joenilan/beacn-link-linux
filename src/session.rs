@@ -227,9 +227,17 @@ impl<T: Transport> Session<T> {
         Ok(())
     }
     fn read(&mut self, step: Step, buffer: &mut [u8; MAX_FRAME]) -> Result<usize, Error> {
+        self.read_with_timeout(step, buffer, self.timeout)
+    }
+    fn read_with_timeout(
+        &mut self,
+        step: Step,
+        buffer: &mut [u8; MAX_FRAME],
+        timeout: Duration,
+    ) -> Result<usize, Error> {
         let actual = self
             .transport
-            .read(IN_PIPE, buffer, self.timeout)
+            .read(IN_PIPE, buffer, timeout)
             .map_err(|error| Error::Transport { step, error })?;
         if actual > buffer.len() {
             return Err(Error::TransferLength {
@@ -247,12 +255,23 @@ impl<T: Transport> Session<T> {
         result
     }
     pub fn initialize(&mut self) -> Result<HandshakeReply, Error> {
+        self.initialize_with_read_timeout(self.timeout)
+    }
+    /// Explicit one-read diagnostic deadline. Writes and all later operations
+    /// retain the controller's ordinary timeout. A failed read still halts.
+    pub fn initialize_with_read_timeout(
+        &mut self,
+        timeout: Duration,
+    ) -> Result<HandshakeReply, Error> {
         self.require(State::New)?;
+        if timeout.is_zero() {
+            return Err(Error::ZeroTimeout);
+        }
         let result = (|| {
             self.write(Step::A0, &ControlWord::A0.word().to_le_bytes())?;
             self.write(Step::A1, &ControlWord::A1.word().to_le_bytes())?;
             let mut buffer = [0; MAX_FRAME];
-            let actual = self.read(Step::A2, &mut buffer)?;
+            let actual = self.read_with_timeout(Step::A2, &mut buffer, timeout)?;
             if actual != MAX_FRAME {
                 return Err(Error::TransferLength {
                     step: Step::A2,

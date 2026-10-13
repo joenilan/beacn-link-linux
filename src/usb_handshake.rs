@@ -6,6 +6,7 @@ use crate::{
 use std::{fmt, time::Duration};
 
 pub const MAX_TIMEOUT: Duration = Duration::from_millis(500);
+pub const DIAGNOSTIC_INITIALIZATION_TIMEOUT: Duration = Duration::from_secs(5);
 pub const MAX_PUBLICATION_CYCLES: usize = 40;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Startup {
@@ -25,6 +26,7 @@ pub struct Publication {
     remaining: usize,
     periodic: bool,
     poll_policy: crate::session::PollPolicy,
+    initialization_timeout: Duration,
 }
 impl Publication {
     pub fn from_inventory(inventory: &crate::planner::Inventory) -> Result<Self, Error> {
@@ -56,6 +58,7 @@ impl Publication {
             remaining: 1,
             periodic: false,
             poll_policy: crate::session::PollPolicy::Strict,
+            initialization_timeout: MAX_TIMEOUT,
         })
     }
     /// Explicit test budget; all cycles, including the first, require a newer
@@ -79,6 +82,15 @@ impl Publication {
     }
     pub fn records(&self) -> &[crate::Record] {
         &self.records
+    }
+    /// Fixed bounded experiment, chosen before opening the device. This only
+    /// changes the initial A2 read; it is not retry or an unlimited wait.
+    pub fn with_initialization_diagnostic(mut self) -> Self {
+        self.initialization_timeout = DIAGNOSTIC_INITIALIZATION_TIMEOUT;
+        self
+    }
+    pub(crate) fn initialization_timeout(&self) -> Duration {
+        self.initialization_timeout
     }
 }
 #[derive(Clone, PartialEq, Eq)]
@@ -254,7 +266,10 @@ fn profile(o: &Observation) -> Result<(), Error> {
 }
 /// Round positive sub-millisecond timeouts upward; never pass libusb's infinite 0.
 pub fn timeout_ms(timeout: Duration) -> Option<u32> {
-    if timeout.is_zero() || timeout > MAX_TIMEOUT {
+    timeout_ms_with_limit(timeout, MAX_TIMEOUT)
+}
+fn timeout_ms_with_limit(timeout: Duration, maximum: Duration) -> Option<u32> {
+    if timeout.is_zero() || timeout > maximum {
         return None;
     }
     Some(timeout.as_nanos().div_ceil(1_000_000) as u32)
@@ -377,7 +392,14 @@ impl<B: Backend> Handshake<B> {
         self.cleanup()
     }
     fn ready(&mut self, phase: Phase, timeout: Duration) -> Result<u32, TransportError> {
-        let Some(ms) = timeout_ms(timeout) else {
+        let maximum = if phase == Phase::A2 {
+            self.publication
+                .as_ref()
+                .map_or(MAX_TIMEOUT, |p| p.initialization_timeout())
+        } else {
+            MAX_TIMEOUT
+        };
+        let Some(ms) = timeout_ms_with_limit(timeout, maximum) else {
             self.phase = Phase::Halted;
             return Err(TransportError::NoTransfer);
         };

@@ -1,5 +1,53 @@
 # BEACN Link Linux — continuation handoff
-Updated 2026-10-12. Resume development; do not restart the investigation.
+Updated 2026-10-13. Resume development; do not restart the investigation.
+
+## Current hardware checkpoint (2026-10-13)
+
+The explicit initialization diagnostic now permits a single A2 read up to five
+seconds, while all writes and later reads retain their 500 ms limits. Default
+initialization remains 500 ms. No timeout retry or invalid-A2 bypass exists.
+The earlier connected attempt stopped at A2 with libusb TIMEOUT (-7), zero of
+512 bytes received. A fresh diagnostic attempt received a valid A2 in 669 ms
+and completed 40 publication/poll cycles: seven NoPayload replies, 33 rejected
+markers, 81 fresh inventory requests, no assignment records. This proves that
+a valid response can exceed 500 ms in this VM, not a firmware timeout requirement.
+
+Two subsequent owner-observation attempts completed all 40 cycles. A2 took
+439 ms and 584 ms respectively. The first received two one-record replies,
+neither matching the advertised test name; the second received no records.
+Names were redacted, so these journals cannot identify the unmatched records.
+The owner saw BEACN Linux VM Test but could only assign it to Aux 2, Music,
+System or Aux 1, not Link In. The owner did not try Aux 2 because that was not
+the intended goal. Do not report successful assignment or change the acceptance
+target to an arbitrary local mixer channel. Resolve source classification and
+the remote assignment mapping before another owner drag test.
+
+Every attempt saved fresh connected guest/host baselines. Owned claims released,
+both private processes stopped, the private graph restored, and connected guest
+binding/desktop graph/persistent files plus host audio/registry matched exactly.
+These comparisons cover the VM and gaming/host PC, not the streaming PC's UI or
+profile state. Studio remains connected to the VM. No physical return comparison
+has run this session; prior pre-handoff evidence is preserved separately.
+
+Before every observation test, give the owner the exact place to watch and the
+purpose of the requested action, wait for readiness, announce the start and end.
+Do not ask retrospectively whether they watched an unannounced run. No computer
+use or mouse automation is permitted. Windows Link stays closed; streaming-PC
+BEACN App stays open. Necessary VM/hardware continuation is already authorized.
+
+Exact source: beacn-link-usb-publication-initialization-20261013T131603Z/source
+in the existing guest home. Windows/Linux passed 42 focused Rust integration
+cases; Linux also passed two native unit checks and all 24 Python runner cases
+(Windows passed 22 and skipped two Linux-only cases). Both native examples and
+the default build passed. Free guest disk: 20,186,005,504 bytes; use lightweight
+single-job builds. See publication/session docs for provenance and hashes.
+
+Next: report assignment bytes and redacted name-match information for received
+records, investigate why the visible source is not assignable to Link In, then
+test a correctly identified remote assignment. Receiving and resolving that
+assignment precedes physical audio routing. Ordinary desktop apply stays disabled.
+The end goal remains Linux applications controlled from Windows BEACN App with
+verified audio through Studio Link; visibility alone does not meet it.
 
 ## Objective
 Keep the streaming PC on Windows with BEACN App / Mix Create / Studio.
@@ -324,7 +372,7 @@ pre-handoff baseline at session start separately; a connected baseline is not a
 pre-attachment backup. Free guest disk is about 20.7 GB. Read publication docs for
 exact hashes and scope. No UI automation is permitted for future continuation.
 
-**Next work:** a fresh-snapshot 40-cycle observed-marker hardware test. The ignored
+**Historical next-work note, superseded by the checkpoint above:** a fresh-snapshot 40-cycle observed-marker hardware test. The ignored
 `local/marker_connected_attempt.py` pins this build and composes connected prepare,
 one run and connected comparison through direct SSH. Full host/guest pre-handoff
 backups are separately saved by `local/publication_marker_prepare.py`. Its read-only

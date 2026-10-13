@@ -8,7 +8,9 @@ fn main() -> std::process::ExitCode {
         session::{PollPolicy, PollReply, Session},
         snapshot,
         usb_descriptors::MAX_DESCRIPTOR_BYTES,
-        usb_handshake::{Publication, Startup, MAX_PUBLICATION_CYCLES},
+        usb_handshake::{
+            Publication, Startup, DIAGNOSTIC_INITIALIZATION_TIMEOUT, MAX_PUBLICATION_CYCLES,
+        },
     };
     use std::{
         io::{BufRead, Read, Write},
@@ -18,16 +20,20 @@ fn main() -> std::process::ExitCode {
     let args: Vec<_> = std::env::args().skip(1).collect();
     let offline = args.len() == 2 && args[0] == "--check-periodic";
     let execute = || -> Result<(), String> {
-        let observe_markers = args
+        let initialization_diagnostic = args
             .first()
-            .is_some_and(|arg| arg == "--authorize-periodic-observed-polls");
+            .is_some_and(|arg| arg == "--authorize-periodic-initialization-diagnostic");
+        let observe_markers = initialization_diagnostic
+            || args
+                .first()
+                .is_some_and(|arg| arg == "--authorize-periodic-observed-polls");
         let observed_startup = observe_markers
             || args
                 .first()
                 .is_some_and(|arg| arg == "--authorize-periodic-startup");
         if !offline && (args.len() != 4 || (args[0] != "--authorize-periodic" && !observed_startup))
         {
-            return Err("requires --authorize-periodic, --authorize-periodic-startup, or --authorize-periodic-observed-polls <sysfs-device> <expected-cache> <cycles>; or --check-periodic <cycles>".into());
+            return Err("requires an explicit --authorize-periodic[-startup|-observed-polls|-initialization-diagnostic] <sysfs-device> <expected-cache> <cycles>; or --check-periodic <cycles>".into());
         }
         let cycles = args
             .last()
@@ -81,6 +87,11 @@ fn main() -> std::process::ExitCode {
         };
         let publication = Publication::bounded_with_poll_policy(&initial, cycles, poll_policy)
             .map_err(|e| e.to_string())?;
+        let publication = if initialization_diagnostic {
+            publication.with_initialization_diagnostic()
+        } else {
+            publication
+        };
         let records = publication.records().to_vec();
         let mut tracker = InventoryTracker::default();
         tracker.advance(&initial).map_err(|e| e.to_string())?;
@@ -128,7 +139,12 @@ fn main() -> std::process::ExitCode {
             Session::new_with_poll_policy(transport, Duration::from_millis(500), poll_policy)
                 .expect("fixed deadline");
         let result = (|| -> Result<(), String> {
-            session.initialize().map_err(|e| e.to_string())?;
+            if initialization_diagnostic {
+                session.initialize_with_read_timeout(DIAGNOSTIC_INITIALIZATION_TIMEOUT)
+            } else {
+                session.initialize()
+            }
+            .map_err(|e| e.to_string())?;
             println!("initialized; bounded publication active; names and metadata redacted");
             for cycle in 1..=cycles {
                 let before = fresh()?;

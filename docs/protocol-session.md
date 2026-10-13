@@ -33,6 +33,36 @@ This trace follows already identified paths, rather than repeating the initial a
 
 ## Observations
 
+### Initialization deadline continuation (2026-10-13)
+
+Focused tracing of the same pinned 1.0.4.0 PE with pefile 2024.8.26 and
+Capstone 5.0.7 followed the base USB constructor at preferred VAs
+0x1401368D0–0x140136A2B, starting file offset 0x135CD0. CreateFileW occurs
+at 0x1401369B1 and WinUsb_Initialize at 0x1401369C8. No pipe timeout-policy
+call appears in this inspected path before derived initialization at
+0x1401311F5. The 150 ms policies at 0x14013121C/0x14013123F follow it.
+Microsoft documents the default bulk PIPE_TRANSFER_TIMEOUT as zero (unlimited)
+in its [WinUSB policy reference](https://learn.microsoft.com/en-us/windows-hardware/drivers/usbcon/winusb-functions-for-pipe-policy-modification).
+An unlimited initial bulk deadline on this newly initialized Windows handle is
+therefore an inference from these paths and the API default, not a measured
+firmware requirement or justification for unbounded Linux I/O.
+
+`Session::initialize_with_read_timeout` allows a positive caller-selected A2
+deadline only in New state. A0/A1 and later exchanges retain the ordinary
+deadline; initialization failure still halts without another exchange.
+The selected native publication gate exposes only the fixed five-second
+`DIAGNOSTIC_INITIALIZATION_TIMEOUT` through explicit diagnostic preparation.
+Its native owner consumes the initial-read allowance before making that call;
+later reads remain limited to 500 ms even after a refused or failed first read.
+Default preparation and default `initialize()` remain unchanged.
+
+In the VM, one 500 ms A2 read returned libusb -7 TIMEOUT with zero transferred
+bytes. Three separate diagnostic attempts subsequently received valid complete
+A2 replies in 669, 439 and 584 ms. Each was a fresh authorized attempt with its
+own snapshots and confirmed cleanup, not a retry within a failed session.
+This establishes responses beyond 500 ms in two runs; it does not establish
+the cause of every earlier failure. The 508-byte A2 body remains opaque/redacted.
+
 Initialization writes little-endian A0 then A1 to OUT 03. Calls at
 0x140130783/0x1401307BE check success and exactly four transferred bytes.
 The IN 83 read at 0x1401307F3 requires exactly 512 bytes and A2 as its first

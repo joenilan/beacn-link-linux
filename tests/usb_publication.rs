@@ -20,6 +20,8 @@ struct Journal {
     changed: bool,
     reply: Vec<u8>,
     bad_a2: bool,
+    write_timeouts: Vec<u32>,
+    read_timeouts: Vec<u32>,
 }
 struct Fake {
     log: Rc<RefCell<Journal>>,
@@ -46,9 +48,10 @@ impl Backend for Fake {
         self.alt = 1;
         Ok(())
     }
-    fn write(&mut self, b: &[u8], _: u32) -> Result<usize, i32> {
+    fn write(&mut self, b: &[u8], ms: u32) -> Result<usize, i32> {
         let mut l = self.log.borrow_mut();
         l.writes.push(b.to_vec());
+        l.write_timeouts.push(ms);
         let n = l.writes.len();
         if l.fail_write == Some(n) {
             Err(-7)
@@ -58,9 +61,10 @@ impl Backend for Fake {
             Ok(b.len())
         }
     }
-    fn read(&mut self, b: &mut [u8], _: u32) -> Result<usize, i32> {
+    fn read(&mut self, b: &mut [u8], ms: u32) -> Result<usize, i32> {
         let mut l = self.log.borrow_mut();
         l.reads += 1;
+        l.read_timeouts.push(ms);
         if l.reads == 1 {
             b.fill(0);
             b[..4].copy_from_slice(
@@ -102,6 +106,76 @@ fn records() -> Vec<Record> {
         .unwrap()
         .records()
         .to_vec()
+}
+fn initialization_diagnostic() -> (Rc<RefCell<Journal>>, Session<Handshake<Fake>>) {
+    let log = Rc::new(RefCell::new(Journal {
+        reply: 0xAC000000u32.to_le_bytes().to_vec(),
+        ..Default::default()
+    }));
+    let owner = Handshake::prepare_publication(
+        Fake {
+            log: log.clone(),
+            alt: 0,
+        },
+        Publication::bounded(&inventory(), 1)
+            .unwrap()
+            .with_initialization_diagnostic(),
+    )
+    .unwrap();
+    (log, Session::new(owner, T).unwrap())
+}
+#[test]
+fn selected_gate_extends_only_explicit_initial_a2_read() {
+    let (log, mut s) = initialization_diagnostic();
+    s.initialize_with_read_timeout(Duration::from_secs(5))
+        .unwrap();
+    let mut next = inventory();
+    next.snapshot_id = 2;
+    s.refresh_publication(&next).unwrap();
+    s.publish(&records()).unwrap();
+    s.poll().unwrap();
+    assert_eq!(log.borrow().write_timeouts, [500, 500, 500, 500]);
+    assert_eq!(log.borrow().read_timeouts, [5000, 500]);
+    assert!(s.into_transport().close().baseline_restored);
+}
+#[test]
+fn diagnostic_deadline_cannot_expand_writes_later_reads_or_default_gate() {
+    let (log, mut s) = setup(Journal::default());
+    assert!(s
+        .initialize_with_read_timeout(Duration::from_secs(5))
+        .is_err());
+    assert_eq!(log.borrow().writes.len(), 2);
+    assert_eq!(log.borrow().reads, 0);
+    s.into_transport().close();
+    for kind in 0..3 {
+        let (log, mut s) = initialization_diagnostic();
+        if kind == 0 {
+            assert!(s
+                .initialize_with_read_timeout(Duration::from_millis(5001))
+                .is_err());
+            assert_eq!(log.borrow().reads, 0);
+            s.into_transport().close();
+            continue;
+        }
+        s.initialize_with_read_timeout(Duration::from_secs(5))
+            .unwrap();
+        let mut next = inventory();
+        next.snapshot_id = 2;
+        s.refresh_publication(&next).unwrap();
+        let mut owner = s.into_transport();
+        let frame = encode_frame(&Frame::Data(encode_records(&records()).unwrap())).unwrap();
+        if kind == 1 {
+            assert!(owner.write(3, &frame, Duration::from_secs(5)).is_err());
+        } else {
+            owner.write(3, &frame, T).unwrap();
+            owner.write(3, &0xAC010000u32.to_le_bytes(), T).unwrap();
+            assert!(owner
+                .read(0x83, &mut [0; 512], Duration::from_secs(5))
+                .is_err());
+        }
+        assert_eq!(log.borrow().reads, 1);
+        owner.close();
+    }
 }
 #[test]
 fn exact_publication_and_poll_use_existing_session_and_exhaust_the_gate() {
