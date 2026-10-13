@@ -2,6 +2,9 @@
 
 Updated 2026-10-13. The latest checkpoint is recorded under Initialization deadline
 diagnostic below; earlier sections retain their historical validation scope.
+The subsequent [native assignment integration](native-assignment-publication.md)
+implements bounded private-core routing and continued route-verified publication;
+its isolated routing probe passed and its hardware observation is pending.
 This batch adds an explicitly enabled one-list/one-poll mode
 to the existing Linux USB owner. Builds, focused tests and a real private-core
 source probe pass. A native app-list write and valid no-payload poll now pass;

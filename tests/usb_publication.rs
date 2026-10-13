@@ -107,6 +107,166 @@ fn records() -> Vec<Record> {
         .records()
         .to_vec()
 }
+
+fn verified_route(
+    generation: u64,
+    assignment: u8,
+) -> beacn_link_protocol::route_publication::VerifiedRoutePublication {
+    use beacn_link_protocol::{
+        execution::Observation, executor::Destination, graph_snapshot::preparation_from_tsv,
+        route_publication::VerifiedRoutePublication,
+    };
+    let mut text =
+        "inventory\tpw-client:44:pid:55\tLinux test\tpw-node:66\tlive\nowner\tours\n".to_owned();
+    for side in ["expected", "observed"] {
+        for row in [
+            "core\tpw-core:123",
+            "node\t10\t66",
+            "node\t20\t200",
+            "port\t11\t110\t10\t66\tout\tFL",
+            "port\t12\t120\t10\t66\tout\tFR",
+            "port\t21\t210\t20\t200\tin\tFL",
+            "port\t22\t220\t20\t200\tin\tFR",
+            "stream\tpw-client:44:pid:55\tpw-node:66\t10\t66",
+        ] {
+            text.push_str(&format!("{side}\t{row}\n"));
+        }
+        if assignment == 1 {
+            for row in [
+                "link\t40\t400\t11\t110\t21\t210\tours",
+                "link\t41\t410\t12\t120\t22\t220\tours",
+            ] {
+                text.push_str(&format!("{side}\t{row}\n"));
+            }
+        }
+    }
+    let parsed = preparation_from_tsv(generation, &text).unwrap();
+    let destination = Destination {
+        assignment: 1,
+        node: parsed.observed.nodes[1],
+    };
+    let mut ownership = parsed.ownership;
+    ownership
+        .links
+        .extend(parsed.observed.links.iter().map(|l| l.object));
+    let observation = Observation {
+        inventory: parsed.inventory,
+        graph: parsed.observed,
+    };
+    VerifiedRoutePublication::verify(
+        &observation,
+        &observation,
+        &[destination],
+        &ownership,
+        assignment,
+    )
+    .unwrap()
+}
+
+fn verified_mode() -> (Rc<RefCell<Journal>>, Session<Handshake<Fake>>) {
+    let log = Rc::new(RefCell::new(Journal {
+        reply: 0xAC000000u32.to_le_bytes().to_vec(),
+        ..Journal::default()
+    }));
+    let owner = Handshake::prepare_publication(
+        Fake {
+            log: log.clone(),
+            alt: 0,
+        },
+        Publication::bounded(&inventory(), 2)
+            .unwrap()
+            .with_verified_routes(),
+    )
+    .unwrap();
+    (log, Session::new(owner, T).unwrap())
+}
+
+#[test]
+fn verified_mode_can_publish_actual_assignment_and_exhausts_existing_budget() {
+    let (log, mut session) = verified_mode();
+    session.initialize().unwrap();
+    for (generation, assignment) in [(2, 0), (3, 1)] {
+        let proof = verified_route(generation, assignment);
+        session.refresh_verified_publication(&proof).unwrap();
+        session.publish(proof.records()).unwrap();
+        session.poll().unwrap();
+    }
+    assert_eq!(
+        log.borrow().writes[4],
+        encode_frame(&Frame::Data(
+            encode_records(verified_route(3, 1).records()).unwrap()
+        ))
+        .unwrap()
+    );
+    let submissions = log.borrow().writes.len();
+    assert!(session
+        .refresh_verified_publication(&verified_route(4, 1))
+        .is_err());
+    assert_eq!(log.borrow().writes.len(), submissions);
+    assert!(session.into_transport().close().baseline_restored);
+}
+
+#[test]
+fn verified_mode_refuses_unverified_refresh_frozen_proof_and_wrong_frame() {
+    let (log, mut session) = verified_mode();
+    session.initialize().unwrap();
+    let mut newer = inventory();
+    newer.snapshot_id = 2;
+    assert!(session.refresh_publication(&newer).is_err());
+    assert_eq!(log.borrow().writes.len(), 2);
+    let (log, mut session) = verified_mode();
+    session.initialize().unwrap();
+    let proof = verified_route(2, 1);
+    session.refresh_verified_publication(&proof).unwrap();
+    assert!(session.publish(&records()).is_err());
+    assert_eq!(log.borrow().writes.len(), 2);
+    let (log, mut session) = verified_mode();
+    session.initialize().unwrap();
+    let proof = verified_route(2, 0);
+    session.refresh_verified_publication(&proof).unwrap();
+    session.publish(proof.records()).unwrap();
+    session.poll().unwrap();
+    assert!(session.refresh_verified_publication(&proof).is_err());
+    assert_eq!(log.borrow().writes.len(), 4);
+}
+
+#[test]
+fn default_periodic_gate_cannot_enable_verified_route_updates() {
+    let log = Rc::new(RefCell::new(Journal::default()));
+    let owner = Handshake::prepare_publication(
+        Fake {
+            log: log.clone(),
+            alt: 0,
+        },
+        Publication::bounded(&inventory(), 2).unwrap(),
+    )
+    .unwrap();
+    let mut session = Session::new(owner, T).unwrap();
+    session.initialize().unwrap();
+    assert!(session
+        .refresh_verified_publication(&verified_route(2, 1))
+        .is_err());
+    assert_eq!(log.borrow().writes.len(), 2);
+}
+
+#[test]
+fn one_shot_verified_policy_also_requires_proof_before_first_publication() {
+    let log = Rc::new(RefCell::new(Journal::default()));
+    let owner = Handshake::prepare_publication(
+        Fake {
+            log: log.clone(),
+            alt: 0,
+        },
+        Publication::from_inventory(&inventory())
+            .unwrap()
+            .with_verified_routes(),
+    )
+    .unwrap();
+    let mut session = Session::new(owner, T).unwrap();
+    session.initialize().unwrap();
+    assert!(session.publish(&records()).is_err());
+    assert_eq!(log.borrow().writes.len(), 2);
+}
 fn initialization_diagnostic() -> (Rc<RefCell<Journal>>, Session<Handshake<Fake>>) {
     let log = Rc::new(RefCell::new(Journal {
         reply: 0xAC000000u32.to_le_bytes().to_vec(),

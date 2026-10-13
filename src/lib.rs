@@ -301,6 +301,7 @@ pub mod receipts;
 
 pub mod execution;
 
+pub mod route_publication;
 /// Guarded transport-neutral protocol exchanges; no USB or automatic routing.
 pub mod session;
 

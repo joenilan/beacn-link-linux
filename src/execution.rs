@@ -1,7 +1,7 @@
 //! Execution orchestration over fresh provider evidence and the existing journal.
 use crate::{executor::*, lifecycle::InventoryTracker, planner::Inventory, receipts::*};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Observation {
     pub graph: GraphSnapshot,
     pub inventory: Inventory,

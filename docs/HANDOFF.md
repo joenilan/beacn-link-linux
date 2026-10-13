@@ -3,6 +3,31 @@ Updated 2026-10-13. Resume development; do not restart the investigation.
 
 ## Current hardware checkpoint (2026-10-13)
 
+**Native assignment integration implemented:** read
+[native-assignment-publication.md](native-assignment-publication.md) for current
+owners, explicit flags, checks and hashes. The new path applies normalized received
+assignments through the existing native executor on the selected owned private
+core, then derives each outgoing record from fresh verified actual routes and
+native receipts. It continues all 40 cycles instead of ending at the first
+assignment. Default publication/ordinary desktop apply remain unchanged.
+
+An isolated native probe passed real routing 0 → 1 → 2, receipt prefixes 2 and 4,
+source preservation, owned cleanup and all connected local comparisons, without
+USB transfers. Final source adds one-shot proof enforcement and a diagnostic-line
+clarification and builds at beacn-link-usb-publication-routed-20261013T142858Z/source.
+Windows/Linux pass 24 route/publication cases; Linux passes all 27 Python runner
+cases (Windows passes 25 with two Linux-only skips). Existing native routing code
+was reused, not replaced. Free guest disk is about 19.4 GB; lightweight builds only.
+
+Next: the owner-ready integrated hardware drag/retention test. The ignored
+`local/routed_connected_attempt.py` pins the final executable/runner and uses
+fresh connected host/guest snapshots, bounded execution and connected comparisons
+through strict SSH. It can run `--probe run-attached` without USB I/O; the completed
+probe is preserved under its earlier source/evidence state. Hardware observation
+is waiting on the already presented readiness question. Announce start/end and
+leave Studio connected. No computer-use/mouse automation. Routes in this batch
+target owned virtual sinks, not physical Studio audio endpoints.
+
 The explicit initialization diagnostic now permits a single A2 read up to five
 seconds, while all writes and later reads retain their 500 ms limits. Default
 initialization remains 500 ms. No timeout retry or invalid-A2 bypass exists.

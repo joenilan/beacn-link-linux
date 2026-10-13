@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One Linux-owned synthetic application, one USB publication/poll; never routing."""
+"""Owned synthetic source; explicit USB publication and optional private routing."""
 import argparse
 import hashlib
 import json
@@ -98,7 +98,7 @@ def execute_periodic(command, fresh, cycles, timeout=50):
     return result
 
 
-def owned_inventory(objects, pid, node_name, snapshot_id):
+def owned_inventory(objects, pid, node_name, snapshot_id, destinations=None):
     snapshot = base.inventory.observe(objects, snapshot_id)
     matching = [a for a in snapshot["applications"] if a["process_pid"] == pid]
     if len(matching) != 1:
@@ -108,8 +108,25 @@ def owned_inventory(objects, pid, node_name, snapshot_id):
     if not app["streams"] or any(s["planner_state"] != "live" or
             base.inventory.properties(nodes[s["node_id"]]).get("node.name") != node_name for s in app["streams"]):
         raise RuntimeError("owned stream identity/state mismatch")
-    if any(o.get("type") == "PipeWire:Interface:Link" for o in objects):
+    links = [o for o in objects if o.get("type") == "PipeWire:Interface:Link"]
+    if links and destinations is None:
         raise RuntimeError("private test stream must remain unlinked")
+    if links:
+        source_ids = {s["node_id"] for s in app["streams"]}
+        if len(links) != 2 or len(source_ids) != 1:
+            raise RuntimeError("private routing requires one complete stereo source")
+        input_nodes = set()
+        for link in links:
+            p = base.inventory.properties(link)
+            target = int(p["link.input.node"])
+            if int(p["link.output.node"]) not in source_ids or target not in destinations or target not in nodes:
+                raise RuntimeError("private route has unexpected endpoints")
+            target_props = base.inventory.properties(nodes[target])
+            if int(target_props.get("object.serial", 0)) != destinations[target] or "device.id" in target_props:
+                raise RuntimeError("private destination identity changed")
+            input_nodes.add(target)
+        if len(input_nodes) != 1:
+            raise RuntimeError("private stereo route split across destinations")
     return base.inventory.project(snapshot, {app["application_id"]: WIRE_NAME})
 
 
@@ -130,7 +147,7 @@ def stop_owned(process):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("stage", choices=("prepare", "prepare-connected", "source-probe", "run", "compare", "compare-connected"))
+    parser.add_argument("stage", choices=("prepare", "prepare-connected", "source-probe", "routing-probe", "run", "compare", "compare-connected"))
     parser.add_argument("--evidence-dir", required=True)
     parser.add_argument("--executor", required=True)
     parser.add_argument("--authorize-publication", action="store_true")
@@ -142,19 +159,26 @@ def main():
     parser.add_argument("--observe-rejected-polls", action="store_true", help="explicit bounded rejected-marker observation policy; requires observed-startup")
     parser.add_argument("--initialization-diagnostic", action="store_true", help="single A2 read with a five-second diagnostic limit; all later bulk deadlines stay 500 ms")
     parser.add_argument("--windows-c-string-names", action="store_true", help="explicit received-name compatibility; requires initialization diagnostic periodic hardware mode")
+    parser.add_argument("--private-routing", action="store_true", help="explicit native routing on owned private synthetic destinations only")
+    parser.add_argument("--authorize-isolated-routing", action="store_true")
     args = parser.parse_args()
+    routing_probe = args.stage == "routing-probe"
+    if routing_probe and not args.private_routing:
+        parser.error("routing-probe requires private-routing")
+    if args.private_routing and (not args.authorize_isolated_routing or not args.windows_c_string_names or not args.cycles or args.stage not in ("run", "routing-probe")):
+        parser.error("private-routing requires explicit isolated routing authorization and periodic C-string mode")
     if args.cycles and not 1 <= args.cycles <= MAX_CYCLES:
         parser.error("periodic cycle budget outside 1..40")
-    if args.observed_startup and (not args.cycles or args.stage != "run"):
+    if args.observed_startup and (not args.cycles or args.stage not in ("run", "routing-probe")):
         parser.error("observed-startup requires a periodic hardware run")
-    if args.observe_rejected_polls and (not args.observed_startup or not args.cycles or args.stage != "run"):
+    if args.observe_rejected_polls and (not args.observed_startup or not args.cycles or args.stage not in ("run", "routing-probe")):
         parser.error("rejected-marker observation requires an observed-startup periodic hardware run")
     if args.initialization_diagnostic and not args.observe_rejected_polls:
         parser.error("initialization diagnostic requires explicit observed marker/startup policy")
     if args.windows_c_string_names and not args.initialization_diagnostic:
         parser.error("Windows C-string names require explicit initialization diagnostic policy")
-    source_only = args.stage == "source-probe"
-    if args.stage not in ("run", "source-probe"):
+    source_only = args.stage in ("source-probe", "routing-probe")
+    if args.stage not in ("run", "source-probe", "routing-probe"):
         journal = Path(args.evidence_dir) / "handshake.json"
         if args.stage in ("compare", "compare-connected") and (Path(args.evidence_dir) / "run-started.json").exists() and not journal.exists():
             parser.error("attempt completion unconfirmed; manual review required before comparison")
@@ -187,7 +211,7 @@ def main():
     found = base.targets()
     cache_hash = None
     if source_only:
-        if found:
+        if found and not routing_probe:
             parser.error("source-only probe requires Studio to remain on Windows")
     else:
         selected = Path(args.sysfs_device).resolve(strict=True)
@@ -211,13 +235,15 @@ def main():
                                           "observed_startup": args.observed_startup,
                                           "observe_rejected_polls": args.observe_rejected_polls,
                                           "initialization_diagnostic": args.initialization_diagnostic,
-                                          "windows_c_string_names": args.windows_c_string_names})
+                                          "windows_c_string_names": args.windows_c_string_names,
+                                          "private_routing": args.private_routing})
     # PipeWire also creates a '-manager' socket; evidence paths can exceed the
     # Linux Unix-socket limit. mkdtemp retains exclusive 0700 ownership.
-    runtime = Path(tempfile.mkdtemp(prefix="beacn-pub-"))
+    runtime = Path(tempfile.mkdtemp(prefix="beacn-pw-" if args.private_routing else "beacn-pub-"))
     config = root / "private-config"
     config.mkdir(mode=0o700)
-    remote = "pub-" + uuid.uuid4().hex[:8]
+    token = uuid.uuid4().hex
+    remote = ("beacn-test-" if args.private_routing else "pub-") + token[:8]
     modules = ["protocol-native", "metadata", "spa-node-factory", "client-node", "adapter", "link-factory", "access"]
     conf = {"context.properties": {"core.daemon": True, "core.name": remote, "support.dbus": False},
             "context.spa-libs": {"audio.convert.*": "audioconvert/libspa-audioconvert", "audio.adapt": "audioconvert/libspa-audioconvert", "support.*": "support/libspa-support"},
@@ -227,6 +253,9 @@ def main():
               "context.modules": [{"name": "libpipewire-module-" + name} for name in ("protocol-native", "client-node", "adapter", "metadata")]}
     (config / "server.conf").write_text(json.dumps(conf))
     (config / "client.conf").write_text(json.dumps(client))
+    if args.private_routing:
+        (runtime / "client.conf").write_text("context.properties = { support.dbus = false context.num-data-loops = 0 }\ncontext.modules = [ { name = libpipewire-module-protocol-native } ]\ncontext.objects = []\ncontext.exec = []\n")
+        (runtime / "client.conf").chmod(0o600)
     env = {k: v for k, v in os.environ.items() if not k.startswith("PIPEWIRE_")}
     env.update(PIPEWIRE_RUNTIME_DIR=str(runtime), XDG_RUNTIME_DIR=str(runtime), PIPEWIRE_REMOTE=remote,
                PIPEWIRE_CONFIG_PREFIX=str(config), PIPEWIRE_CONFIG_NAME="client.conf", XDG_STATE_HOME=str(runtime / "state"))
@@ -235,6 +264,8 @@ def main():
     playback = None
     server = None
     private_baseline = None
+    destinations = None
+    native_arguments = []
     result = {"binary_sha256": digest, "child_exited": True, "exit": 2, "timed_out": False,
               "wire_name": WIRE_NAME, "remote_visibility": "unobserved", "routes_applied": False}
     result["usb_io_requested"] = not source_only
@@ -244,6 +275,7 @@ def main():
     result["windows_c_string_names"] = args.windows_c_string_names
     result["initialization_diagnostic"] = args.initialization_diagnostic
     result["private_runtime"] = str(runtime)
+    result["private_routing_requested"] = args.private_routing
 
     def start(name, command, child_env, stdin=None):
         log = (root / (name + ".log")).open("xb")
@@ -268,18 +300,42 @@ def main():
         _, objects = dump()
         private_baseline = base.core.filtered(objects)
         base.save(root / "private-core-baseline.json", private_baseline)
+        if args.private_routing:
+            controller = start("owned-destinations", ["pw-cli", "-r", remote], env, subprocess.PIPE)
+            names = ["beacn-route-" + token + "-" + str(i) for i in range(1, 5)]
+            for name in names:
+                properties = {"factory.name": "support.null-audio-sink", "node.name": name, "media.class": "Audio/Sink", "node.virtual": True, "node.driver": True, "object.linger": False, "node.autoconnect": False, "audio.channels": 2, "audio.position": ["FL", "FR"], "audio.rate": 48000, "state.restore-props": False, "state.restore-target": False, "beacn.test.token": token, "adapter.auto-port-config": {"mode": "dsp", "monitor": False, "position": "preserve"}}
+                controller.stdin.write(("create-node adapter " + json.dumps(properties) + "\n").encode())
+                controller.stdin.flush()
+            end = time.monotonic() + 4
+            while True:
+                _, objects = dump()
+                selected_nodes = [o for o in objects if o.get("type") == base.inventory.NODE and base.inventory.properties(o).get("node.name") in names and base.inventory.properties(o).get("beacn.test.token") == token]
+                if len(selected_nodes) == 4:
+                    break
+                if controller.poll() is not None or server.poll() is not None or time.monotonic() >= end:
+                    raise RuntimeError("private destinations unavailable")
+                time.sleep(0.05)
+            ordered = [next(o for o in selected_nodes if base.inventory.properties(o)["node.name"] == name) for name in names]
+            destinations = {o["id"]: int(base.inventory.properties(o)["object.serial"]) for o in ordered}
+            core = next(o for o in objects if o.get("type") == "PipeWire:Interface:Core")
+            native_arguments = [str(runtime), remote, str(core["info"]["cookie"]), str(server.pid), token] + [f'{i}:{o["id"]}:{destinations[o["id"]]}' for i, o in enumerate(ordered, 1)]
+            base.save(root / "private-destinations.json", {"destinations": destinations, "routing_scope": "owned_private_core"})
         pcm = root / "owned-synthetic-silence.raw"
-        pcm.write_bytes(bytes(1024 * 1024))
+        pcm.write_bytes(bytes(48000 * 2 * 2 * 120 if args.private_routing else 1024 * 1024))
         node_name = "beacn-publication-" + uuid.uuid4().hex[:8]
         properties = {"node.name": node_name, "application.name": "BEACN Linux VM Test", "node.autoconnect": False,
                       "node.dont-reconnect": True, "state.restore-props": False, "state.restore-target": False}
+        if args.private_routing:
+            properties["beacn.test.token"] = token
+            properties["adapter.auto-port-config"] = {"mode": "dsp", "monitor": False, "position": "preserve"}
         with pcm.open("rb") as handle:
             playback = start("owned-playback", ["pw-cat", "-p", "-a", "-R", remote, "--target", "0", "--rate", "48000", "--channels", "2", "--format", "s16", "-P", json.dumps(properties), "-"], env, handle)
         deadline = time.monotonic() + 4
         while True:
             raw_dump, objects = dump()
             try:
-                inventory = owned_inventory(objects, playback.pid, node_name, time.time_ns())
+                inventory = owned_inventory(objects, playback.pid, node_name, time.time_ns(), destinations)
                 break
             except RuntimeError:
                 if playback.poll() is not None or time.monotonic() >= deadline:
@@ -292,7 +348,7 @@ def main():
         projected.write_text(text, encoding="ascii")
         # Confirm the same owned source immediately before the single native child.
         _, objects = dump()
-        if playback.poll() is not None or owned_inventory(objects, playback.pid, node_name, inventory["snapshot_id"]) != inventory:
+        if playback.poll() is not None or owned_inventory(objects, playback.pid, node_name, inventory["snapshot_id"], destinations) != inventory:
             raise RuntimeError("owned source changed before native execution")
         if args.cycles:
             last_id = inventory["snapshot_id"]
@@ -303,30 +359,35 @@ def main():
                     raise RuntimeError("owned source/core exited")
                 raw, current_objects = dump()
                 last_id = max(last_id + 1, time.time_ns())
-                current = owned_inventory(current_objects, playback.pid, node_name, last_id)
+                current = owned_inventory(current_objects, playback.pid, node_name, last_id, destinations)
                 if current["applications"] != inventory["applications"]:
                     raise RuntimeError("pinned source identity changed")
                 (root / f"cycle-{request:03d}-dump.json").write_bytes(raw)
                 base.save(root / f"cycle-{request:03d}-inventory.json", current)
                 return current
 
-            command = ([str(binary), "--check-periodic", str(args.cycles)] if source_only else
+            command = ([str(binary), "--check-private-routing", "unused", "unused", str(args.cycles), *native_arguments] if routing_probe else [str(binary), "--check-periodic", str(args.cycles)] if source_only else
                        [str(binary), "--authorize-periodic-c-string-names" if args.windows_c_string_names else "--authorize-periodic-initialization-diagnostic" if args.initialization_diagnostic else "--authorize-periodic-observed-polls" if args.observe_rejected_polls else "--authorize-periodic-startup" if args.observed_startup else "--authorize-periodic", str(selected), str(pinned), str(args.cycles)])
-            result.update(execute_periodic(command, fresh, args.cycles))
+            if args.private_routing and not routing_probe:
+                command[1] = "--authorize-periodic-private-routing"
+                command += native_arguments
+            result.update(execute_periodic(command, fresh, args.cycles, timeout=90 if args.private_routing else 50))
+            result["private_routes_verified_count"] = result.get("stdout", "").count("private_route_applied assignment=")
+            result["routes_applied"] = result["private_routes_verified_count"] > 0
+            result["routing_scope"] = "owned_private_core" if args.private_routing else None
         else:
             command = ([str(binary), "--check-inventory", str(projected), str(inventory["snapshot_id"])] if source_only else
                        [str(binary), "--authorize-publication", str(selected), str(pinned), str(projected), str(inventory["snapshot_id"])])
             result.update(base.execute_child(command, timeout=12 if source_only else 30))
         _, objects = dump()
-        result["owned_source_preserved"] = playback.poll() is None and owned_inventory(objects, playback.pid, node_name, inventory["snapshot_id"]) == inventory
+        result["owned_source_preserved"] = playback.poll() is None and owned_inventory(objects, playback.pid, node_name, inventory["snapshot_id"], destinations) == inventory
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
         result["runner_error"] = type(error).__name__ + ": " + str(error)
     finally:
         if result["child_exited"]:
             stopped = []
             for p in reversed(processes):
-                stopped.append(stop_owned(p))
-                if p is playback and stopped[-1] and server.poll() is None:
+                if p is server and all(stopped) and server.poll() is None:
                     try:
                         deadline = time.monotonic() + 2
                         while True:
@@ -339,6 +400,7 @@ def main():
                         base.save(root / "private-core-cleaned.json", restored)
                     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
                         result["private_core_restored"] = False
+                stopped.append(stop_owned(p))
             result["owned_processes_stopped"] = stopped
             if not all(stopped):
                 result["retained_private_process_pids"] = [p.pid for p in processes if p.poll() is None]

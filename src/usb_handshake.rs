@@ -27,6 +27,7 @@ pub struct Publication {
     periodic: bool,
     poll_policy: crate::session::PollPolicy,
     initialization_timeout: Duration,
+    verified_routes: bool,
 }
 impl Publication {
     pub fn from_inventory(inventory: &crate::planner::Inventory) -> Result<Self, Error> {
@@ -59,6 +60,7 @@ impl Publication {
             periodic: false,
             poll_policy: crate::session::PollPolicy::Strict,
             initialization_timeout: MAX_TIMEOUT,
+            verified_routes: false,
         })
     }
     /// Explicit test budget; all cycles, including the first, require a newer
@@ -82,6 +84,12 @@ impl Publication {
     }
     pub fn records(&self) -> &[crate::Record] {
         &self.records
+    }
+    /// Explicit route-observed mode; every publication needs verified data.
+    pub fn with_verified_routes(mut self) -> Self {
+        self.verified_routes = true;
+        self.periodic = true;
+        self
     }
     /// Fixed bounded experiment, chosen before opening the device. This only
     /// changes the initial A2 read; it is not retry or an unlimited wait.
@@ -159,6 +167,35 @@ enum Phase {
     Halted,
 }
 impl<B: Backend> crate::session::PublicationCycles for Handshake<B> {
+    fn refresh_verified_publication(
+        &mut self,
+        verified: &crate::route_publication::VerifiedRoutePublication,
+    ) -> Result<(), TransportError> {
+        let accepted = (|| {
+            if self.closed || self.phase != Phase::AwaitInventory || self.check(1).is_err() {
+                return None;
+            }
+            let publication = self.publication.as_mut()?;
+            if !publication.verified_routes
+                || verified.inventory().applications != publication.tracker.current()?.applications
+            {
+                return None;
+            }
+            let payload = crate::encode_records(verified.records()).ok()?;
+            let frame = crate::encode_frame(&crate::Frame::Data(payload)).ok()?;
+            publication.tracker.advance(verified.inventory()).ok()?;
+            publication.records = verified.records().to_vec();
+            publication.frame = frame;
+            Some(())
+        })();
+        if accepted.is_some() {
+            self.phase = Phase::Publish;
+            Ok(())
+        } else {
+            self.phase = Phase::Halted;
+            Err(TransportError::NoTransfer)
+        }
+    }
     fn refresh_publication(
         &mut self,
         inventory: &crate::planner::Inventory,
@@ -168,6 +205,9 @@ impl<B: Backend> crate::session::PublicationCycles for Handshake<B> {
                 return None;
             }
             let publication = self.publication.as_mut()?;
+            if publication.verified_routes {
+                return None;
+            }
             let pinned = publication.tracker.current()?;
             // No new process, stream, name or state may replace the pinned test
             // source, even when the outgoing wire frame would be identical.

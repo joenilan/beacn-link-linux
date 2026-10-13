@@ -1,5 +1,12 @@
 //! Bounded VM diagnostic. Fresh inventories come from the supervising owner,
-//! never a frozen TSV file; no routing or automatic recovery is performed.
+//! never a frozen TSV file. Private routing is separate and explicitly selected.
+#[cfg(all(
+    feature = "native-usb",
+    feature = "native-pipewire",
+    target_os = "linux"
+))]
+#[path = "support/private_routes.rs"]
+mod private_routes;
 #[cfg(all(feature = "native-usb", target_os = "linux"))]
 fn main() -> std::process::ExitCode {
     use beacn_link_protocol::{
@@ -20,9 +27,21 @@ fn main() -> std::process::ExitCode {
     let args: Vec<_> = std::env::args().skip(1).collect();
     let offline = args.len() == 2 && args[0] == "--check-periodic";
     let execute = || -> Result<(), String> {
-        let windows_names = args
-            .first()
-            .is_some_and(|arg| arg == "--authorize-periodic-c-string-names");
+        let private_probe = args.first().is_some_and(|a| a == "--check-private-routing");
+        let private_routing = private_probe
+            || args
+                .first()
+                .is_some_and(|a| a == "--authorize-periodic-private-routing");
+        #[cfg(not(feature = "native-pipewire"))]
+        if private_routing {
+            return Err(
+                "private routing requires native-pipewire feature; no device I/O requested".into(),
+            );
+        }
+        let windows_names = private_routing
+            || args
+                .first()
+                .is_some_and(|arg| arg == "--authorize-periodic-c-string-names");
         let name_policy = if windows_names {
             ReceivedNamePolicy::WindowsCString
         } else {
@@ -40,12 +59,14 @@ fn main() -> std::process::ExitCode {
             || args
                 .first()
                 .is_some_and(|arg| arg == "--authorize-periodic-startup");
-        if !offline && (args.len() != 4 || (args[0] != "--authorize-periodic" && !observed_startup))
+        if !offline
+            && (args.len() != if private_routing { 13 } else { 4 }
+                || (args[0] != "--authorize-periodic" && !observed_startup))
         {
             return Err("requires an explicit --authorize-periodic[-startup|-observed-polls|-initialization-diagnostic|-c-string-names] <sysfs-device> <expected-cache> <cycles>; or --check-periodic <cycles>".into());
         }
         let cycles = args
-            .last()
+            .get(if offline { 1 } else { 3 })
             .ok_or("missing cycle budget")?
             .parse::<usize>()
             .map_err(|_| "invalid cycle budget")?;
@@ -101,9 +122,23 @@ fn main() -> std::process::ExitCode {
         } else {
             publication
         };
+        let publication = if private_routing {
+            publication.with_verified_routes()
+        } else {
+            publication
+        };
         let records = publication.records().to_vec();
         let mut tracker = InventoryTracker::default();
         tracker.advance(&initial).map_err(|e| e.to_string())?;
+        #[cfg(feature = "native-pipewire")]
+        let mut router = if private_routing {
+            Some(private_routes::PrivateRoutes::connect(
+                &args[4..],
+                &initial,
+            )?)
+        } else {
+            None
+        };
         let check_fresh =
             |next: &planner::Inventory, tracker: &mut InventoryTracker| -> Result<(), String> {
                 if next.applications != initial.applications {
@@ -112,6 +147,39 @@ fn main() -> std::process::ExitCode {
                 tracker.advance(next).map_err(|e| e.to_string())?;
                 Ok(())
             };
+        if private_probe {
+            #[cfg(feature = "native-pipewire")]
+            for cycle in 1..=cycles {
+                let before = fresh()?;
+                check_fresh(&before, &mut tracker)?;
+                let router = router.as_mut().ok_or("private router absent")?;
+                let verified = router.verify(&before)?;
+                // Exercise canonical publication with real route observations;
+                // authored inbound assignments, no USB or physical audio I/O.
+                beacn_link_protocol::encode_records(verified.records())
+                    .map_err(|e| e.to_string())?;
+                println!(
+                    "probe_verified_publication assignment={}",
+                    verified.records()[0].assignment.byte()
+                );
+                let desired = if cycle == 1 {
+                    Some(1)
+                } else if cycle == 2 {
+                    Some(2)
+                } else {
+                    None
+                };
+                if let Some(assignment) = desired {
+                    let mut reply = records[0].clone();
+                    reply.assignment = beacn_link_protocol::Assignment::from_byte(assignment);
+                    reply.name.extend_from_slice(b"\0TAIL!");
+                    router.apply(&before, &[name_policy.for_planning(&reply)])?;
+                }
+                check_fresh(&fresh()?, &mut tracker)?;
+            }
+            println!("private routing probe complete; no USB requested");
+            return Ok(());
+        }
         if offline {
             for _ in 0..cycles {
                 check_fresh(&fresh()?, &mut tracker)?;
@@ -159,10 +227,32 @@ fn main() -> std::process::ExitCode {
             for cycle in 1..=cycles {
                 let before = fresh()?;
                 check_fresh(&before, &mut tracker)?;
-                session
-                    .refresh_publication(&before)
-                    .map_err(|e| e.to_string())?;
-                session.publish(&records).map_err(|e| e.to_string())?;
+                #[cfg(feature = "native-pipewire")]
+                if let Some(router) = router.as_mut() {
+                    let verified = router.verify(&before)?;
+                    session
+                        .refresh_verified_publication(&verified)
+                        .map_err(|e| e.to_string())?;
+                    session
+                        .publish(verified.records())
+                        .map_err(|e| e.to_string())?;
+                    println!(
+                        "cycle={cycle} verified_publication assignment={}",
+                        verified.records()[0].assignment.byte()
+                    );
+                } else {
+                    session
+                        .refresh_publication(&before)
+                        .map_err(|e| e.to_string())?;
+                    session.publish(&records).map_err(|e| e.to_string())?;
+                }
+                #[cfg(not(feature = "native-pipewire"))]
+                {
+                    session
+                        .refresh_publication(&before)
+                        .map_err(|e| e.to_string())?;
+                    session.publish(&records).map_err(|e| e.to_string())?;
+                }
                 // Controlled diagnostic timing, not a proven firmware requirement.
                 std::thread::sleep(Duration::from_millis(500));
                 let reply = session.poll().map_err(|e| e.to_string())?;
@@ -191,7 +281,7 @@ fn main() -> std::process::ExitCode {
                             .map(|r| r.assignment.byte())
                             .collect();
                         let known = assignments.iter().any(|a| (1..=4).contains(a));
-                        println!("cycle={cycle} records={} bound_assignments={assignments:?} proposed_routes={} ignored_tail={ignored_tail}; no routes applied", replies.len(), plan.proposed_routes().count());
+                        println!("cycle={cycle} records={} bound_assignments={assignments:?} proposed_routes={} ignored_tail={ignored_tail}; proposal before any new route application", replies.len(), plan.proposed_routes().count());
                         // Bound diagnostic output independently of the peer's
                         // record count. Raw bytes remain available for diagnostics
                         // even when explicit C-string planning is selected.
@@ -213,6 +303,11 @@ fn main() -> std::process::ExitCode {
                             println!("cycle={cycle} additional_record_diagnostics_omitted={}", replies.len() - 4);
                         }
                         if known {
+                            #[cfg(feature = "native-pipewire")]
+                            if let Some(router) = router.as_mut() {
+                                router.apply(&current, &planning_records)?;
+                                continue;
+                            }
                             // Do not overwrite an observed desired assignment by
                             // continuing to advertise the unapplied local zero.
                             println!("bound assignment received; publication stopped; observing for 5 seconds");

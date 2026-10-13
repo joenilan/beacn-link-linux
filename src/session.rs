@@ -34,6 +34,12 @@ pub trait PublicationCycles: Transport {
         &mut self,
         inventory: &crate::planner::Inventory,
     ) -> Result<(), TransportError>;
+    fn refresh_verified_publication(
+        &mut self,
+        _publication: &crate::route_publication::VerifiedRoutePublication,
+    ) -> Result<(), TransportError> {
+        Err(TransportError::NoTransfer)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -340,6 +346,20 @@ impl<T: Transport> Session<T> {
 }
 
 impl<T: PublicationCycles> Session<T> {
+    pub fn refresh_verified_publication(
+        &mut self,
+        publication: &crate::route_publication::VerifiedRoutePublication,
+    ) -> Result<(), Error> {
+        self.require(State::Ready)?;
+        let result = self
+            .transport
+            .refresh_verified_publication(publication)
+            .map_err(|error| Error::Transport {
+                step: Step::Publish,
+                error,
+            });
+        self.finish(result)
+    }
     pub fn refresh_publication(
         &mut self,
         inventory: &crate::planner::Inventory,

@@ -27,6 +27,25 @@ def objects():
 
 
 class PublicationRunnerTests(unittest.TestCase):
+    def test_private_routing_requires_explicit_authorization_and_mode(self):
+        for stage, extra in (("run", []), ("routing-probe", []), ("run", ["--authorize-isolated-routing"]), ("source-probe", ["--authorize-isolated-routing", "--windows-c-string-names", "--cycles", "3"]), ("run", ["--windows-c-string-names", "--cycles", "3"])):
+            argv = ["test", stage, "--evidence-dir", "unused", "--executor", "unused", "--private-routing", *extra]
+            with patch.object(sys, "argv", argv), patch.object(runner.subprocess, "Popen") as child, contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit): runner.main()
+                child.assert_not_called()
+
+    def test_owned_inventory_retains_strict_default_and_checks_private_destinations(self):
+        current = objects()
+        current += [{"id": 9, "type": runner.base.inventory.NODE, "info": {"props": {"object.serial": 99, "media.class": "Audio/Sink"}}}]
+        current += [{"id": i, "type": "PipeWire:Interface:Link", "info": {"props": {"object.serial": i * 10, "link.output.node": 6, "link.input.node": 9}}} for i in (10, 11)]
+        with self.assertRaises(RuntimeError): runner.owned_inventory(current, 123, "owned-source", 1)
+        result = runner.owned_inventory(current, 123, "owned-source", 1, {9: 99})
+        self.assertEqual(len(result["applications"]), 1)
+        with self.assertRaises(RuntimeError): runner.owned_inventory(current, 123, "owned-source", 1, {9: 100})
+        with self.assertRaises(RuntimeError): runner.owned_inventory(current[:-1], 123, "owned-source", 1, {9: 99})
+        current[-1]["info"]["props"]["link.output.node"] = 1234
+        with self.assertRaises(RuntimeError): runner.owned_inventory(current, 123, "owned-source", 1, {9: 99})
+
     def test_c_string_names_refuse_unselected_or_nonhardware_modes(self):
         for stage, extra in (("run", []), ("run", ["--cycles", "3", "--observed-startup", "--observe-rejected-polls"]), ("source-probe", ["--cycles", "3", "--observed-startup", "--observe-rejected-polls", "--initialization-diagnostic"]), ("prepare-connected", ["--initialization-diagnostic"])):
             argv = ["test", stage, "--evidence-dir", "unused", "--executor", "unused", "--windows-c-string-names", *extra]
