@@ -42,8 +42,16 @@ cases; Linux also passed two native unit checks and all 24 Python runner cases
 the default build passed. Free guest disk: 20,186,005,504 bytes; use lightweight
 single-job builds. See publication/session docs for provenance and hashes.
 
-Next: report assignment bytes and redacted name-match information for received
-records, investigate why the visible source is not assignable to Link In, then
+The reply diagnostic now reports assignment bytes, name lengths, exact bound-name
+matches, embedded-NUL counts and printable-ASCII status for at most four records
+per reply. All names remain redacted; extra records are counted without expanding
+the log. It does not change decoding, name bindings, planning or USB scheduling.
+The exact native example built in the guest; this diagnostic has not run on hardware.
+Source: beacn-link-usb-publication-reply-20261013T133631Z/source. See publication
+docs for hashes. No unchanged test matrix or hardware attempt was repeated for it.
+
+Next: use the redacted reply evidence to investigate why the visible source is
+not assignable to Link In, then
 test a correctly identified remote assignment. Receiving and resolving that
 assignment precedes physical audio routing. Ordinary desktop apply stays disabled.
 The end goal remains Linux applications controlled from Windows BEACN App with

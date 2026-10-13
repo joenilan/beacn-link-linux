@@ -678,3 +678,29 @@ readiness, announce the run start/end, and obtain the observation while it is
 fresh. Do not prescribe arbitrary mixer channels as a substitute for the Link
 acceptance path. Add redacted per-record assignment/name-match diagnostics before
 testing another changed hypothesis; current count-only logs cannot resolve it.
+
+## Redacted reply diagnostic preparation
+
+The periodic example now reports each of the first four decoded records' assignment
+byte, name byte count, exact bound-name match, embedded-NUL count and printable-ASCII
+status. It redacts names and counts omitted additional diagnostics. This bounded
+output can distinguish unmatched names from matching opaque assignment values
+without introducing aliases, interpreting zero or exposing other app names.
+Decoding, planning, fresh inventory checks, cycle budget and transfers are unchanged.
+The startup line now accurately distinguishes the selected initial-read deadline
+from the unchanged 500 ms writes/later reads.
+
+The exact native example compiled offline on Linux; formatting and diff checks
+passed. This output-only change did not justify rerunning unchanged test matrices.
+It has not been exercised on hardware. Its guest source is
+beacn-link-usb-publication-reply-20261013T133631Z/source. Code SHA256:
+`70f986d3a5ee39e58331cc294834bc852406c828b4e7adea98c2d455fdaf2dc0`.
+Archive SHA256:
+`67e4f16fcba453f5753e84b2583e5d898e3097b3bccbca38192730b56dd39078`.
+Linux build journal SHA256:
+`24b565e9325e9dd714a044354b6045712e037cef26f5740cb60d579b469f3c09`.
+Native periodic executable SHA256:
+`13fee714f2bd03c076f118bf01833892c95532a334b66be686205bfe5efeb923`.
+Guest free disk after the lightweight build: 20,088,913,920 bytes. Earlier code,
+private evidence and settings snapshots remain preserved. Keep the Link routing
+acceptance target; the offered Aux/Music/System choices are not yet mapped to it.

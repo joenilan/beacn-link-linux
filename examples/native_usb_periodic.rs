@@ -124,8 +124,9 @@ fn main() -> std::process::ExitCode {
         } else {
             Startup::SelectedAlternate
         };
+        let initial_read_ms = if initialization_diagnostic { 5000 } else { 500 };
         println!(
-            "startup policy: {startup:?}; poll policy: {poll_policy:?}; bulk deadlines unchanged"
+            "startup policy: {startup:?}; poll policy: {poll_policy:?}; initial_read_ms={initial_read_ms}; writes_and_later_reads_ms=500"
         );
         let transport = native_usb::open_publication_with_startup(
             Path::new(&args[1]),
@@ -178,6 +179,22 @@ fn main() -> std::process::ExitCode {
                             .collect();
                         let known = assignments.iter().any(|a| (1..=4).contains(a));
                         println!("cycle={cycle} records={} bound_assignments={assignments:?} proposed_routes={} ignored_tail={ignored_tail}; no routes applied", replies.len(), plan.proposed_routes().count());
+                        // Bound diagnostic output independently of the peer's
+                        // record count. Preserve exact-name matching; do not
+                        // invent aliases from prefixes or embedded NULs.
+                        for (index, record) in replies.iter().take(4).enumerate() {
+                            println!(
+                                "cycle={cycle} record_index={index} name_bytes={} assignment={} bound_name_match={} nul_bytes={} printable_ascii={}; name redacted",
+                                record.name.len(),
+                                record.assignment.byte(),
+                                record.name == records[0].name,
+                                record.name.iter().filter(|b| **b == 0).count(),
+                                record.name.iter().all(|b| (0x20..=0x7e).contains(b)),
+                            );
+                        }
+                        if replies.len() > 4 {
+                            println!("cycle={cycle} additional_record_diagnostics_omitted={}", replies.len() - 4);
+                        }
                         if known {
                             // Do not overwrite an observed desired assignment by
                             // continuing to advertise the unapplied local zero.
