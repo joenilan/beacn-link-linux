@@ -19,14 +19,38 @@ Windows/Linux pass 24 route/publication cases; Linux passes all 27 Python runner
 cases (Windows passes 25 with two Linux-only skips). Existing native routing code
 was reused, not replaced. Free guest disk is about 19.4 GB; lightweight builds only.
 
-Next: the owner-ready integrated hardware drag/retention test. The ignored
+**Integrated hardware test passed:** the owner reported that the Linux test
+entry turned yellow and entered the first Link In channel. Native assignment 1
+arrived at cycle 9, the existing executor completed two acknowledged stereo-link
+creates, and fresh route verification permitted assignment-1 publication at
+cycles 10–40. Two repeated assignment-1 replies completed with receipt prefix
+zero, issuing no additional route operations. All 40 cycles and 81 fresh
+supervised inventories completed. A2 took 42 ms. Source preservation, vendor
+claim release, three owned-process stops, private-core restoration and connected
+guest binding/desktop/state plus host audio/registry comparisons all passed.
+This proves remote UI assignment acceptance and native private-core execution/
+verified publication together; physical Studio audio and prolonged UI lifecycle
+remain unverified. See the integration doc for the private journal hash.
+
+The ignored
 `local/routed_connected_attempt.py` pins the final executable/runner and uses
 fresh connected host/guest snapshots, bounded execution and connected comparisons
 through strict SSH. It can run `--probe run-attached` without USB I/O; the completed
-probe is preserved under its earlier source/evidence state. Hardware observation
-is waiting on the already presented readiness question. Announce start/end and
+probe is preserved under its earlier source/evidence state. Announce start/end and
 leave Studio connected. No computer-use/mouse automation. Routes in this batch
 target owned virtual sinks, not physical Studio audio endpoints.
+
+**Next: physical audio integration.** Read-only metadata identifies one Studio
+audio device (33AE:4003), four stereo Audio/Sink nodes described as BEACN Studio
+Link Link 1/2/3/4, four stereo sources and internal eight-channel sink/source
+nodes. No PCM/USB I/O was requested by this readiness inspection. Names are
+descriptive context, not deletion/route authority; verify exact fresh device,
+node/port serials, pair mapping and current foreign links before any physical
+test. The current native executor still intentionally accepts only its owned
+private core/synthetic nodes. Do not bypass that guard or claim the virtual
+destinations already feed Studio. Prepare the next explicitly selected physical
+audio path and short audible test while preserving settings/unrelated work.
+Studio remains connected to the VM; no per-test handoff or mouse automation.
 
 The explicit initialization diagnostic now permits a single A2 read up to five
 seconds, while all writes and later reads retain their 500 ms limits. Default
@@ -96,7 +120,7 @@ beacn-link-usb-publication-c-string-20261013T135803Z/source. Free guest disk:
 19,808,038,912 bytes; continue lightweight builds. Read publication/session docs
 for hashes, explicit flags and limits.
 
-Next native integration: keep the bounded test source alive during interaction,
+Completed native integration above supersedes this prior next-work note: keep the bounded test source alive during interaction,
 apply a resolved assignment only on the selected private core through existing
 native observations/preparation/receipts, and advertise an assignment only after
 actual local-route verification. Do not keep sending unapplied zero over a

@@ -109,7 +109,54 @@ Free guest disk: 19,353,255,936 bytes. Existing extracted headers/toolchain were
 reused. A failed build missing the explicit existing header sysroot is preserved;
 no packages/toolchains were installed. All prior evidence remains outside Git.
 
-Hardware qualification of the integrated publication/execution path is pending
-the owner's announced readiness/drag test. Sustained Windows visibility, completed
-drop acceptance, assignment changes via the peer and audible Studio output remain
-separate milestones. Never report private virtual routes as physical audio proof.
+## Integrated hardware result
+
+The owner-ready hardware run used the exact final executable/source above. The
+owner reported that BEACN Linux VM Test turned yellow and entered the first Link
+In channel. At cycle 9, native USB received an assignment-1 record for the exact
+owned name before its NUL; the opaque five-byte tail stayed uninterpreted. The
+existing native executor completed two acknowledged stereo link creates (receipt
+prefix 2), and fresh native observations verified the actual private-core route.
+
+Cycles 10–40 each published verified assignment 1. Additional assignment-1
+records at cycles 12 and 15 verified the already-correct route with Complete
+prefix 0; no extra mutations were issued. All 40 publication/poll cycles and 81
+fresh supervised inventories completed, with three record replies, six NoPayload
+replies and 31 rejected-marker observations. No marker meaning is inferred.
+Initial A2 completed in 42 ms with the opted-in five-second bound; later deadlines
+remained 500 ms. Native/runner exit was zero without timeout or retry.
+
+Owned source identity remained valid, the vendor claim released with device
+baseline restored, all three owned private processes stopped and the private
+baseline matched. Connected guest binding/desktop/state and host audio/registry
+comparisons were exact with no errors. Studio stays in the VM; no UI automation
+or physical return comparison occurred. Streaming-PC state is outside these
+local comparisons. The owner's UI report establishes drop acceptance during the
+run; continuous visual retention beyond that report is not independently measured.
+
+Private hardware journal SHA256:
+`277d714102356d39eea8b6be02825b42823049573d7ba3069998017f851c8e70`.
+Connected-comparison SHA256:
+`b3a65323bf71a29726810720d99a614578885fa6d62a1d6f41b21ccf4d56641f`.
+The host copy preserves 181 evidence files/hashes, including private route
+snapshots and authored silent PCM. No raw/proprietary/private material enters Git.
+This is real USB assignment → native private-core route → verified USB publication
+evidence. It is not physical Studio audio or audible interoperability.
+
+A subsequent read-only metadata check found one selected 33AE:4003 audio device,
+four stereo playback nodes described as BEACN Studio Link Link 1/2/3/4, four stereo
+source nodes and internal eight-channel sink/source nodes. Each stereo sink has
+FL/FR input ports and FL/FR monitor outputs. Machine identities/raw metadata stay
+private. These labels do not authorize link removal or prove audible pair mapping.
+No PCM/USB transfers, capture or routing changes were requested by the check.
+Latest free guest disk after preserved evidence: 19,236,716,544 bytes.
+
+Next: verify physical endpoint/pair identities and implement an explicitly selected
+physical-audio path with fresh snapshots and owned cleanup. The existing native
+owner's private-core/synthetic-node restrictions remain intact; physical endpoints
+must not be substituted into it by weakening those checks. Peer assignment changes,
+longer lifecycle/reconnects and audible Studio output remain separate acceptance.
+
+The final USB-only build also passed without modifying the pinned combined binary.
+Private build-journal SHA256:
+`e861e98223eb7d38e7236214bd3209eed26777bfd6f4460e7c4501cefea0087f`.
