@@ -6,12 +6,28 @@ This is an explicitly authorized physical feasibility test, separate from the
 [accepted assignment/publication checkpoint](native-assignment-publication.md).
 Ordinary desktop apply remains disabled. No audible acceptance is claimed.
 
-## Native feasibility without installing Linux
+## Current owner constraint: keep feasibility testing in the VM
+
+The owner provided the VM so Linux testing can retain the active Windows agent
+execution environment. Continue through existing CLI/strict SSH access. A gaming
+PC live boot would remove that execution environment, and no replacement agent
+session/access has been established. Native installation, live USB boot, host
+reboot or another agent computer must not become a requirement for progress.
+The previously proposed native comparison is deferred; retain its optional
+source bundle and provenance without treating it as the current test path.
+
+Next investigate VMware USB transport diagnostics and the guest ALSA clock/driver
+path using the preserved recovered baseline. Prepare bounded observability and
+recovery before a new justified hardware attempt. Do not repeat the failed
+controller/rate experiments or restart the initial audit. Keep ordinary native
+physical apply disabled and distinguish VM audio failure from Linux feasibility.
+
+## Optional native preflight prepared before the owner clarification
 
 The gaming PC currently has no Linux installation. The owner needs the
-replacement demonstrated before migrating. VM-based software work continues;
-the next proposed hardware comparison is a temporary desktop live session,
-not a prerequisite to install Linux or abandon Windows. Ubuntu's official
+replacement demonstrated before migrating. Development and current testing stay
+in the VM. A temporary desktop live session was proposed before the owner
+reaffirmed the VM requirement; it is now deferred. Ubuntu's official
 [Try Ubuntu guide](https://ubuntu.com/desktop/docs/en/latest/tutorial/try-ubuntu-desktop/)
 describes this temporary session; the matching
 [26.04.1 desktop image](https://releases.ubuntu.com/26.04.1/) is available.
@@ -113,8 +129,8 @@ Linux-only skips. The unchanged Rust input map and exact reused CLI remain
 recorded with build provenance. No redundant Rust matrix or toolchain install
 was run. These checks validate the writer's behavior, not crash-recovery
 durability under a new forced power-off or successful audio. Free guest disk is
-about 18.2 GB. Next prepare a native Linux comparison outside VMware, with fresh
-native preflight/backups and intact device/route guards. The VM results do not
+about 18.2 GB. Continue the VM transport/driver investigation under the owner
+constraint above, with intact device/route guards. The VM results do not
 distinguish a Linux driver problem from virtualization or device behavior.
 
 ## Current recovery state (2026-10-14)

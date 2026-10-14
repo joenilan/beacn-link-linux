@@ -1,16 +1,28 @@
 # BEACN Link Linux — continuation handoff
 Updated 2026-10-14. Resume development; do not restart the investigation.
 
-## Feasibility before migration; portable preflight prepared
+## Owner constraint: continue development and feasibility testing in the VM
 
 The owner clarified that the gaming PC has **no native Linux installation**.
 This work must establish feasibility before a switch; do not ask the owner to
-migrate in order to prove the replacement. Keep software development in the VM.
-A temporary Ubuntu desktop live USB session is the proposed later hardware
-comparison, using Try Ubuntu and returning to Windows afterward. No boot-media
-write, host reboot, Linux installation or native hardware test has occurred.
+migrate in order to prove the replacement. The owner reaffirmed that the VM was
+provided to keep agent access available while testing Linux. Continue development
+and feasibility testing through the existing Windows/VM CLI and strict SSH access.
+Do not make a live USB, native Linux installation, host reboot or second agent
+computer a requirement for progress. The proposed native test lacked an active
+execution environment after reboot and has been deferred. No boot-media write,
+host reboot, Linux installation or native hardware test has occurred.
 
-`tests_native/studio_native_preflight.py` is read-only: existing durable snapshot
+Next inspect the existing VMware USB transport diagnostics and guest ALSA clock/
+driver behavior, preserving the recovered baseline and all failed evidence.
+Improve bounded observability/recovery before another justified physical attempt;
+do not repeat failed controller/rate tests or the initial static audit. The VM's
+physical audio gap is unresolved, not proof that Linux itself is unviable. No
+mouse automation, driver/firmware changes, traffic/audio capture or REA execution
+is authorized by this clarification. Existing session execution authority and
+settings-preservation requirements still apply.
+
+The optional prepared `tests_native/studio_native_preflight.py` is read-only: existing durable snapshot
 and cached USB/endpoint owners, one selected card, four actual pair mappings,
 normal device access and explicit native-versus-VM detection. It starts no audio
 and changes no routing. Its readiness flag is for a separate guarded test, not
@@ -66,10 +78,10 @@ the prior exact built CLI with recorded provenance. Free guest disk: about 18.2 
 Fourteen final recovery artifacts were copied and hash-verified on Windows;
 final recovery SHA256:
 `cdbc18f84d0f8056b84f9a1a1fadec981315cd227a566b2bb9676a25ffe8e7b1`.
-Read [native-studio-playback.md](native-studio-playback.md) for details. The next
-useful hardware comparison is native Linux outside VMware, with fresh native
-preflight/backups and preserved device/route guards. Prepare that separately;
-do not repeat VM controller variants or visibility/drag tests. This supersedes
+Read [native-studio-playback.md](native-studio-playback.md) for details. Continue
+the VM investigation under the owner constraint above; the prepared native
+preflight is optional deferred work, not a VM test gate. Do not repeat failed
+controller variants or visibility/drag tests. This supersedes
 earlier next-step/recovery instructions below. Ordinary physical native route
 application remains disabled.
 
