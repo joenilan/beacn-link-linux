@@ -124,12 +124,16 @@ def tracer_command(program, audio_child, *, attachment_check=False):
 
 def observer_outcome(exit_code, marker, journal):
     started = "owned_pid" in journal if journal is not None else (None if marker else False)
-    return {"probe_exit": exit_code, "audio_started": started,
+    outcome = {"probe_exit": exit_code, "audio_started": started,
             "audio_launch_marker_present": marker, "playback_journal_present": journal is not None,
             "error": None if exit_code in (None, 0) else "aggregate observer exited %d; review retained diagnostics" % exit_code}
+    if journal is not None:
+        outcome.update(playback_error=journal.get("error"),
+                       playback_child_exited=journal.get("child_exited"))
+    return outcome
 
 
-def child_command(uid, gid, home, source, selected, evidence):
+def child_command(uid, gid, home, source, selected, evidence, *, matched_device_clock=False):
     if type(uid) is not int or uid < 1 or type(gid) is not int or gid < 0:
         raise ValueError("audio child must use a non-root owner identity")
     command = ["/usr/bin/setpriv", "--reuid", str(uid), "--regid", str(gid), "--init-groups",
@@ -138,6 +142,8 @@ def child_command(uid, gid, home, source, selected, evidence):
                str(Path(source) / "tests_native/studio_alsa_playback.py"),
                "--authorize-direct-alsa-silence", "--sysfs-device", str(selected),
                "--evidence-dir", str(evidence)]
+    if matched_device_clock:
+        command.append("--matched-device-clock-96000")
     if os.environ.get("XDG_STATE_HOME"):
         command.insert(command.index("/usr/bin/python3"), "XDG_STATE_HOME=" + os.environ["XDG_STATE_HOME"])
     return shlex.join(command)
@@ -150,6 +156,8 @@ def main():
     parser.add_argument("--authorize-feedback-status-silence", action="store_true")
     parser.add_argument("--interactive-sudo", action="store_true")
     parser.add_argument("--compile-only", action="store_true")
+    parser.add_argument("--matched-device-clock-96000", action="store_true",
+                        help="observe bounded silence matching an independently measured 96000-Hz clock")
     args = parser.parse_args()
     if sys.platform != "linux" or os.getuid() == 0 or os.geteuid() != os.getuid():
         parser.error("run as the normal Linux desktop owner, never as root")
@@ -157,11 +165,14 @@ def main():
         parser.error("interactive sudo requires explicit status/silence execution")
     if args.compile_only and args.authorize_feedback_status_silence:
         parser.error("compile-only cannot launch silence")
+    if args.matched_device_clock_96000 and not args.authorize_feedback_status_silence:
+        parser.error("matched-clock diagnostic requires explicit status/silence execution")
     root = Path(args.evidence_dir).resolve()
     if root == playback.REPO or playback.REPO in root.parents:
         parser.error("evidence must remain outside source")
     root.mkdir(mode=0o700, parents=False, exist_ok=False)
     summary = {"audio_started": False, "aggregate_only": True, "payload_reads": False,
+               "requested_rate": 96000 if args.matched_device_clock_96000 else 48000,
                "live_probe_validated": False, "error": None}
     child = None
     baseline = None
@@ -194,7 +205,8 @@ def main():
             summary["prepared_only"] = True
         elif playback.binding(selected) != binding or playback.owner.snapshot() != before:
             raise RuntimeError("baseline changed during observer preparation")
-        audio_child = child_command(os.getuid(), os.getgid(), Path.home(), playback.REPO, selected, root / "playback")
+        audio_child = child_command(os.getuid(), os.getgid(), Path.home(), playback.REPO, selected,
+                                    root / "playback", matched_device_clock=args.matched_device_clock_96000)
         privilege = ["/usr/bin/sudo"] + ([] if args.interactive_sudo else ["-n"])
         command = ["/usr/bin/bpftrace", "-d", "codegen", "-e", program] if args.compile_only else (
             privilege + tracer_command(program, audio_child))

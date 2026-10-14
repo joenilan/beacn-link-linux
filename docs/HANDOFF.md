@@ -22,6 +22,59 @@ mouse automation, driver/firmware changes, traffic/audio capture or REA executio
 is authorized by this clarification. Existing session execution authority and
 settings-preservation requirements still apply.
 
+## Measured clock mismatch, matched-rate failure and pending recovery (2026-10-14)
+
+The owner ran `beacn-feedback-ready-20261014T153914Z/run.py`. The corrected
+observer loaded seven probes, exited 0 without warnings/stderr and validated
+complete metadata coverage. It observed the driver's existing clock-41 getter
+return **96000 Hz**, while IN/OUT configuration remained **48000 Hz**, current
+packet size **288 bytes**, maximum **416 bytes**. All 11,472 requested IN packets
+were 288 bytes: 11,308 EOVERFLOW, 158 EXDEV and six successful empty packets.
+There were 1,434 noncancelled IN completions, 12 cleanup cancellations, 1,434 sync
+callbacks, zero successful bytes and no OUT completions. ALSA still stalled at
+pointer 0 -> 0; collector validation is not audio acceptance.
+
+Immediate/fresh guest settings/routes/files/binding comparisons pass exactly;
+no owned process remains from that run. Windows registry/defaults/endpoint
+volumes/mutes/formats/states match. Full Windows audio differs because three
+sessions disappeared across two endpoints, with no changes to surviving sessions.
+Those private differences are preserved; do not claim full byte equality or
+restore unrelated sessions. Twenty-nine result files were copied/hashed.
+Summary SHA256: `8c390897aed8710e1a649e458c5bd1bc549f63b9394c0d407e18e0a8e2d23c81`;
+playback journal: `52a3be1279c3df43c05377487c0265141c0fa7b6f38962d0cc3fa43c0e596c9d`.
+
+This measured mismatch justified one new direct-ALSA diagnostic at 96000 Hz,
+not another blind PipeWire force-rate trial. The runner now has an explicit
+`--matched-device-clock-96000` opt-in, retaining 48000 by default, finite
+eight-channel FLOAT_LE authored silence, conversion refusals and existing
+identity/foreign-graph/cleanup guards. The private wrapper hash-checked the
+prior clock report and required its selected binding to match before execution.
+Exact source: `beacn-link-physical-playback-20261014T163645Z/source`.
+
+That four-second silence attempt also stalled: ten samples at pointer 298 -> 298.
+The owned aplay process 10595 remained in D / usb_kill_urb after termination;
+existing PipeWire/WirePlumber processes remain sleeping/responsive. Windows audio
+and registry match the fresh attempt baseline exactly. Guest comparison refuses
+because the target is not released. **Recovery is pending; do not start another
+playback or claim owned cleanup/settings restoration.** Eighteen attempt files
+were copied/hashed before recovery. Journal SHA256:
+`0e54af353e5d89032204d069004830b19378d9bce1af3413c159c20c0daabead`;
+read-only recovery SHA256:
+`42b6a86fa60f5f5c437615562f8a5cea9cee9fed2e815aca14c66288010940d5`.
+
+The owner was asked to disconnect/reconnect Studio once through VMware, keeping
+Windows Link closed. Next verify that the owned process exited and compare the
+saved guest baseline using fresh identities. Only after recovery may the matched
+96-kHz observer check actual device/configured rates, requested packet sizes and
+completion errors. Matching the reported clock alone did not solve playback;
+failed-packet received lengths remain unknown. No driver/firmware change, payload
+capture, ordinary physical executor apply or audible acceptance occurred.
+
+The aggregate runner now exposes nested playback error/child-exit fields in its
+summary and propagates the explicit 96-kHz diagnostic to its non-root child.
+Actions remain disabled; local checkpoints use [skip ci]. Earlier pending notes
+below are historical and superseded by this checkpoint.
+
 ## Clock/geometry collector load failure and corrected preflight (2026-10-14)
 
 The owner ran `beacn-feedback-ready-20261014T152029Z/run.py`. Its audio-free

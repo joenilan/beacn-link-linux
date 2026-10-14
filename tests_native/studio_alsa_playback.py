@@ -31,13 +31,19 @@ class Cancellation:
             raise RuntimeError("direct ALSA diagnostic cancellation requested")
 
 
-def pcm():
+def checked_rate(rate):
+    if type(rate) is not int or rate not in (48000, 96000):
+        raise ValueError("direct ALSA diagnostic supports only 48000 or measured 96000 Hz")
+    return rate
+
+
+def pcm(rate=RATE):
     # IEEE float positive zero is all-zero bytes, on every selected channel.
-    return bytes(RATE * CHANNELS * 4 * DURATION)
+    return bytes(checked_rate(rate) * CHANNELS * 4 * DURATION)
 
 
-def parameters(raw):
-    expected = {"format": "FLOAT_LE", "channels": str(CHANNELS), "rate": str(RATE)}
+def parameters(raw, rate=RATE):
+    expected = {"format": "FLOAT_LE", "channels": str(CHANNELS), "rate": str(checked_rate(rate))}
     for key, value in expected.items():
         match = re.search(r"^" + key + r": (\S+)", raw, re.M)
         if match is None or match.group(1) != value:
@@ -58,16 +64,20 @@ def clock(raw, pid):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--authorize-direct-alsa-silence", action="store_true")
+    parser.add_argument("--matched-device-clock-96000", action="store_true",
+                        help="explicit diagnostic for an independently observed 96000-Hz device clock")
     parser.add_argument("--sysfs-device", required=True)
     parser.add_argument("--evidence-dir", required=True)
     args = parser.parse_args()
     if sys.platform != "linux" or not args.authorize_direct_alsa_silence:
         parser.error("requires Linux and explicit direct ALSA silence authorization")
+    rate = 96000 if args.matched_device_clock_96000 else RATE
     root = Path(args.evidence_dir).resolve()
     if root == playback.REPO or playback.REPO in root.parents:
         parser.error("evidence must be outside the source tree")
     root.mkdir(mode=0o700, parents=False, exist_ok=False)
-    journal = {"audible": False, "rate": RATE, "channels": CHANNELS,
+    journal = {"audible": False, "rate": rate, "channels": CHANNELS,
+               "matched_device_clock_requested": args.matched_device_clock_96000,
                "duration": DURATION, "pipewire_playback_stream": False,
                "native_executor_apply": False, "child_exited": True,
                "clock_checks": 0, "error": None}
@@ -101,7 +111,7 @@ def main():
         playback.owner.save(root / "baseline.json", baseline)
         playback.owner.save(root / "baseline-objects.json", objects)
         binary = Path("/usr/bin/aplay").resolve(strict=True)
-        raw = pcm()
+        raw = pcm(rate)
         playback.owner.save_bytes(root / "authored-pcm.floatle", raw)
         journal.update(binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
                        pcm_sha256=hashlib.sha256(raw).hexdigest(),
@@ -110,7 +120,7 @@ def main():
                    "--disable-channels", "--disable-format", "--disable-softvol",
                    "--device", "hw:%d,0" % card, "--file-type", "raw",
                    "--format", "FLOAT_LE", "--channels", str(CHANNELS),
-                   "--rate", str(RATE), "--duration", str(DURATION),
+                   "--rate", str(rate), "--duration", str(DURATION),
                    str(root / "authored-pcm.floatle")]
         log = (root / "aplay.log").open("xb")
         playback.owner.save(root / "run-started.json", {"time": time.time(), "direct_alsa": True})
@@ -141,7 +151,7 @@ def main():
                 continue
             pointer = clock(status, child.pid)
             params = (alsa / "pcm0p/sub0/hw_params").read_text()
-            parameters(params)
+            parameters(params, rate)
             activation = playback.audio_activation(args.sysfs_device, binding)
             journal["clock_checks"] += 1
             playback.owner.save(root / ("clock-%02d.json" % journal["clock_checks"]),
@@ -158,7 +168,7 @@ def main():
             if time.monotonic() - last_progress > 2:
                 raise RuntimeError("direct ALSA hardware clock stalled for two seconds")
             time.sleep(0.2)
-        if child.returncode or last_pointer is None or last_pointer < RATE * (DURATION - 1):
+        if child.returncode or last_pointer is None or last_pointer < rate * (DURATION - 1):
             raise RuntimeError("direct ALSA did not complete sufficient clock-verified silence")
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
         journal["error"] = str(error)

@@ -62,6 +62,25 @@ print('owned child exited')
             with self.subTest(raw=raw), self.assertRaises(RuntimeError):
                 alsa.parameters(raw)
 
+    def test_measured_clock_mode_authors_silence_at_the_selected_rate(self):
+        raw = alsa.pcm(96000)
+        self.assertEqual(len(raw), 96000 * 8 * 4 * 4)
+        self.assertFalse(any(raw))
+        good = "format: FLOAT_LE\nchannels: 8\nrate: 96000 (96000/1)\n"
+        alsa.parameters(good, 96000)
+        with self.assertRaises(RuntimeError):
+            alsa.parameters(good.replace("96000", "48000"), 96000)
+        with self.assertRaises(RuntimeError):
+            alsa.parameters(good, 48000)
+
+    def test_unsupported_or_noninteger_rates_are_refused_before_pcm_allocation(self):
+        for rate in (0, -1, 44100, 192000, True, 96000.0, "96000"):
+            with self.subTest(rate=rate):
+                with self.assertRaises(ValueError):
+                    alsa.pcm(rate)
+                with self.assertRaises(ValueError):
+                    alsa.parameters("", rate)
+
     def test_clock_refuses_foreign_owner_stopped_missing_or_oversized_metadata(self):
         good = "state: RUNNING\nowner_pid   : 123\nhw_ptr      : 298\n"
         self.assertEqual(alsa.clock(good, 123), 298)

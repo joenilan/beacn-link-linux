@@ -22,6 +22,46 @@ recovery before a new justified hardware attempt. Do not repeat the failed
 controller/rate experiments or restart the initial audit. Keep ordinary native
 physical apply disabled and distinguish VM audio failure from Linux feasibility.
 
+## Measured 96-kHz device clock and matched-rate failure
+
+The corrected seven-probe owner-terminal run completed without warnings or
+stderr. The existing clock-41 getter returned **96000 Hz** while both driver
+endpoints were configured at **48000 Hz**, with 288-byte current packets and
+416-byte maxima. Requested lengths account for all 11,472 IN packets: 11,308
+EOVERFLOW, 158 EXDEV, six successful empty packets. There were 1,434 noncancelled
+IN completions/sync callbacks, zero successful bytes and no OUT completions.
+ALSA pointer stayed zero. This establishes a device/configuration mismatch,
+without establishing its causal role or the received sizes of failed packets.
+
+The run's immediate/fresh guest comparisons pass exactly. Windows registry and
+endpoint settings/defaults pass; full audio differs only by three disappearing
+sessions across two endpoints, with surviving session values unchanged. Preserve
+the private differences. Twenty-nine result files were copied/hashed, summary
+`8c390897aed8710e1a649e458c5bd1bc549f63b9394c0d407e18e0a8e2d23c81`,
+playback journal
+`52a3be1279c3df43c05377487c0265141c0fa7b6f38962d0cc3fa43c0e596c9d`.
+
+`studio_alsa_playback.py --matched-device-clock-96000` is an explicit diagnostic
+opt-in; default remains 48000. It authors four seconds of eight-channel FLOAT_LE
+silence, disables all ALSA conversion and verifies the requested actual hardware
+parameters. Unsupported/noninteger rates are refused before allocation. Existing
+device/PCM ownership, graph, duration and cleanup guards remain. A private wrapper
+pinned the previous measured-clock report and selected binding before one test.
+
+Matching 96000 did **not** solve playback: pointer 298 -> 298 across ten samples,
+followed by an owned aplay process blocked in D / usb_kill_urb after termination.
+Windows audio/registry match the new baseline exactly. Guest restoration remains
+unverified because its binding is not released. No further playback may run until
+the owner reconnects Studio and fresh recovery verifies owned exit and baseline
+preservation. Eighteen private files were copied before recovery; journal SHA256
+`0e54af353e5d89032204d069004830b19378d9bce1af3413c159c20c0daabead`.
+
+Next, after recovery, use the same aggregate observer's explicit matched-clock
+mode to measure actual device/configured rates and requested sizes at 96000.
+Its summary now exposes playback_error/playback_child_exited separately from
+observer success. No new driver/firmware changes, payload capture or ordinary
+native physical apply. The earlier pending-observer notes below are historical.
+
 ## Failed clock/geometry load and corrected checker
 
 The owner-terminal clock/geometry run reached an attachment-check exit 0, then

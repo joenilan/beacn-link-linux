@@ -43,9 +43,20 @@ class FeedbackStatsTests(unittest.TestCase):
         self.assertIsNotNone(failed["error"])
         self.assertFalse(failed["audio_started"])
         self.assertIsNone(stats.observer_outcome(255, True, None)["audio_started"])
-        completed = stats.observer_outcome(0, True, {"owned_pid": 123, "error": "clock stalled"})
+        completed = stats.observer_outcome(0, True, {"owned_pid": 123, "error": "clock stalled",
+                                                   "child_exited": False})
         self.assertIsNone(completed["error"])  # Collector success is independent of playback success.
         self.assertTrue(completed["audio_started"])
+        self.assertEqual(completed["playback_error"], "clock stalled")
+        self.assertFalse(completed["playback_child_exited"])
+
+    def test_matched_clock_is_explicit_and_preserves_the_nonroot_child(self):
+        normal = shlex.split(stats.child_command(1000, 1000, "/tmp/home", "/tmp/source", "/tmp/usb", "/tmp/out"))
+        matched = shlex.split(stats.child_command(1000, 1000, "/tmp/home", "/tmp/source", "/tmp/usb", "/tmp/out",
+                                                 matched_device_clock=True))
+        self.assertNotIn("--matched-device-clock-96000", normal)
+        self.assertEqual(matched[:-1], normal)
+        self.assertEqual(matched[-1], "--matched-device-clock-96000")
 
     def test_audio_child_drops_root_and_preserves_literal_paths(self):
         with self.assertRaises(ValueError):
