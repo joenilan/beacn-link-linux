@@ -106,6 +106,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let fields: Vec<_> = line.split_whitespace().collect();
         let result: Result<(), String> = (|| match fields.as_slice() {
             ["quit"] => return Ok(()),
+            ["observe", generation] => {
+                let generation = generation.parse().map_err(|_| "invalid generation")?;
+                backend.observe(generation).map(|_| ())
+            }
             ["fault-stats"] => {
                 #[cfg(feature = "native-test-faults")]
                 {

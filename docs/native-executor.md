@@ -20,6 +20,13 @@ link info events and ordered core sync barriers. The connected Unix socket FD is
 passed directly to PipeWire; `SO_PEERCRED` checks UID and expected server PID.
 Native core name and cookie must match. There is no default-socket fallback.
 
+Read-only enumeration can encounter a removed global generation while an adapter
+replaces ports. An ESTALE is deferred only for an unfinished metadata query, and
+its exact observed object must receive registry removal before the sync barrier
+ends. Initialized objects, unconfirmed removal and creation-resource errors still
+fail closed. The opt-in synthetic `--port-churn` test and concurrent hardware
+evidence are documented in [native-continuous-studio.md](native-continuous-studio.md).
+
 The connection requires a direct owned mode-0700 `/tmp/beacn-pw-*` directory,
 `beacn-test-*` socket and exact private `client.conf` without drop-ins.
 Configuration redirection variables are refused. The client loads only

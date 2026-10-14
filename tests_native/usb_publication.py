@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import selectors
 from pathlib import Path
 import subprocess
@@ -20,6 +21,13 @@ WIRE_NAME = "BEACN Linux VM Test"
 MAX_CYCLES = 40
 
 
+def concurrent_proof(stderr, rate):
+    proofs = re.findall(r"native owned PCM checks=(\d+) pointer_progress=(\d+);", stderr)
+    if len(proofs) != 1 or not 12 <= int(proofs[0][0]) <= 4096 or int(proofs[0][1]) < rate * 3:
+        raise RuntimeError("continuous vendor playback proof was insufficient")
+    return {"owned_pcm_checks": int(proofs[0][0]), "owned_pcm_control_progress": int(proofs[0][1])}
+
+
 def inventory_message(inventory):
     text = base.inventory.to_tsv(inventory).encode("ascii")
     if not 0 < len(text) <= 3000:
@@ -27,7 +35,7 @@ def inventory_message(inventory):
     return f'{inventory["snapshot_id"]}\t{len(text)}\n'.encode("ascii") + text
 
 
-def execute_periodic(command, fresh, cycles, timeout=50, physical=None):
+def execute_periodic(command, fresh, cycles, timeout=50, physical=None, concurrent=None, pulse=None):
     """Linux-only bounded IPC; no shell, retries, or background inventory writer."""
     child = subprocess.Popen(command, env={**os.environ, "LIBUSB_DEBUG": "0"},
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -36,6 +44,8 @@ def execute_periodic(command, fresh, cycles, timeout=50, physical=None):
     pending = bytearray()
     requests = 0
     physical_requests = 0
+    continuous_active = False
+    continuous_started = False
     deadline = time.monotonic() + timeout
     try:
         os.set_blocking(child.stdin.fileno(), False)
@@ -45,6 +55,7 @@ def execute_periodic(command, fresh, cycles, timeout=50, physical=None):
                 os.set_blocking(pipe.fileno(), False)
                 selector.register(pipe, selectors.EVENT_READ, name)
             while selector.get_map():
+                if pulse is not None:pulse()
                 if time.monotonic() >= deadline:
                     result["timed_out"] = True
                     raise RuntimeError("periodic child exceeded deadline")
@@ -63,17 +74,29 @@ def execute_periodic(command, fresh, cycles, timeout=50, physical=None):
                         line, _, remainder = pending.partition(b"\n")
                         pending = bytearray(remainder)
                         if line.startswith(b"PHYSICAL"):
-                            if line != b"PHYSICAL 1" or physical is None or physical_requests or requests < 3:
+                            if line in (b"PHYSICAL START 1", b"PHYSICAL STOP 1"):
+                                starting = line == b"PHYSICAL START 1"
+                                if concurrent is None or requests < 3 or (starting and continuous_started) or (not starting and not continuous_active):
+                                    raise RuntimeError("continuous physical request sequence/authority refused")
+                                if concurrent("start" if starting else "stop", child) is not True:
+                                    raise RuntimeError("continuous physical state unconfirmed")
+                                continuous_active = starting
+                                continuous_started |= starting
+                                physical_requests += int(starting)
+                                message = b"PHYSICAL ACTIVE 1\n" if starting else b"PHYSICAL COMPLETE 1\n"
+                                if not starting:result["physical_stage_completed"] = True
+                            elif line != b"PHYSICAL 1" or physical is None or physical_requests or requests < 3:
                                 raise RuntimeError("physical request authority/sequence refused")
-                            physical_requests += 1
-                            if physical(child) is not True:
-                                raise RuntimeError("physical stage did not confirm complete owned cleanup")
+                            else:
+                                physical_requests += 1
+                                if physical(child) is not True:
+                                    raise RuntimeError("physical stage did not confirm complete owned cleanup")
+                                message = b"PHYSICAL COMPLETE 1\n"
+                                result["physical_stage_completed"] = True
                             if time.monotonic() >= deadline:
                                 raise RuntimeError("physical stage exceeded supervisor deadline")
-                            message = b"PHYSICAL COMPLETE 1\n"
                             if os.write(child.stdin.fileno(), message) != len(message):
                                 raise RuntimeError("partial physical completion delivery")
-                            result["physical_stage_completed"] = True
                         if line.startswith(b"INVENTORY"):
                             if line != f"INVENTORY {requests}".encode() or requests >= 2 * cycles + 2:
                                 raise RuntimeError("inventory request sequence/budget refused")
@@ -93,6 +116,12 @@ def execute_periodic(command, fresh, cycles, timeout=50, physical=None):
         result["supervisor_error"] = type(error).__name__ + ": " + str(error)
         if isinstance(error, subprocess.TimeoutExpired):
             result["timed_out"] = True
+        if concurrent is not None:
+            try:concurrent("abort",child)
+            except (OSError,ValueError,RuntimeError):pass
+            child.stdin.close()
+            try:child.wait(timeout=3)
+            except subprocess.TimeoutExpired:pass
     finally:
         if child.poll() is None:
             child.kill()
@@ -180,10 +209,15 @@ def main():
                         help="native-only assignment-1 physical stage; pauses USB until owned audio cleanup")
     parser.add_argument("--authorize-studio-first-pair-tone", action="store_true")
     parser.add_argument("--audible-first-pair", action="store_true", help="owner-ready quiet tones, only through the guarded first pair")
+    parser.add_argument("--continuous-studio-first-pair", action="store_true", help="explicit concurrent playback and guarded vendor publication, bounded to this run")
     args = parser.parse_args()
     if args.authorize_studio_first_pair_tone != args.audible_first_pair or (args.authorize_studio_first_pair_tone and args.authorize_studio_first_pair_silence):
         parser.error("audible first pair requires its tone authorization; silence and tone are exclusive")
     physical_requested = args.authorize_studio_first_pair_silence or args.authorize_studio_first_pair_tone
+    if args.continuous_studio_first_pair and not physical_requested:
+        parser.error("continuous physical mode requires explicit silence/tone authority")
+    if args.continuous_studio_first_pair and args.cycles < 9:
+        parser.error("continuous physical mode requires at least nine cycles")
     if physical_requested and (args.stage != "run" or not args.private_routing or args.cycles < 2 or args.single_publication_hold):
         parser.error("physical stage requires a private hardware run with at least two cycles and no hold")
     if args.single_publication_hold and (args.stage != "run" or args.cycles != 1 or args.private_routing or not args.windows_c_string_names):
@@ -273,6 +307,7 @@ def main():
                                           "single_publication_hold": args.single_publication_hold,
                                           "physical_first_pair_requested": physical_before is not None,
                                           "audible_first_pair": args.audible_first_pair,
+                                          "continuous_first_pair_requested": args.continuous_studio_first_pair,
                                           "private_routing": args.private_routing})
     # PipeWire also creates a '-manager' socket; evidence paths can exceed the
     # Linux Unix-socket limit. mkdtemp retains exclusive 0700 ownership.
@@ -319,6 +354,8 @@ def main():
     result["private_routing_requested"] = args.private_routing
     result["physical_first_pair_requested"] = physical_before is not None
     result["audible_first_pair"] = args.audible_first_pair
+    result["continuous_first_pair_requested"] = args.continuous_studio_first_pair
+    continuous_job = None
 
     def start(name, command, child_env, stdin=None):
         log = (root / (name + ".log")).open("xb")
@@ -429,6 +466,7 @@ def main():
                 if server.poll() is not None or playback.poll() is not None:
                     raise RuntimeError("owned source/core exited")
                 raw, current_objects = dump()
+                if continuous_job is not None:current_objects = continuous_job.filtered(current_objects)
                 last_id = max(last_id + 1, time.time_ns())
                 current = owned_inventory(current_objects, playback.pid, node_name, last_id, destinations)
                 if current["applications"] != inventory["applications"]:
@@ -440,16 +478,31 @@ def main():
             command = ([str(binary), "--check-private-routing", "unused", "unused", str(args.cycles), *native_arguments] if routing_probe else [str(binary), "--check-periodic", str(args.cycles)] if source_only else
                        [str(binary), "--authorize-periodic-publication-hold" if args.single_publication_hold else "--authorize-periodic-c-string-names" if args.windows_c_string_names else "--authorize-periodic-initialization-diagnostic" if args.initialization_diagnostic else "--authorize-periodic-observed-polls" if args.observe_rejected_polls else "--authorize-periodic-startup" if args.observed_startup else "--authorize-periodic", str(selected), str(pinned), str(args.cycles)])
             if args.private_routing and not routing_probe:
-                command[1] = "--authorize-periodic-studio-first-pair" if physical_before is not None else "--authorize-periodic-private-routing"
+                command[1] = "--authorize-periodic-studio-continuous" if args.continuous_studio_first_pair else "--authorize-periodic-studio-first-pair" if physical_before is not None else "--authorize-periodic-private-routing"
                 command += native_arguments
             def physical_stage(child):
                 return physical_bridge.run(selected, physical_before, root / "physical-stage", env, remote,
                                            dump, server, controller, child, ordered[0], playback.pid, token, processes.append, args.audible_first_pair)
+            def concurrent_stage(action, child):
+                nonlocal continuous_job
+                if action == "start":
+                    if continuous_job is not None:raise RuntimeError("continuous stage already exists")
+                    continuous_job = physical_bridge.ContinuousBridge((selected, physical_before, root / "physical-stage", env, remote,
+                                                                      dump, server, controller, child, ordered[0], playback.pid, token, processes.append),
+                                                                     args.audible_first_pair)
+                    return True
+                return continuous_job.stop() if continuous_job is not None else True
+            def pulse():
+                if continuous_job is not None:continuous_job.check()
             result.update(execute_periodic(command, fresh, args.cycles, timeout=90 if args.private_routing else 50,
-                                           physical=physical_stage if physical_before is not None else None))
+                                           physical=physical_stage if physical_before is not None and not args.continuous_studio_first_pair else None,
+                                           concurrent=concurrent_stage if args.continuous_studio_first_pair else None,
+                                           pulse=pulse if args.continuous_studio_first_pair else None))
             result["private_routes_verified_count"] = result.get("stdout", "").count("private_route_applied assignment=")
             result["routes_applied"] = result["private_routes_verified_count"] > 0
             result["routing_scope"] = "owned_private_core" if args.private_routing else None
+            if args.continuous_studio_first_pair:
+                result.update(concurrent_proof(result.get("stderr", ""), rate))
         else:
             command = ([str(binary), "--check-inventory", str(projected), str(inventory["snapshot_id"])] if source_only else
                        [str(binary), "--authorize-publication", str(selected), str(pinned), str(projected), str(inventory["snapshot_id"])])
@@ -459,6 +512,9 @@ def main():
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
         result["runner_error"] = type(error).__name__ + ": " + str(error)
     finally:
+        if continuous_job is not None:
+            try:continuous_job.stop()
+            except (OSError,ValueError,RuntimeError) as error:result["continuous_cleanup_error"] = str(error)
         if result["child_exited"]:
             stopped = []
             for p in reversed(processes):
@@ -494,7 +550,7 @@ def main():
         base.save(root / "handshake.json", result)
     print(json.dumps({k: v for k, v in result.items() if k not in ("after_child", "after_owned_cleanup", "private_child_pid", "retained_private_process_pids")}))
     physical_ok = physical_before is None or all(result.get(k) for k in ("physical_stage_completed", "physical_snapshot_restored", "physical_binding_restored", "physical_pcms_closed"))
-    return 0 if physical_ok and result["exit"] == 0 and not result["timed_out"] and result.get("owned_source_preserved") and result.get("private_core_restored") and all(result.get("owned_processes_stopped", [False])) and "runner_error" not in result and "supervisor_error" not in result else 2
+    return 0 if physical_ok and result["exit"] == 0 and not result["timed_out"] and result.get("owned_source_preserved") and result.get("private_core_restored") and all(result.get("owned_processes_stopped", [False])) and "runner_error" not in result and "supervisor_error" not in result and "continuous_cleanup_error" not in result else 2
 
 
 if __name__ == "__main__":

@@ -27,7 +27,10 @@ interface 3 alternate 0 with no endpoints, alternate 1 with bulk OUT 03 / IN 83,
 512-byte maximum packets and subclass/protocol 00/00. Initial alternate settings
 must be zero, interface 3 must have no kernel driver, and the retained device must
 report libusb high-speed (480 Mb/s). Other revisions/configurations are refused.
-Audio alternate settings and driver names must remain identical across checks.
+In default modes, audio alternate settings and driver names must remain identical
+across checks. The later, separately authorized
+[continuous verified-route mode](native-continuous-studio.md) permits only its
+pinned, authenticated active playback owner during publication/poll phases.
 This policy does not establish audio format/channel compatibility.
 
 The caller supplies the exact private descriptor cache and sysfs device directory.

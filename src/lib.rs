@@ -312,6 +312,8 @@ pub mod usb_descriptors;
 pub mod usb_handshake;
 
 #[cfg(all(feature = "native-usb", target_os = "linux"))]
+mod native_audio;
+#[cfg(all(feature = "native-usb", target_os = "linux"))]
 pub mod native_usb;
 
 #[cfg(all(feature = "native-pipewire", target_os = "linux"))]

@@ -27,6 +27,54 @@ def objects():
 
 
 class PublicationRunnerTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "linux", "Linux pipe supervisor")
+    def test_worker_failure_aborts_owned_audio_before_ending_native_ipc(self):
+        actions=[]
+        def concurrent(action, child):
+            actions.append((action,child.poll() is None))
+            return True
+        def pulse():
+            if actions and actions[-1][0]=="start":raise RuntimeError("owned playback proof lost")
+        def fresh(n):return runner.owned_inventory(objects(),123,"owned-source",n+1)
+        code="import sys\nfor n in range(3):\n print('INVENTORY '+str(n),flush=True)\n h=sys.stdin.buffer.readline();sys.stdin.buffer.read(int(h.split(b'\\t')[1]))\nprint('PHYSICAL START 1',flush=True);sys.stdin.buffer.readline();sys.stdin.buffer.readline()\n"
+        with patch.object(runner.base,"snapshot",return_value={}):
+            result=runner.execute_periodic([sys.executable,"-c",code],fresh,2,timeout=2,concurrent=concurrent,pulse=pulse)
+        self.assertTrue(result["child_exited"])
+        self.assertIn("supervisor_error",result)
+        self.assertEqual(actions,[("start",True),("abort",True)])
+
+    def test_continuous_proof_requires_one_bounded_owner_check_and_progress_summary(self):
+        proof="native owned PCM checks=12 pointer_progress=288000; metadata only"
+        self.assertEqual(runner.concurrent_proof(proof,96000),{"owned_pcm_checks":12,"owned_pcm_control_progress":288000})
+        for bad in ("",proof+proof,proof.replace("12","11"),proof.replace("12","4097"),proof.replace("288000","287999")):
+            with self.assertRaises(RuntimeError):runner.concurrent_proof(bad,96000)
+
+    def test_continuous_mode_requires_physical_authority_and_progress_budget(self):
+        for extra in (["--cycles", "40"], ["--cycles", "8", "--authorize-studio-first-pair-silence", "--private-routing"]):
+            argv = ["test", "run", "--evidence-dir", "unused", "--executor", "unused", "--continuous-studio-first-pair", *extra]
+            with patch.object(sys, "argv", argv), patch.object(runner.subprocess, "Popen") as child, contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit):runner.main()
+                child.assert_not_called()
+
+    @unittest.skipUnless(sys.platform == "linux", "Linux pipe supervisor")
+    def test_continuous_ipc_enforces_exact_once_start_then_stop(self):
+        for mode in ("complete", "unauthorized", "stop-first", "duplicate-start", "duplicate-stop", "wrong-pair"):
+            actions=[]
+            def concurrent(action, child):actions.append(action);return True
+            def fresh(n):return runner.owned_inventory(objects(),123,"owned-source",n+1)
+            code="import sys\nfor n in range(3):\n print('INVENTORY '+str(n),flush=True)\n h=sys.stdin.buffer.readline();sys.stdin.buffer.read(int(h.split(b'\\t')[1]))\n"
+            first="PHYSICAL STOP 1" if mode=="stop-first" else "PHYSICAL START 2" if mode=="wrong-pair" else "PHYSICAL START 1"
+            code+="print("+repr(first)+",flush=True);sys.stdin.buffer.readline()\n"
+            if mode=="duplicate-start":code+="print('PHYSICAL START 1',flush=True);sys.stdin.buffer.readline()\n"
+            code+="print('PHYSICAL STOP 1',flush=True);sys.stdin.buffer.readline()\n"
+            if mode=="duplicate-stop":code+="print('PHYSICAL STOP 1',flush=True);sys.stdin.buffer.readline()\n"
+            with patch.object(runner.base,"snapshot",return_value={}):
+                result=runner.execute_periodic([sys.executable,"-c",code],fresh,2,timeout=2,concurrent=None if mode=="unauthorized" else concurrent)
+            self.assertTrue(result["child_exited"])
+            self.assertEqual("supervisor_error" in result,mode!="complete")
+            if mode=="complete":self.assertEqual(actions,["start","stop"]);self.assertTrue(result["physical_stage_completed"])
+            elif mode!="unauthorized":self.assertEqual(actions[-1],"abort")
+
     def test_audible_stage_requires_exact_authorization_and_excludes_silence(self):
         for extra in (["--audible-first-pair"], ["--authorize-studio-first-pair-tone"], ["--audible-first-pair", "--authorize-studio-first-pair-tone", "--authorize-studio-first-pair-silence"]):
             argv = ["test", "run", "--evidence-dir", "unused", "--executor", "unused", *extra]

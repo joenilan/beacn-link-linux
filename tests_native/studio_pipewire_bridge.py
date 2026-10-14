@@ -1,8 +1,10 @@
 """Bounded native Studio stage while the initialized USB owner awaits completion.
 
 Only an already verified assignment-1 private route can enter this stage.
-No vendor bulk exchanges, capture, defaults, desktop routes or driver changes
-occur here; the existing ALSA driver carries the authorized playback data.
+Legacy mode pauses vendor bulk exchanges; explicit continuous mode retains a
+bounded worker while the initialized USB owner publishes. No capture, defaults,
+desktop routes or driver changes occur here; the existing ALSA driver carries
+the authorized playback data.
 """
 import hashlib
 import json
@@ -10,6 +12,7 @@ import math
 from pathlib import Path
 import stat
 import struct
+import threading
 import subprocess
 import time
 import uuid
@@ -34,7 +37,7 @@ def stereo_pcm(audible=False):
                 value = int(32767 * 10 ** (-24 / 20) * envelope * math.sin(2 * math.pi * 440 * i / RATE))
                 struct.pack_into("<hh", block, (second * RATE + i) * 4, value, value)
     # Repeated source pattern avoids losing a finite tone while the bridge is
-    # being prepared. Physical output is independently bounded to four seconds.
+    # being prepared. Physical output has its own supervisor stop/deadline.
     return bytes(block) * 30
 
 
@@ -114,18 +117,18 @@ def assignment_one(objects, target, target_pid, source_pid, native_pid, token):
 
 
 def run(selected, before, root, env, remote, dump, server, destinations, native,
-        target, source_pid, token, register, audible=False):
+        target, source_pid, token, register, audible=False, seconds=4, stop_event=None, on_active=None):
     root.mkdir(mode=0o700, exist_ok=False)
     journal = {"error": None, "rate": RATE, "audible": audible, "assignment": 1,
                "harness_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-               "vendor_bulk_exchanges_paused": True, "physical_progress_verified": False}
+               "vendor_bulk_exchanges_paused": stop_event is None, "physical_progress_verified": False}
     bridge = None
     log = None
     observations = []
     device = Path("/dev/snd/pcmC%dD0p" % before["card"])
     stage_token = uuid.uuid4().hex
     native_start = Path("/proc/%d/stat" % native.pid).read_text().rsplit(")", 1)[1].split()[19]
-    deadline = time.monotonic() + 12
+    deadline = time.monotonic() + seconds + 8
 
     def wait(predicate):
         end = min(time.monotonic() + 3, deadline)
@@ -202,8 +205,10 @@ def run(selected, before, root, env, remote, dump, server, destinations, native,
         if any(client_pid(objects, o) != bridge.pid for o in bridge_links(objects)):
             raise RuntimeError("bridge link controller identity changed")
         owner.save(root / "physical-active.json", objects)
-        end = min(time.monotonic() + 4, deadline)
-        while time.monotonic() < end:
+        if on_active is not None:
+            on_active(bridge.pid, hardware, bridge_links(objects))
+        end = min(time.monotonic() + seconds, deadline)
+        while time.monotonic() < end and not (stop_event is not None and stop_event.is_set()):
             _, current_objects = dump()
             refs = [{"id": o["id"], "serial": props(o)["object.serial"]} for o in bridge_links(current_objects)]
             if refs != journal["bridge_refs"] or any(o.get("info", {}).get("state") != "active" for o in bridge_links(current_objects)):
@@ -264,3 +269,65 @@ def run(selected, before, root, env, remote, dump, server, destinations, native,
     if journal["error"] is not None or not all(journal.get(k) for k in ("physical_progress_verified", "controller_stopped", "private_graph_restored", "held_binding_restored", "desktop_restored")):
         raise RuntimeError("physical stage failed; inspect retained journal before further USB exchanges")
     return True
+
+
+class ContinuousBridge:
+    """One retained worker; selector-owner checks failures before each IPC step."""
+    def __init__(self, args, audible=False):
+        self.stop_event = threading.Event()
+        self.active = threading.Event()
+        self.error = None
+        self.stopped = False
+        self.refs = []
+        self.pid = None
+        self.hardware = None
+        def activated(pid, hardware, links):
+            self.pid = pid
+            self.hardware = (hardware["id"], props(hardware)["object.serial"])
+            self.refs = [(o["id"], props(o)["object.serial"], props(o)["link.output.node"], props(o)["link.output.port"],
+                          props(o)["link.input.node"], props(o)["link.input.port"]) for o in links]
+            self.active.set()
+        def worker():
+            try:
+                run(*args, audible=audible, seconds=45, stop_event=self.stop_event, on_active=activated)
+            except Exception as error:
+                self.error = type(error).__name__ + ": " + str(error)
+        self.thread = threading.Thread(target=worker, name="beacn-owned-physical", daemon=True)
+        self.thread.start()
+        end = time.monotonic() + 8
+        while not self.active.wait(.05):
+            if not self.thread.is_alive() or time.monotonic() >= end:
+                self.stop()
+                raise RuntimeError("continuous bridge did not become active")
+        self.check()
+
+    def check(self):
+        if self.error is not None or (not self.stopped and not self.thread.is_alive()):
+            raise RuntimeError("continuous physical worker stopped; inspect its journal")
+
+    def filtered(self, objects):
+        self.check()
+        if self.stopped:
+            return objects
+        hardware = [o for o in objects if o.get("type") == NODE and o["id"] == self.hardware[0]
+                    and props(o).get("object.serial") == self.hardware[1]]
+        if len(hardware) != 1 or client_pid(objects, hardware[0]) != self.pid:
+            raise RuntimeError("continuous hardware identity changed")
+        ids = {r[0] for r in self.refs}
+        links = [o for o in objects if o.get("type") == LINK and o["id"] in ids]
+        actual = [(o["id"], props(o).get("object.serial"), props(o).get("link.output.node"), props(o).get("link.output.port"),
+                   props(o).get("link.input.node"), props(o).get("link.input.port")) for o in links]
+        if sorted(actual) != sorted(self.refs) or any(client_pid(objects, o) != self.pid or o.get("info", {}).get("state") != "active" for o in links):
+            raise RuntimeError("continuous bridge link identity changed")
+        # Only these exact retained-controller refs are excluded from the
+        # supervising virtual-route check. Native snapshots still see all links.
+        return [o for o in objects if not (o.get("type") == LINK and o["id"] in ids)]
+
+    def stop(self):
+        self.stop_event.set()
+        self.thread.join(timeout=12)
+        if self.thread.is_alive():
+            raise RuntimeError("continuous physical cleanup unconfirmed")
+        self.stopped = True
+        self.check()
+        return True

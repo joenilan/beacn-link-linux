@@ -72,6 +72,7 @@ def main():
     parser.add_argument("--codec", required=True)
     parser.add_argument("--evidence-dir", required=True)
     parser.add_argument("--fault-tests", action="store_true", help="requires native-test-faults executable")
+    parser.add_argument("--port-churn", action="store_true", help="exercise read-only binds during owned virtual port replacement")
     parser.add_argument("--authorize-studio-first-pair-silence", action="store_true",
                         help="native-only physical ALSA bridge from owned destination A; never desktop apply")
     parser.add_argument("--sysfs-device")
@@ -82,6 +83,8 @@ def main():
         parser.error("physical silence requires its authorization and exact selected sysfs device")
     if args.authorize_studio_first_pair_silence and args.fault_tests:
         parser.error("physical silence and extended synthetic fault matrix are separate tests")
+    if args.port_churn and (args.authorize_studio_first_pair_silence or args.fault_tests):
+        parser.error("port churn is an isolated synthetic test")
     physical = None
     rate = 96000 if args.authorize_studio_first_pair_silence else 48000
     if args.authorize_studio_first_pair_silence:
@@ -313,6 +316,33 @@ def main():
         frames = [subprocess.check_output([args.codec, "encode", str(i) + ":controlled-test"], text=True).strip() for i in (1, 2)]
         assert "Complete prefix=2" in native_command("route 1 " + frames[0])
         stage("native-A", a)
+        if args.port_churn:
+            # Keep the established native route alive while unrelated, retained
+            # virtual adapters publish and replace their initial convert ports.
+            # Native observes only after replacement, reproducing queued binds
+            # against vanished generations without USB or physical audio.
+            churn = start("port-churn", ["pw-cli", "-r", remote], private_env, subprocess.PIPE)
+            for iteration in range(6):
+                name = "beacn-churn-" + token + "-" + str(iteration)
+                p = {"factory.name": "support.null-audio-sink", "node.name": name,
+                     "media.class": "Audio/Sink", "node.virtual": True,
+                     "object.linger": False, "node.autoconnect": False,
+                     "audio.channels": 8, "audio.position": ["AUX%d" % i for i in range(8)]}
+                churn.stdin.write(("create-node adapter " + json.dumps(p) + "\n").encode()); churn.stdin.flush()
+                oo = wait(lambda oo: any(o.get("type") == inventory.NODE and props(o).get("node.name") == name for o in oo))
+                node = next(o for o in oo if o.get("type") == inventory.NODE and props(o).get("node.name") == name)
+                client = next(o for o in oo if o.get("type") == "PipeWire:Interface:Client" and o["id"] == int(props(node)["client.id"]))
+                assert int(props(client).get("pipewire.sec.pid", props(client).get("application.process.id", 0))) == churn.pid
+                cfg = {**port_config, "format": {**port_config["format"], "channels": 8, "position": p["audio.position"]}}
+                for config_value, count in ((cfg, 8), (port_config, 2), (cfg, 8)):
+                    churn.stdin.write(("set-param %d PortConfig " % node["id"] + json.dumps(config_value) + "\n").encode()); churn.stdin.flush()
+                    wait(lambda oo: sum(o.get("type") == "PipeWire:Interface:Port" and props(o).get("node.id") == node["id"] for o in oo) == count)
+                native_command("observe 2")
+                stage("port-churn-%d-kept-A" % iteration, a)
+            churn.terminate(); churn.wait(timeout=3)
+            native_command("observe 2")
+            journal["port_churn_verified"] = True
+            save()
         if physical is not None:
             observations = []
             end = time.monotonic() + 4
@@ -465,6 +495,7 @@ def main():
         save()
     checks = ("routing_passed", "private_baseline_restored", "desktop_settings_unchanged", "desktop_state_files_unchanged", "desktop_has_no_owned_objects", "runtime_removed")
     if args.fault_tests: checks+=("fault_tests_passed",)
+    if args.port_churn: checks+=("port_churn_verified",)
     if physical is not None: checks += ("physical_queue_progress_verified", "physical_binding_restored", "physical_snapshot_restored", "physical_pcms_closed")
     print(json.dumps({key: journal.get(key) for key in checks} | {"error": journal["error"], "native_test_stats": journal.get("native_test_stats"), "client_churn_iterations": journal.get("client_churn_iterations"), "stages": journal["stages"], "diagnostics": journal.get("diagnostics"), "cleanup_errors": [journal[key] for key in ("private_cleanup_error", "desktop_cleanup_error") if key in journal]}))
     return 0 if all(journal.get(key) for key in checks) and journal["error"] is None else 1

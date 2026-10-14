@@ -1,5 +1,9 @@
 # Native USB app-list publication and assignment poll
 
+Current physical interoperability evidence is in
+[bounded concurrent Studio audio/control](native-continuous-studio.md).
+The sections below preserve earlier USB-only and VM milestones and their limits.
+
 Updated 2026-10-13. The latest checkpoint is recorded under Initialization deadline
 diagnostic below; earlier sections retain their historical validation scope.
 The subsequent [native assignment integration](native-assignment-publication.md)

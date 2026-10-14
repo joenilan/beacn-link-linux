@@ -31,8 +31,12 @@ A combined native run now receives assignment 1, verifies that route, drives
 Studio's physical first pair through PipeWire, and resumes verified USB publication
 after owned audio cleanup. The owner heard the quiet tones and saw the test in
 Link In. This is bounded first-pair acceptance with an owned test source.
-Continuous audio with uninterrupted control publication, stable app visibility,
-ordinary desktop applications and the remaining pairs still need integration.
+A subsequent [continuous native test](docs/native-continuous-studio.md) kept
+first-pair audio active while publication and polling continued through 40 cycles.
+The owner heard repeating tones and confirmed the app stayed in Link In after
+assignment. Exact laptop settings and owned cleanup comparisons passed.
+Ordinary desktop applications, the remaining pairs and long-lived recovery still
+need integration.
 Read the current handoff and playback report before another test.
 Windows Link stays closed during hardware tests.
 

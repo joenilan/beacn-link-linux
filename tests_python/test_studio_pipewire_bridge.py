@@ -31,6 +31,23 @@ def graph():
 
 
 class PhysicalBridgeTests(unittest.TestCase):
+    def test_continuous_inventory_excludes_only_exact_live_controller_bridge_refs(self):
+        objects,target=graph()
+        def obj(id,kind,p):return {"id":id,"type":"PipeWire:Interface:"+kind,"info":{"state":"active","props":{"object.serial":id+100,**p}}}
+        objects += [obj(8,"Client",{"application.process.id":88}),obj(7,"Node",{"client.id":8})]
+        for id,output,input_ in ((30,14,16),(31,15,17)):
+            objects.append(obj(id,"Link",{"client.id":8,"link.output.node":6,"link.output.port":output,"link.input.node":7,"link.input.port":input_}))
+        job=bridge.ContinuousBridge.__new__(bridge.ContinuousBridge)
+        job.error=None;job.stopped=False;job.thread=MagicMock();job.thread.is_alive.return_value=True
+        job.pid=88;job.hardware=(7,107);job.refs=[(30,130,6,14,7,16),(31,131,6,15,7,17)]
+        filtered=job.filtered(objects)
+        self.assertEqual([o["id"] for o in filtered if o["type"]==bridge.LINK],[20,21])
+        for id,key,value in ((30,"object.serial",999),(30,"link.input.port",999),(30,"client.id",4),(7,"object.serial",999)):
+            changed=copy.deepcopy(objects);next(o for o in changed if o["id"]==id)["info"]["props"][key]=value
+            with self.assertRaises(RuntimeError):job.filtered(changed)
+        job.error="worker failed"
+        with self.assertRaises(RuntimeError):job.filtered(objects)
+
     @unittest.skipUnless(sys.platform == "linux", "retained Linux process identity")
     def test_malformed_private_metadata_is_journaled_before_hardware_creation(self):
         binding = {"instance": [1], "attributes": {}, "descriptor_sha256": "same",

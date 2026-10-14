@@ -1,5 +1,10 @@
 # Native assignment execution and verified publication
 
+The subsequent [continuous first-pair checkpoint](native-continuous-studio.md)
+adds bounded concurrent native publication/polling and physical playback, with
+owner-confirmed tones and Link In retention. Earlier sections below retain the
+pause-and-resume and USB-only evidence boundaries.
+
 ## Combined first-pair audible acceptance (2026-10-14)
 
 The guarded native laptop test now connects assignment 1 to physical Studio

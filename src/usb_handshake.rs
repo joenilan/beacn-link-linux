@@ -100,6 +100,9 @@ impl Publication {
     pub(crate) fn initialization_timeout(&self) -> Duration {
         self.initialization_timeout
     }
+    pub(crate) fn verified_routes(&self) -> bool {
+        self.verified_routes
+    }
 }
 #[derive(Clone, PartialEq, Eq)]
 pub struct Observation {
@@ -115,6 +118,11 @@ pub struct Observation {
 /// fallback, auto-detach a driver, retry transfers or claim audio interfaces.
 pub trait Backend {
     fn observe(&mut self) -> Result<Observation, i32>;
+    /// Default-denied exception for explicitly pinned, live owned playback.
+    /// All device/configuration/vendor/driver checks still apply.
+    fn owned_playback_valid(&mut self) -> bool {
+        false
+    }
     fn claim_three(&mut self) -> Result<(), i32>;
     fn select_one(&mut self) -> Result<(), i32>;
     /// Optional observed-startup operations. Unsupported by default; neither
@@ -412,7 +420,21 @@ impl<B: Backend> Handshake<B> {
         let mut expected = self.baseline.clone().ok_or(Error::Changed)?;
         expected.alternate = alternate;
         if current != expected {
-            return Err(Error::Changed);
+            let mut playing = expected.clone();
+            for (number, alternate, _) in &mut playing.audio_interfaces {
+                if *number == 1 || *number == 2 {
+                    *alternate = 1;
+                }
+            }
+            let periodic = self.publication.as_ref().is_some_and(|p| p.verified_routes);
+            let exchange = matches!(
+                self.phase,
+                Phase::Publish | Phase::AwaitInventory | Phase::PollRequest | Phase::PollReply
+            );
+            if current != playing || !periodic || !exchange || !self.backend.owned_playback_valid()
+            {
+                return Err(Error::Changed);
+            }
         }
         Ok(())
     }
@@ -577,6 +599,105 @@ impl<B: Backend> Drop for Handshake<B> {
     fn drop(&mut self) {
         if !self.closed {
             self.cleanup();
+        }
+    }
+}
+
+#[cfg(test)]
+mod playback_tests {
+    use super::*;
+    struct Fake {
+        current: Observation,
+        valid: bool,
+        validations: usize,
+    }
+    impl Backend for Fake {
+        fn observe(&mut self) -> Result<Observation, i32> {
+            Ok(self.current.clone())
+        }
+        fn owned_playback_valid(&mut self) -> bool {
+            self.validations += 1;
+            self.valid
+        }
+        fn claim_three(&mut self) -> Result<(), i32> {
+            Ok(())
+        }
+        fn select_one(&mut self) -> Result<(), i32> {
+            self.current.alternate = 1;
+            Ok(())
+        }
+        fn release_three(&mut self) -> Result<(), i32> {
+            self.current.alternate = 0;
+            Ok(())
+        }
+        fn close(&mut self) {}
+        fn write(&mut self, _: &[u8], _: u32) -> Result<usize, i32> {
+            panic!("no transfers in gate test")
+        }
+        fn read(&mut self, _: &mut [u8], _: u32) -> Result<usize, i32> {
+            panic!("no transfers in gate test")
+        }
+    }
+    fn owner(verified: bool, valid: bool) -> Handshake<Fake> {
+        let current = Observation {
+            instance: 44,
+            configuration: 1,
+            alternate: 0,
+            kernel_bound: false,
+            descriptors: include_str!("../fixtures/usb-handshake.synthetic.hex")
+                .split_whitespace()
+                .map(|s| u8::from_str_radix(s, 16).unwrap())
+                .collect(),
+            audio_interfaces: (0..3).map(|n| (n, 0, "snd-usb-audio".into())).collect(),
+        };
+        let inventory =
+            crate::snapshot::inventory_from_tsv(1, "test\ttest\tstream\tlive\n").unwrap();
+        let publication = Publication::bounded(&inventory, 3).unwrap();
+        Handshake::prepare_publication(
+            Fake {
+                current,
+                valid,
+                validations: 0,
+            },
+            if verified {
+                publication.with_verified_routes()
+            } else {
+                publication
+            },
+        )
+        .unwrap()
+    }
+    #[test]
+    fn playback_exception_is_explicit_phase_limited_and_preserves_every_other_guard() {
+        for (verified, valid, phase, pass) in [
+            (true, true, Phase::PollRequest, true),
+            (true, false, Phase::PollRequest, false),
+            (false, true, Phase::PollRequest, false),
+            (true, true, Phase::A2, false),
+        ] {
+            let mut owner = owner(verified, valid);
+            owner.phase = phase;
+            owner.backend.current.audio_interfaces[1].1 = 1;
+            owner.backend.current.audio_interfaces[2].1 = 1;
+            assert_eq!(owner.check(1).is_ok(), pass);
+        }
+        for field in 0..8 {
+            let mut owner = owner(true, true);
+            owner.phase = Phase::PollReply;
+            owner.backend.current.audio_interfaces[1].1 = 1;
+            owner.backend.current.audio_interfaces[2].1 = 1;
+            match field {
+                0 => owner.backend.current.instance += 1,
+                1 => owner.backend.current.configuration = 2,
+                2 => owner.backend.current.alternate = 0,
+                3 => owner.backend.current.kernel_bound = true,
+                4 => owner.backend.current.audio_interfaces[0].1 = 1,
+                5 => owner.backend.current.audio_interfaces[1].2 = "foreign".into(),
+                6 => owner.backend.current.audio_interfaces[2].1 = 0,
+                _ => owner.backend.current.descriptors[12] ^= 1,
+            }
+            assert!(owner.check(1).is_err());
+            assert_eq!(owner.backend.validations, 0);
         }
     }
 }

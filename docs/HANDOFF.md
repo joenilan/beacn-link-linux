@@ -1,7 +1,42 @@
 # BEACN Link Linux — continuation handoff
 Updated 2026-10-14. Resume development; do not restart the investigation.
 
-## Current checkpoint: native assignment-driven PipeWire audio was heard
+## Current checkpoint: concurrent native audio/control and Link In retention pass
+
+The separate Debian laptop now passes bounded continuous first-pair audio while
+native USB publication/polling continue. The owner confirmed silent-run Link In
+retention, then reported "had to drag it in there first, then heard tones, stayed
+in link in" for the audible run. No USB toggle was needed. Full implementation,
+evidence hashes, guard limits and provenance are in
+[native-continuous-studio.md](native-continuous-studio.md).
+
+Live source `beacn-native-source-20261014T214415Z`: silent assignment at cycle 5,
+136 native active-PCM checks and 1,744,716 frames of concurrent progress; audible
+assignment at cycle 9, 120 checks and 1,522,199 frames. Both completed all 40 cycles,
+82 fresh inventories, final post-audio verified publication and exact laptop
+settings/routes/state/USB/ACL cleanup. All four owned processes stopped and PCMs
+closed. Independent physical worker observations also progressed. Streaming-PC
+saved settings are outside these comparisons; UI/listening evidence is the owner.
+
+The explicit continuous mode retains a supervised physical worker and authenticates
+its PCM owner before each active-audio vendor exchange. Default idle USB gates and
+native route/receipt/removal guards stay enforced. An initial ESTALE metadata-bind
+failure cleaned up safely. A narrow fix requires unfinished read-only query scope
+and confirmed removal before the barrier; six synthetic port-change rounds exercised
+78 removed bindings while preserving routing, recovery and exact cleanup.
+
+64 focused checks pass and exact native programs build offline. 614 evidence and
+provenance files plus owner reports are hashed outside Git. A final diagnostic-only
+harness change preserves actual applied-route reporting even if continuous proof
+fails. No REA, proprietary execution, capture, driver changes or desktop apply.
+
+Next: ordinary application inventory/routing, other three pairs, then longer
+lifecycle/reconnect behavior. Keep Studio attached to the laptop and Windows Link
+closed. Do not repeat the successful first-pair test without a new reason or claim
+long-lived daemon/full replacement acceptance. Actions remain disabled; no push
+was requested. Prior VMware recovery limitations remain separate.
+
+## Previous checkpoint: bounded assignment-driven PipeWire audio was heard
 
 The separate Debian laptop now passes the bounded combined path: Windows BEACN
 App assignment 1 -> native receipt-verified private FL/FR route -> Studio's

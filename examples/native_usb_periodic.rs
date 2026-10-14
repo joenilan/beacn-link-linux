@@ -28,9 +28,13 @@ fn main() -> std::process::ExitCode {
     let offline = args.len() == 2 && args[0] == "--check-periodic";
     let execute = || -> Result<(), String> {
         let private_probe = args.first().is_some_and(|a| a == "--check-private-routing");
-        let physical_pair = args
+        let continuous = args
             .first()
-            .is_some_and(|a| a == "--authorize-periodic-studio-first-pair");
+            .is_some_and(|a| a == "--authorize-periodic-studio-continuous");
+        let physical_pair = continuous
+            || args
+                .first()
+                .is_some_and(|a| a == "--authorize-periodic-studio-first-pair");
         let private_routing = private_probe
             || physical_pair
             || args
@@ -86,6 +90,9 @@ fn main() -> std::process::ExitCode {
         }
         if physical_pair && cycles < 2 {
             return Err("physical diagnostic needs a post-audio publication cycle".into());
+        }
+        if continuous && cycles < 9 {
+            return Err("continuous diagnostic requires at least nine cycles".into());
         }
         let input = std::cell::RefCell::new(std::io::stdin().lock());
         let mut request = 0;
@@ -220,18 +227,43 @@ fn main() -> std::process::ExitCode {
         println!(
             "startup policy: {startup:?}; poll policy: {poll_policy:?}; received_name_policy: {name_policy:?}; initial_read_ms={initial_read_ms}; writes_and_later_reads_ms=500"
         );
-        let transport = native_usb::open_publication_with_startup(
-            Path::new(&args[1]),
-            &expected,
-            publication,
-            true,
-            startup,
-        )
+        let transport = if continuous {
+            native_usb::open_publication_with_owned_playback(
+                Path::new(&args[1]),
+                &expected,
+                publication,
+                true,
+                args[7].parse().map_err(|_| "invalid retained server PID")?,
+            )
+        } else {
+            native_usb::open_publication_with_startup(
+                Path::new(&args[1]),
+                &expected,
+                publication,
+                true,
+                startup,
+            )
+        }
         .map_err(|e| e.to_string())?;
         let mut session =
             Session::new_with_poll_policy(transport, Duration::from_millis(500), poll_policy)
                 .expect("fixed deadline");
-        let result = (|| -> Result<(), String> {
+        let physical_ipc = |request: &str, expected: &str| -> Result<(), String> {
+            println!("{request}");
+            std::io::stdout().flush().map_err(|_| "output failed")?;
+            let mut reply = String::new();
+            (&mut *input.borrow_mut())
+                .take(65)
+                .read_line(&mut reply)
+                .map_err(|_| "physical IPC input failed")?;
+            if reply != expected {
+                return Err("physical IPC completion refused".into());
+            }
+            Ok(())
+        };
+        let mut continuous_active = false;
+        let mut result = (|| -> Result<(), String> {
+            let mut physical_started = false;
             let mut physical_completed = false;
             let mut physical_republished = false;
             let initialization = if initialization_diagnostic {
@@ -248,6 +280,12 @@ fn main() -> std::process::ExitCode {
             );
             println!("initialized; bounded publication active; names and metadata redacted");
             for cycle in 1..=cycles {
+                if continuous_active && cycle == cycles {
+                    physical_ipc("PHYSICAL STOP 1", "PHYSICAL COMPLETE 1\n")?;
+                    continuous_active = false;
+                    physical_completed = true;
+                    println!("continuous physical stage stopped; final verified USB cycle follows");
+                }
                 let before = fresh()?;
                 check_fresh(&before, &mut tracker)?;
                 #[cfg(feature = "native-pipewire")]
@@ -335,24 +373,27 @@ fn main() -> std::process::ExitCode {
                                     return Err("physical diagnostic requires assignment 1; no physical route requested".into());
                                 }
                                 router.apply(&current, &planning_records)?;
-                                if physical_pair && !physical_completed {
-                                    // The USB gate still requires idle audio interfaces.
-                                    // Suspend exchanges while the supervisor exercises
-                                    // the guarded physical pair, then reobserve routes.
-                                    println!("PHYSICAL 1");
-                                    std::io::stdout().flush().map_err(|_| "output failed")?;
-                                    let mut reply = String::new();
-                                    (&mut *input.borrow_mut()).take(65).read_line(&mut reply).map_err(|_| "physical completion input failed")?;
-                                    if reply != "PHYSICAL COMPLETE 1\n" {
-                                        return Err("physical completion refused; no further USB exchanges".into());
+                                if physical_pair && !physical_started {
+                                    if continuous && cycles - cycle < 8 {
+                                        return Err("assignment arrived too late for bounded continuous progress; no physical stage started".into());
                                     }
+                                    // Default mode pauses exchanges for the bounded
+                                    // physical stage. Explicit continuous mode instead
+                                    // validates its pinned active PCM before bulk I/O.
+                                    if continuous {
+                                        physical_ipc("PHYSICAL START 1", "PHYSICAL ACTIVE 1\n")?;
+                                        continuous_active = true;
+                                    } else {
+                                        physical_ipc("PHYSICAL 1", "PHYSICAL COMPLETE 1\n")?;
+                                        physical_completed = true;
+                                    }
+                                    physical_started = true;
                                     let after = fresh()?;
                                     check_fresh(&after, &mut tracker)?;
                                     if router.verify(&after)?.records()[0].assignment.byte() != 1 {
                                         return Err("route changed after physical diagnostic".into());
                                     }
-                                    physical_completed = true;
-                                    println!("physical first-pair stage completed; native route reverified before USB resumes");
+                                    println!("physical first-pair stage acknowledged; continuous={continuous}; native route reverified before USB resumes");
                                 }
                                 continue;
                             }
@@ -381,6 +422,10 @@ fn main() -> std::process::ExitCode {
             }
             Ok(())
         })();
+        // Even a failed exchange must stop owned playback before USB cleanup.
+        if continuous_active {
+            result = result.and(physical_ipc("PHYSICAL STOP 1", "PHYSICAL COMPLETE 1\n"));
+        }
         let cleanup = session.into_transport().close();
         println!("cleanup: {cleanup:?}");
         result?;

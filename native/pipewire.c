@@ -23,7 +23,7 @@ struct object {
   struct pw_properties *props;
   struct pw_proxy *proxy;
   struct spa_hook listener;
-  bool present, info;
+  bool present, info, stale_bind;
   int state, direction;
   uint32_t out_node, out_port, in_node, in_port;
 };
@@ -46,6 +46,7 @@ struct session {
   struct spa_hook core_listener, registry_listener;
   struct object *objects[LIMIT];
   size_t count;
+  uint64_t removed_stale_binds;
   struct created *created, *pending;
   bool deleting, fatal, core_seen;
   uint32_t cookie;
@@ -261,6 +262,16 @@ static void core_error(void *data, uint32_t id, int seq, int res,
         o->present = false;
         return;
       }
+      /* An unfinished read-only bind can target a removed global generation
+       * during port reconfiguration. Do not hide errors on initialized objects
+       * or infer removal from the error alone: the same generation must receive
+       * global_remove before the barrier completes. Creation proxies are never
+       * in this read-only object ledger. */
+      if (res == -ESTALE && !o->info && o->proxy &&
+          id != SPA_ID_INVALID && id == pw_proxy_get_id(o->proxy)) {
+        o->stale_bind = true;
+        return;
+      }
     }
     fprintf(stderr, "native core error: object=%u sequence=%d result=%d\n", id,
             seq, res);
@@ -293,11 +304,25 @@ static int barrier(struct session *s) {
       return -1;
     }
   }
+  for (size_t i = 0; i < s->count; i++) {
+    struct object *o = s->objects[i];
+    if (o->stale_bind && (o->present || o->info)) {
+      s->fatal = true;
+      break;
+    }
+    if (o->stale_bind) {
+      o->stale_bind = false;
+      s->removed_stale_binds++;
+    }
+  }
   return s->fatal || s->done != s->seq ? -1 : 0;
 }
 void bcl_close(struct session *s) {
   if (!s)
     return;
+  if (s->removed_stale_binds)
+    fprintf(stderr, "native removed metadata binds=%" PRIu64 "\n",
+            s->removed_stale_binds);
   /* Release every local proxy/listener before the core. Destroying a query
    * proxy only releases its binding; it never destroys a foreign global. */
   for (struct created *c = s->created; c; c = c->next) {

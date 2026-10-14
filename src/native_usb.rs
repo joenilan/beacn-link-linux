@@ -208,6 +208,7 @@ pub struct NativeUsb {
     claimed: bool,
     initial_read_limit_ms: u32,
     initial_read_used: bool,
+    playback: Option<crate::native_audio::PinnedPlayback>,
     _single_threaded: PhantomData<Rc<()>>,
 }
 /// Explicit mutation-bearing entry point. `authorized` acknowledges external
@@ -245,6 +246,23 @@ fn open_selected(
     authorized: bool,
     startup: Startup,
     initial_read_limit_ms: u32,
+) -> Result<Handshake<NativeUsb>, OpenError> {
+    open_selected_with_playback(
+        sysfs,
+        expected,
+        authorized,
+        startup,
+        initial_read_limit_ms,
+        None,
+    )
+}
+fn open_selected_with_playback(
+    sysfs: &Path,
+    expected: &[u8],
+    authorized: bool,
+    startup: Startup,
+    initial_read_limit_ms: u32,
+    playback: Option<crate::native_audio::PinnedPlayback>,
 ) -> Result<Handshake<NativeUsb>, OpenError> {
     if !authorized {
         return Err(OpenError::Refused);
@@ -302,6 +320,7 @@ fn open_selected(
         claimed: false,
         initial_read_limit_ms,
         initial_read_used: false,
+        playback,
         _single_threaded: PhantomData,
     };
     // ABI from public libusb 1.0.29 header; Linux-only NO_DEVICE_DISCOVERY=2.
@@ -357,6 +376,31 @@ pub fn open_publication_with_startup(
         authorized,
         startup,
         publication.initialization_timeout().as_millis() as u32,
+    )
+    .map(|owner| owner.enable_publication(publication))
+}
+/// Explicit concurrent first-pair diagnostic. The caller must have verified the
+/// retained private PipeWire server through its existing native route owner.
+/// Pins a closed selected PCM and process generation before any USB setup.
+pub fn open_publication_with_owned_playback(
+    sysfs: &Path,
+    expected: &[u8],
+    publication: crate::usb_handshake::Publication,
+    authorized: bool,
+    server_pid: u32,
+) -> Result<Handshake<NativeUsb>, OpenError> {
+    if !authorized || !publication.verified_routes() {
+        return Err(OpenError::Refused);
+    }
+    let playback = crate::native_audio::PinnedPlayback::pin(sysfs, server_pid)
+        .map_err(|_| OpenError::Refused)?;
+    open_selected_with_playback(
+        sysfs,
+        expected,
+        true,
+        Startup::ObservedWindows,
+        publication.initialization_timeout().as_millis() as u32,
+        Some(playback),
     )
     .map(|owner| owner.enable_publication(publication))
 }
@@ -456,6 +500,11 @@ impl NativeUsb {
     }
 }
 impl Backend for NativeUsb {
+    fn owned_playback_valid(&mut self) -> bool {
+        self.playback
+            .as_mut()
+            .is_some_and(|playback| playback.validate().is_ok())
+    }
     fn observe(&mut self) -> Result<Observation, i32> {
         self.guard()?;
         let cache = cached(
@@ -565,6 +614,12 @@ impl Backend for NativeUsb {
         Ok(())
     }
     fn close(&mut self) {
+        if let Some(playback) = self.playback.take() {
+            let (checks, progress) = playback.stats();
+            eprintln!(
+                "native owned PCM checks={checks} pointer_progress={progress}; metadata only"
+            );
+        }
         unsafe {
             if !self.handle.is_null() {
                 libusb_close(self.handle);
