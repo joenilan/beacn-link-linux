@@ -5,9 +5,21 @@ This is an explicitly authorized physical feasibility test, separate from the
 [native private-core executor](native-executor.md) and
 [accepted assignment/publication checkpoint](native-assignment-publication.md).
 Ordinary desktop apply remains disabled. The owner confirmed audible native
-direct-ALSA first-pair tones; audible assignment-driven PipeWire remains unverified.
+direct-ALSA tones and the bounded assignment-driven PipeWire first-pair test.
 
-## Current native audible and physical PipeWire checkpoint
+## Combined assignment-to-physical audible acceptance
+
+The native USB/private-routing runner now supports a guarded physical stage after
+received assignment 1 has actual native stereo receipts. It pauses vendor bulk
+exchanges, bridges the verified destination's monitor FL/FR to owned Studio
+AUX0/AUX1, validates four seconds of 96-kHz queue progress, then releases all
+physical objects before rechecking the route and resuming verified publication.
+The owner-ready tone run passed and the owner reported "i heard it, its in link in".
+All laptop baseline/cleanup checks passed. This uses an owned test source and
+bounded audio; continuous publication/playback and ordinary apps remain open.
+Read [HANDOFF](HANDOFF.md) for source hashes, receipt/clock evidence and exact limits.
+
+## Earlier separate audible and physical PipeWire checks
 
 The owner heard the bounded 96-kHz first-pair tone. The original ending-state
 harness refusal is preserved, with all settings/routes/state/binding comparisons

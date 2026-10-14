@@ -27,9 +27,13 @@ then passed A-to-B routing and partial-failure recovery with settings preserved.
 Native laptop USB initialization passes. After reopening the streaming PC's
 BEACN App, the owner assigned the Linux test into Link In; Linux applied its
 private stereo route and published verified assignment 1 through cycle 40.
-Real desktop application
-routing, audible PipeWire integration and a usable Linux replacement remain
-unverified. Read the current handoff and playback report before another test.
+A combined native run now receives assignment 1, verifies that route, drives
+Studio's physical first pair through PipeWire, and resumes verified USB publication
+after owned audio cleanup. The owner heard the quiet tones and saw the test in
+Link In. This is bounded first-pair acceptance with an owned test source.
+Continuous audio with uninterrupted control publication, stable app visibility,
+ordinary desktop applications and the remaining pairs still need integration.
+Read the current handoff and playback report before another test.
 Windows Link stays closed during hardware tests.
 
 Goal: a Linux gaming PC connected through BEACN Studio while the Windows

@@ -27,7 +27,7 @@ def inventory_message(inventory):
     return f'{inventory["snapshot_id"]}\t{len(text)}\n'.encode("ascii") + text
 
 
-def execute_periodic(command, fresh, cycles, timeout=50):
+def execute_periodic(command, fresh, cycles, timeout=50, physical=None):
     """Linux-only bounded IPC; no shell, retries, or background inventory writer."""
     child = subprocess.Popen(command, env={**os.environ, "LIBUSB_DEBUG": "0"},
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -35,6 +35,7 @@ def execute_periodic(command, fresh, cycles, timeout=50):
     output = {"stdout": bytearray(), "stderr": bytearray()}
     pending = bytearray()
     requests = 0
+    physical_requests = 0
     deadline = time.monotonic() + timeout
     try:
         os.set_blocking(child.stdin.fileno(), False)
@@ -61,6 +62,18 @@ def execute_periodic(command, fresh, cycles, timeout=50):
                     while b"\n" in pending:
                         line, _, remainder = pending.partition(b"\n")
                         pending = bytearray(remainder)
+                        if line.startswith(b"PHYSICAL"):
+                            if line != b"PHYSICAL 1" or physical is None or physical_requests or requests < 3:
+                                raise RuntimeError("physical request authority/sequence refused")
+                            physical_requests += 1
+                            if physical(child) is not True:
+                                raise RuntimeError("physical stage did not confirm complete owned cleanup")
+                            if time.monotonic() >= deadline:
+                                raise RuntimeError("physical stage exceeded supervisor deadline")
+                            message = b"PHYSICAL COMPLETE 1\n"
+                            if os.write(child.stdin.fileno(), message) != len(message):
+                                raise RuntimeError("partial physical completion delivery")
+                            result["physical_stage_completed"] = True
                         if line.startswith(b"INVENTORY"):
                             if line != f"INVENTORY {requests}".encode() or requests >= 2 * cycles + 2:
                                 raise RuntimeError("inventory request sequence/budget refused")
@@ -91,6 +104,7 @@ def execute_periodic(command, fresh, cycles, timeout=50):
         result["exit"] = child.returncode if result["child_exited"] else None
         result.update({name: data.decode("utf-8", errors="replace") for name, data in output.items()})
         result["inventory_requests"] = requests
+        result["physical_requests"] = physical_requests
         for pipe in (child.stdin, child.stdout, child.stderr):
             pipe.close()
         if result["child_exited"]:
@@ -162,7 +176,16 @@ def main():
     parser.add_argument("--single-publication-hold", action="store_true", help="one metadata-only cycle followed by 30 seconds without USB requests")
     parser.add_argument("--private-routing", action="store_true", help="explicit native routing on owned private synthetic destinations only")
     parser.add_argument("--authorize-isolated-routing", action="store_true")
+    parser.add_argument("--authorize-studio-first-pair-silence", action="store_true",
+                        help="native-only assignment-1 physical stage; pauses USB until owned audio cleanup")
+    parser.add_argument("--authorize-studio-first-pair-tone", action="store_true")
+    parser.add_argument("--audible-first-pair", action="store_true", help="owner-ready quiet tones, only through the guarded first pair")
     args = parser.parse_args()
+    if args.authorize_studio_first_pair_tone != args.audible_first_pair or (args.authorize_studio_first_pair_tone and args.authorize_studio_first_pair_silence):
+        parser.error("audible first pair requires its tone authorization; silence and tone are exclusive")
+    physical_requested = args.authorize_studio_first_pair_silence or args.authorize_studio_first_pair_tone
+    if physical_requested and (args.stage != "run" or not args.private_routing or args.cycles < 2 or args.single_publication_hold):
+        parser.error("physical stage requires a private hardware run with at least two cycles and no hold")
     if args.single_publication_hold and (args.stage != "run" or args.cycles != 1 or args.private_routing or not args.windows_c_string_names):
         parser.error("single publication hold requires one C-string hardware cycle without routing")
     routing_probe = args.stage == "routing-probe"
@@ -231,6 +254,14 @@ def main():
             handle.write(raw)
         cache_hash = hashlib.sha256(raw).hexdigest()
     attached = base.snapshot()
+    physical_before = None
+    rate = 96000 if physical_requested else 48000
+    if physical_requested:
+        import studio_pipewire_bridge as physical_bridge
+        physical_before = physical_bridge.preflight(selected)
+        if physical_before["snapshot"] != attached or physical_before["binding"] != before["binding"]:
+            parser.error("physical baseline differs from connected pre-command snapshot")
+        base.save(root / "physical-preflight.json", physical_before)
     base.save(root / "run-started.json", {"snapshot": attached, "binary_sha256": digest,
                                           "expected_cache_sha256": cache_hash, "usb_io_requested": not source_only,
                                           "wire_name": WIRE_NAME, "initial_assignment": 0,
@@ -240,6 +271,8 @@ def main():
                                           "initialization_diagnostic": args.initialization_diagnostic,
                                           "windows_c_string_names": args.windows_c_string_names,
                                           "single_publication_hold": args.single_publication_hold,
+                                          "physical_first_pair_requested": physical_before is not None,
+                                          "audible_first_pair": args.audible_first_pair,
                                           "private_routing": args.private_routing})
     # PipeWire also creates a '-manager' socket; evidence paths can exceed the
     # Linux Unix-socket limit. mkdtemp retains exclusive 0700 ownership.
@@ -253,6 +286,9 @@ def main():
             "context.spa-libs": {"audio.convert.*": "audioconvert/libspa-audioconvert", "audio.adapt": "audioconvert/libspa-audioconvert", "support.*": "support/libspa-support"},
             "context.modules": [{"name": "libpipewire-module-" + name} for name in modules],
             "context.objects": [], "context.exec": []}
+    if physical_before is not None:
+        conf["context.properties"].update({"default.clock.rate": rate, "default.clock.allowed-rates": [rate]})
+        conf["context.spa-libs"]["api.alsa.*"] = "alsa/libspa-alsa"
     client = {**conf, "context.properties": {"core.daemon": False, "support.dbus": False},
               "context.modules": [{"name": "libpipewire-module-" + name} for name in ("protocol-native", "client-node", "adapter", "metadata")]}
     (config / "server.conf").write_text(json.dumps(conf))
@@ -281,6 +317,8 @@ def main():
     result["initialization_diagnostic"] = args.initialization_diagnostic
     result["private_runtime"] = str(runtime)
     result["private_routing_requested"] = args.private_routing
+    result["physical_first_pair_requested"] = physical_before is not None
+    result["audible_first_pair"] = args.audible_first_pair
 
     def start(name, command, child_env, stdin=None):
         log = (root / (name + ".log")).open("xb")
@@ -309,7 +347,7 @@ def main():
             controller = start("owned-destinations", ["pw-cli", "-r", remote], env, subprocess.PIPE)
             names = ["beacn-route-" + token + "-" + str(i) for i in range(1, 5)]
             for name in names:
-                properties = {"factory.name": "support.null-audio-sink", "node.name": name, "media.class": "Audio/Sink", "node.virtual": True, "node.driver": True, "object.linger": False, "node.autoconnect": False, "audio.channels": 2, "audio.position": ["FL", "FR"], "audio.rate": 48000, "state.restore-props": False, "state.restore-target": False, "beacn.test.token": token, "adapter.auto-port-config": {"mode": "dsp", "monitor": False, "position": "preserve"}}
+                properties = {"factory.name": "support.null-audio-sink", "node.name": name, "media.class": "Audio/Sink", "node.virtual": True, "node.driver": True, "object.linger": False, "node.autoconnect": False, "audio.channels": 2, "audio.position": ["FL", "FR"], "audio.rate": rate, "state.restore-props": False, "state.restore-target": False, "beacn.test.token": token, "adapter.auto-port-config": {"mode": "dsp", "monitor": False, "position": "preserve"}}
                 controller.stdin.write(("create-node adapter " + json.dumps(properties) + "\n").encode())
                 controller.stdin.flush()
             end = time.monotonic() + 4
@@ -328,14 +366,15 @@ def main():
             base.save(root / "private-destinations-prepared.json", objects)
             port_config = {"direction": "Input", "mode": "dsp", "monitor": False, "control": False,
                            "format": {"mediaType": "audio", "mediaSubtype": "raw", "format": "F32P",
-                                      "rate": 48000, "channels": 2, "position": ["FL", "FR"]}}
+                                      "rate": rate, "channels": 2, "position": ["FL", "FR"]}}
             for node in ordered:
                 p = base.inventory.properties(node)
                 client = next(o for o in objects if o.get("type") == "PipeWire:Interface:Client" and o["id"] == int(p["client.id"]))
                 cp = base.inventory.properties(client)
                 if int(cp.get("pipewire.sec.pid", cp.get("application.process.id", 0))) != controller.pid or p.get("device.id") is not None or p.get("media.class") != "Audio/Sink" or p.get("node.virtual") is not True:
                     raise RuntimeError("private destination ownership/layout refused")
-                controller.stdin.write(("set-param " + str(node["id"]) + " PortConfig " + json.dumps(port_config) + "\n").encode())
+                node_config = {**port_config, "monitor": physical_before is not None and node is ordered[0]}
+                controller.stdin.write(("set-param " + str(node["id"]) + " PortConfig " + json.dumps(node_config) + "\n").encode())
                 controller.stdin.flush()
             end = time.monotonic() + 4
             while True:
@@ -352,8 +391,9 @@ def main():
             core = next(o for o in objects if o.get("type") == "PipeWire:Interface:Core")
             native_arguments = [str(runtime), remote, str(core["info"]["cookie"]), str(server.pid), token] + [f'{i}:{o["id"]}:{destinations[o["id"]]}' for i, o in enumerate(ordered, 1)]
             base.save(root / "private-destinations.json", {"destinations": destinations, "routing_scope": "owned_private_core"})
-        pcm = root / "owned-synthetic-silence.raw"
-        pcm.write_bytes(bytes(48000 * 2 * 2 * 120 if args.private_routing else 1024 * 1024))
+        pcm = root / ("owned-synthetic-tone.raw" if args.audible_first_pair else "owned-synthetic-silence.raw")
+        pcm.write_bytes(physical_bridge.stereo_pcm(args.audible_first_pair) if physical_before is not None else bytes(rate * 2 * 2 * 120 if args.private_routing else 1024 * 1024))
+        result["authored_pcm_sha256"] = hashlib.sha256(pcm.read_bytes()).hexdigest()
         node_name = "beacn-publication-" + uuid.uuid4().hex[:8]
         properties = {"node.name": node_name, "application.name": "BEACN Linux VM Test", "node.autoconnect": False,
                       "node.dont-reconnect": True, "state.restore-props": False, "state.restore-target": False}
@@ -361,7 +401,7 @@ def main():
             properties["beacn.test.token"] = token
             properties["adapter.auto-port-config"] = {"mode": "dsp", "monitor": False, "position": "preserve"}
         with pcm.open("rb") as handle:
-            playback = start("owned-playback", ["pw-cat", "-p", "-a", "-R", remote, "--target", "0", "--rate", "48000", "--channels", "2", "--format", "s16", "-P", json.dumps(properties), "-"], env, handle)
+            playback = start("owned-playback", ["pw-cat", "-p", "-a", "-R", remote, "--target", "0", "--rate", str(rate), "--channels", "2", "--format", "s16", "-P", json.dumps(properties), "-"], env, handle)
         deadline = time.monotonic() + 4
         while True:
             raw_dump, objects = dump()
@@ -400,9 +440,13 @@ def main():
             command = ([str(binary), "--check-private-routing", "unused", "unused", str(args.cycles), *native_arguments] if routing_probe else [str(binary), "--check-periodic", str(args.cycles)] if source_only else
                        [str(binary), "--authorize-periodic-publication-hold" if args.single_publication_hold else "--authorize-periodic-c-string-names" if args.windows_c_string_names else "--authorize-periodic-initialization-diagnostic" if args.initialization_diagnostic else "--authorize-periodic-observed-polls" if args.observe_rejected_polls else "--authorize-periodic-startup" if args.observed_startup else "--authorize-periodic", str(selected), str(pinned), str(args.cycles)])
             if args.private_routing and not routing_probe:
-                command[1] = "--authorize-periodic-private-routing"
+                command[1] = "--authorize-periodic-studio-first-pair" if physical_before is not None else "--authorize-periodic-private-routing"
                 command += native_arguments
-            result.update(execute_periodic(command, fresh, args.cycles, timeout=90 if args.private_routing else 50))
+            def physical_stage(child):
+                return physical_bridge.run(selected, physical_before, root / "physical-stage", env, remote,
+                                           dump, server, controller, child, ordered[0], playback.pid, token, processes.append, args.audible_first_pair)
+            result.update(execute_periodic(command, fresh, args.cycles, timeout=90 if args.private_routing else 50,
+                                           physical=physical_stage if physical_before is not None else None))
             result["private_routes_verified_count"] = result.get("stdout", "").count("private_route_applied assignment=")
             result["routes_applied"] = result["private_routes_verified_count"] > 0
             result["routing_scope"] = "owned_private_core" if args.private_routing else None
@@ -440,9 +484,17 @@ def main():
         for log in logs:
             log.close()
         result["after_owned_cleanup"] = base.snapshot()
+        if physical_before is not None:
+            result["physical_snapshot_restored"] = result["after_owned_cleanup"] == physical_before["snapshot"]
+            try:
+                result["physical_binding_restored"] = base.connected_binding(selected) == physical_before["binding"]
+                result["physical_pcms_closed"] = physical_bridge.pcms_closed(physical_before["card"])
+            except (OSError, ValueError, RuntimeError) as error:
+                result["physical_comparison_error"] = str(error)
         base.save(root / "handshake.json", result)
     print(json.dumps({k: v for k, v in result.items() if k not in ("after_child", "after_owned_cleanup", "private_child_pid", "retained_private_process_pids")}))
-    return 0 if result["exit"] == 0 and not result["timed_out"] and result.get("owned_source_preserved") and result.get("private_core_restored") and all(result.get("owned_processes_stopped", [False])) and "runner_error" not in result and "supervisor_error" not in result else 2
+    physical_ok = physical_before is None or all(result.get(k) for k in ("physical_stage_completed", "physical_snapshot_restored", "physical_binding_restored", "physical_pcms_closed"))
+    return 0 if physical_ok and result["exit"] == 0 and not result["timed_out"] and result.get("owned_source_preserved") and result.get("private_core_restored") and all(result.get("owned_processes_stopped", [False])) and "runner_error" not in result and "supervisor_error" not in result else 2
 
 
 if __name__ == "__main__":

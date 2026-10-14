@@ -27,6 +27,42 @@ def objects():
 
 
 class PublicationRunnerTests(unittest.TestCase):
+    def test_audible_stage_requires_exact_authorization_and_excludes_silence(self):
+        for extra in (["--audible-first-pair"], ["--authorize-studio-first-pair-tone"], ["--audible-first-pair", "--authorize-studio-first-pair-tone", "--authorize-studio-first-pair-silence"]):
+            argv = ["test", "run", "--evidence-dir", "unused", "--executor", "unused", *extra]
+            with patch.object(sys, "argv", argv), patch.object(runner.subprocess, "Popen") as child, contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit):runner.main()
+                child.assert_not_called()
+
+    def test_physical_stage_refuses_offline_hold_and_missing_private_mode(self):
+        for stage, extra in (("routing-probe", ["--private-routing", "--cycles", "3"]), ("run", ["--cycles", "3"]), ("run", ["--private-routing", "--cycles", "1"]), ("run", ["--private-routing", "--cycles", "3", "--single-publication-hold"])):
+            argv = ["test", stage, "--evidence-dir", "unused", "--executor", "unused", "--authorize-studio-first-pair-silence", *extra]
+            with patch.object(sys, "argv", argv), patch.object(runner.subprocess, "Popen") as child, contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit): runner.main()
+                child.assert_not_called()
+
+    @unittest.skipUnless(sys.platform == "linux", "Linux pipe supervisor")
+    def test_physical_ipc_requires_authority_prior_inventory_and_exact_once_completion(self):
+        for mode in ("complete", "unauthorized", "wrong-pair", "too-early", "duplicate", "incomplete"):
+            callbacks = []
+            def physical(child):
+                callbacks.append(child.pid)
+                return mode != "incomplete"
+            def fresh(n):
+                return runner.owned_inventory(objects(), 123, "owned-source", n + 1)
+            code = "import sys\n"
+            if mode != "too-early":
+                code += "for n in range(3):\n print('INVENTORY '+str(n),flush=True)\n h=sys.stdin.buffer.readline();sys.stdin.buffer.read(int(h.split(b'\\t')[1]))\n"
+            code += "print('PHYSICAL 2' if " + repr(mode == "wrong-pair") + " else 'PHYSICAL 1',flush=True)\nreply=sys.stdin.buffer.readline()\n"
+            if mode == "duplicate":code += "print('PHYSICAL 1',flush=True);sys.stdin.buffer.readline()\n"
+            with patch.object(runner.base, "snapshot", return_value={}):
+                result = runner.execute_periodic([sys.executable, "-c", code], fresh, 2, timeout=2,
+                                                 physical=None if mode == "unauthorized" else physical)
+            self.assertTrue(result["child_exited"])
+            self.assertEqual("supervisor_error" in result, mode != "complete")
+            self.assertEqual(len(callbacks), int(mode in ("complete", "duplicate", "incomplete")))
+            self.assertEqual(bool(result.get("physical_stage_completed")), mode in ("complete", "duplicate"))
+
     def test_single_publication_hold_refuses_repetition_routing_and_offline_modes(self):
         common = ["--windows-c-string-names", "--initialization-diagnostic", "--observe-rejected-polls", "--observed-startup"]
         for stage, cycles, extra in (("run", "2", []), ("run", "1", ["--private-routing"]), ("source-probe", "1", []), ("run", "1", ["--private-routing", "--authorize-isolated-routing"])):

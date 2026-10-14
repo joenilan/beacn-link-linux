@@ -1,6 +1,28 @@
 # Native assignment execution and verified publication
 
-## Native Debian laptop checkpoint (2026-10-14)
+## Combined first-pair audible acceptance (2026-10-14)
+
+The guarded native laptop test now connects assignment 1 to physical Studio
+playback. After receiving the assignment and verifying two native stereo receipts,
+the owner pauses vendor bulk exchanges. Its supervisor requires the exact physical
+request once, verifies the source/destination/port/process identities, then creates
+an owned raw ALSA adapter and FL/FR-monitor -> AUX0/AUX1 bridge. Four seconds of
+96-kHz FLOAT_LE PCM progress must belong to the retained private PipeWire server.
+The bridge is disposed and the full pre-stage private graph restored before the
+native owner receives completion. Fresh route verification and an actual subsequent
+verified USB publication are mandatory; existing USB idle-audio guards remain.
+
+Both silent and owner-ready quiet-tone runs passed. In the audible run, assignment
+1 arrived at cycle 3, physical progress reached 369,392 frames across 18 checks,
+and cycles 4–40 republished verified assignment 1. The owner reported hearing it
+and seeing it in Link In. All owned processes, private graph, selected USB ACL,
+released binding and laptop settings/state comparisons passed. See
+[HANDOFF](HANDOFF.md) for exact source/journal hashes and the differing silent-run
+UI observation. Continuous UI retention, concurrent streaming/publication and
+ordinary application integration remain open. These modes are explicit diagnostics;
+default routing behavior is unchanged.
+
+## Earlier native Debian laptop private-route checkpoint (2026-10-14)
 
 The separate Debian laptop now passes the integrated USB/private-route path.
 PipeWire 1.4.2 required explicit DSP stereo PortConfig on the owned destinations;

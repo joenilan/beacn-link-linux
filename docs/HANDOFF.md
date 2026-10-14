@@ -1,6 +1,85 @@
 # BEACN Link Linux — continuation handoff
 Updated 2026-10-14. Resume development; do not restart the investigation.
 
+## Current checkpoint: native assignment-driven PipeWire audio was heard
+
+The separate Debian laptop now passes the bounded combined path: Windows BEACN
+App assignment 1 -> native receipt-verified private FL/FR route -> Studio's
+physical AUX0/AUX1 pair -> owner-heard tones -> physical cleanup -> freshly
+verified assignment-1 USB republication through cycle 40. The owner reported
+"i heard it, its in link in" during the announced audible run.
+This establishes first-pair feasibility with the owned PipeWire test source;
+ordinary desktop application apply remains disabled.
+
+`--authorize-studio-first-pair-silence` selects the combined test in
+`tests_native/usb_publication.py`; audible mode instead requires both
+`--authorize-studio-first-pair-tone` and `--audible-first-pair`. Both require the
+explicit private hardware routing mode and at least two cycles. The unchanged
+USB gate requires idle audio during vendor bulk exchanges. The new bounded IPC
+therefore pauses vendor exchanges only after assignment 1 has actual native
+stereo receipts. The supervisor requires one exact, authorized physical request
+after prior fresh inventories. Wrong pair, duplicate/early request, incomplete
+cleanup or changed inventory stops the attempt without further exchanges.
+
+`tests_native/studio_pipewire_bridge.py` reuses the existing ALSA/USB snapshot,
+held-process identity, format and clock guards. It requires native execution,
+the pinned released device/card/character-device inode, closed PCMs, exact
+destination serial/controller PID, a running source, two active native-owned
+FL/FR links and consistent port/node identities. A separate retained controller
+creates only the raw eight-channel 96-kHz adapter and first-pair monitor bridge.
+Each clock observation rechecks the route, bridge, selected device, initialized
+vendor owner, PCM format/owner and complete foreign desktop snapshot.
+
+The bridge controller is disposed before the native owner receives completion.
+Exact private graph, closed PCMs, held binding and desktop snapshots must match.
+The native owner then obtains a fresh inventory and verifies the route again.
+Success additionally requires an actual verified USB publication after physical
+completion; an assignment arriving at the final cycle cannot produce a false pass.
+No driver changes, detach/reset, capture, desktop default/volume changes or relaxed
+USB/receipt/removal guards were introduced. Existing default modes stay synthetic.
+
+Silent combined run: assignment 1 at cycle 9, two acknowledged native stereo
+creates, 18 physical clock observations and 369,199 frames of progress. Cycles
+10–40 republished verified assignment 1. The owner reported that the name entered
+Link In then disappeared. Its timing/cause is unconfirmed; do not claim continuous
+UI retention. Hardware journal SHA256:
+`0b8474bd68ea3305fc7598c23bb5cc12bac01b06ad7afc7907407f25cb3b236b`.
+Physical-stage journal SHA256:
+`1ad254a4a85e08e9bef908f140020561bf42d55266ab6715d3bc855bbc786fe0`.
+
+Audible combined run: assignment 1 at cycle 3, two acknowledged native stereo
+creates, 18 observations and 369,392 frames of physical progress. The authored
+stereo S16LE pattern uses 440-Hz bursts capped at -24 dBFS, with a silent lead
+and repeated quiet pattern so bridge setup cannot consume the whole tone.
+Only AUX0/AUX1 receive it; physical output lasts about four seconds. The owner
+heard it and reported Link In presence. Cycles 4–40 republished verified assignment
+1; the complete run had one record, eight NoPayload and 31 rejected-marker replies
+across 82 fresh inventories. Marker semantics remain unknown. Hardware journal:
+`b81bfe535e1f7ec804b21a3cafaa80d75fee8ebc3587c40212db5114c1711d13`.
+Physical-stage journal:
+`8c85619a1daf024706ea03ce1beec6fd3c83b57fbc2f7bdb419ec471897a2ecc`.
+
+Both runs exited 0 without timeout/retry, preserved source identity, stopped all
+four owned processes, restored the private core and selected USB ACL exactly,
+and matched complete laptop desktop/settings/routes/state/binding baselines with
+closed PCMs. Streaming-PC saved settings are outside these comparisons. The last
+owner screenshot identifies BEACN App v1.4.0; its live version was not requeried.
+448 private artifacts plus owner reports were copied/hashed outside Git.
+Live source: `beacn-native-source-20261014T211501Z`. Subsequent focused validation
+adds malformed-metadata diagnostics and explicitly labels paused vendor transfers;
+it changes no packet, routing or audio behavior. Twenty runner and three bridge
+checks pass, covering authorization/IPC sequencing, native owner/endpoints,
+quiet-tone bounds and failure journaling. Fourteen ALSA checks and the native
+assignment-1/2 probe also pass. Final source `beacn-native-source-20261014T212301Z`
+built all exact native programs offline and passed the three bridge checks.
+
+Next: implement guarded concurrent vendor publication and continuous physical
+playback, establish stable UI retention, then integrate ordinary desktop streams
+and verify the other three pairs. The current pause-and-resume diagnostic is
+bounded acceptance, not continuous daemon or full replacement acceptance. Keep
+Studio attached to the laptop, Windows Link closed, Actions and ordinary apply
+disabled. No new physical handoff is needed for the next software batch.
+
 ## Current owner plan: separate Debian laptop with the Windows agent retained
 
 The gaming PC has **no native Linux installation**; establishing feasibility
@@ -27,13 +106,13 @@ supports 48000/96000 Hz and implicit feedback. The first native 96-kHz silent
 PCM run and a Debian private-core executor check now pass, as recorded below.
 Full pre/post graph/settings, persistent files and USB binding are preserved.
 The owner reaffirmed authority for necessary login/relogin and reconnect/recovery
-steps. The owner heard the quiet native first-pair direct-ALSA test. Native USB
-initialization and a controlled silent physical PipeWire bridge now pass; the
-owner also saw brief publication after reopening BEACN App on the streaming PC.
+steps. The owner has heard both direct-ALSA and bounded assignment-driven
+PipeWire first-pair tests. The current checkpoint above records the combined
+control/audio evidence and its remaining continuous-streaming limits.
 Keep ordinary apply and Actions disabled; preserve all VM evidence. Do not repeat
 failed controller/rate tests or the initial audit, or install/run REA.
 
-## Native audible output, physical PipeWire and publication checkpoint
+## Earlier separate native audio, PipeWire and publication checkpoint
 
 The owner-ready 96-kHz direct-ALSA first-pair tone was audible: the owner reported
 "i heard it". The original journal retains its terminal-state refusal despite
@@ -122,8 +201,8 @@ The fresh-peer visibility hold journal SHA256 is
 `fb0ef38ee01b752428a0d4e44bab453767769b911cdec53b6486153b940c044b`.
 This establishes native laptop USB assignment -> private native routing -> verified
 USB publication, separate from the physical silent bridge and audible raw ALSA
-checks. Next: join the assignment path to the controlled physical Studio pair,
-then validate audible PipeWire output before ordinary application integration.
+checks. The subsequent bounded combined result is recorded above; ordinary
+application integration remains a later milestone.
 
 ## Native Debian PCM and private executor passed (2026-10-14)
 

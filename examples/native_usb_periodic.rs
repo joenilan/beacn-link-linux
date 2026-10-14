@@ -28,7 +28,11 @@ fn main() -> std::process::ExitCode {
     let offline = args.len() == 2 && args[0] == "--check-periodic";
     let execute = || -> Result<(), String> {
         let private_probe = args.first().is_some_and(|a| a == "--check-private-routing");
+        let physical_pair = args
+            .first()
+            .is_some_and(|a| a == "--authorize-periodic-studio-first-pair");
         let private_routing = private_probe
+            || physical_pair
             || args
                 .first()
                 .is_some_and(|a| a == "--authorize-periodic-private-routing");
@@ -80,16 +84,20 @@ fn main() -> std::process::ExitCode {
         if publication_hold && cycles != 1 {
             return Err("publication hold requires exactly one cycle".into());
         }
-        let mut input = std::io::stdin().lock();
+        if physical_pair && cycles < 2 {
+            return Err("physical diagnostic needs a post-audio publication cycle".into());
+        }
+        let input = std::cell::RefCell::new(std::io::stdin().lock());
         let mut request = 0;
         let mut fresh = || -> Result<planner::Inventory, String> {
+            let mut input = input.borrow_mut();
             println!("INVENTORY {request}");
             std::io::stdout()
                 .flush()
                 .map_err(|_| "inventory request failed")?;
             request += 1;
             let mut header = String::new();
-            (&mut input)
+            (&mut *input)
                 .take(65)
                 .read_line(&mut header)
                 .map_err(|_| "inventory header failed")?;
@@ -224,6 +232,8 @@ fn main() -> std::process::ExitCode {
             Session::new_with_poll_policy(transport, Duration::from_millis(500), poll_policy)
                 .expect("fixed deadline");
         let result = (|| -> Result<(), String> {
+            let mut physical_completed = false;
+            let mut physical_republished = false;
             let initialization = if initialization_diagnostic {
                 session.initialize_with_read_timeout(DIAGNOSTIC_INITIALIZATION_TIMEOUT)
             } else {
@@ -253,6 +263,9 @@ fn main() -> std::process::ExitCode {
                         "cycle={cycle} verified_publication assignment={}",
                         verified.records()[0].assignment.byte()
                     );
+                    if physical_completed {
+                        physical_republished = true;
+                    }
                 } else {
                     session
                         .refresh_publication(&before)
@@ -318,7 +331,29 @@ fn main() -> std::process::ExitCode {
                         if known && !publication_hold {
                             #[cfg(feature = "native-pipewire")]
                             if let Some(router) = router.as_mut() {
+                                if physical_pair && assignments.iter().any(|a| (2..=4).contains(a)) {
+                                    return Err("physical diagnostic requires assignment 1; no physical route requested".into());
+                                }
                                 router.apply(&current, &planning_records)?;
+                                if physical_pair && !physical_completed {
+                                    // The USB gate still requires idle audio interfaces.
+                                    // Suspend exchanges while the supervisor exercises
+                                    // the guarded physical pair, then reobserve routes.
+                                    println!("PHYSICAL 1");
+                                    std::io::stdout().flush().map_err(|_| "output failed")?;
+                                    let mut reply = String::new();
+                                    (&mut *input.borrow_mut()).take(65).read_line(&mut reply).map_err(|_| "physical completion input failed")?;
+                                    if reply != "PHYSICAL COMPLETE 1\n" {
+                                        return Err("physical completion refused; no further USB exchanges".into());
+                                    }
+                                    let after = fresh()?;
+                                    check_fresh(&after, &mut tracker)?;
+                                    if router.verify(&after)?.records()[0].assignment.byte() != 1 {
+                                        return Err("route changed after physical diagnostic".into());
+                                    }
+                                    physical_completed = true;
+                                    println!("physical first-pair stage completed; native route reverified before USB resumes");
+                                }
                                 continue;
                             }
                             // Do not overwrite an observed desired assignment by
@@ -331,6 +366,12 @@ fn main() -> std::process::ExitCode {
                         }
                     }
                 }
+            }
+            if physical_pair && !physical_completed {
+                return Err("no assignment 1 received; physical stage was not started".into());
+            }
+            if physical_pair && !physical_republished {
+                return Err("physical stage completed but no verified USB republication fit the cycle budget".into());
             }
             if publication_hold {
                 println!("OBSERVE: single publication held for 30 seconds; no further USB requests or routing");
