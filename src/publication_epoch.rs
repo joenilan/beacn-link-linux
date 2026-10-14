@@ -81,7 +81,9 @@ impl PublicationEpoch {
         }
         result
     }
-    fn current(&mut self, service: &ApplicationService) -> Result<(), String> {
+    /// Revalidate after each catalog/selection update, before any further work.
+    /// This is a caller-observation check, not an OS read or cleanup operation.
+    pub fn check_current(&mut self, service: &ApplicationService) -> Result<(), String> {
         let result = (|| {
             if self.halted {
                 return Err("publication epoch is halted".into());
@@ -117,7 +119,7 @@ impl PublicationEpoch {
         reply: &PollReply,
         names: ReceivedNamePolicy,
     ) -> Result<Option<PendingAssignments>, String> {
-        self.current(service)?;
+        self.check_current(service)?;
         let result = match reply {
             PollReply::Records { records, .. } => {
                 let records: Vec<_> = records.iter().map(|r| names.for_planning(r)).collect();
@@ -149,7 +151,7 @@ impl PublicationEpoch {
         destinations: &[Destination],
         ownership: &Ownership,
     ) -> Result<PreparedChange, String> {
-        self.current(service)?;
+        self.check_current(service)?;
         let result = (|| {
             if !Arc::ptr_eq(&pending.epoch, &self.identity)
                 || pending.inventory != self.inventory
@@ -189,7 +191,7 @@ impl PublicationEpoch {
         ownership: &Ownership,
         assignments: &BTreeMap<ApplicationId, u8>,
     ) -> Result<VerifiedRoutePublication, String> {
-        self.current(service)?;
+        self.check_current(service)?;
         let result = (|| {
             self.observation(expected)?;
             self.observation(observed)?;

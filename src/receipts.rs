@@ -2,6 +2,53 @@
 use crate::executor::*;
 use std::collections::{BTreeMap, BTreeSet};
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ReleaseReport {
+    pub acknowledged_links: usize,
+    pub observed_links: usize,
+    pub already_absent: usize,
+}
+/// Verify independent observations surrounding release of retained owned handles.
+/// Pure comparison, never deletion authority. Missing old receipts are allowed;
+/// same numeric IDs with different serials and every unrelated object must remain.
+pub fn verify_release(
+    before: &GraphSnapshot,
+    after: &GraphSnapshot,
+    ownership: &Ownership,
+) -> Result<ReleaseReport, String> {
+    validate_graph(before).map_err(|e| e.to_string())?;
+    validate_graph(after).map_err(|e| e.to_string())?;
+    if ownership.links.len() > MAX_LINKS
+        || ownership.token.is_empty()
+        || ownership.token.len() > 128
+        || !ownership.token.bytes().all(|b| (0x20..=0x7e).contains(&b))
+    {
+        return Err("invalid release ledger".into());
+    }
+    let observed = before
+        .links
+        .iter()
+        .filter(|l| ownership.links.contains(&l.object))
+        .count();
+    if before.links.iter().any(|l| {
+        ownership.links.contains(&l.object) && l.owner.as_deref() != Some(&ownership.token)
+    }) {
+        return Err("receipt object changed owner before release".into());
+    }
+    let mut expected = before.clone();
+    expected
+        .links
+        .retain(|l| !ownership.links.contains(&l.object));
+    if &expected != after {
+        return Err("owned release could not verify the remaining graph exactly".into());
+    }
+    Ok(ReleaseReport {
+        acknowledged_links: ownership.links.len(),
+        observed_links: observed,
+        already_absent: ownership.links.len() - observed,
+    })
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Acknowledgment {
     Disconnected(ObjectRef),

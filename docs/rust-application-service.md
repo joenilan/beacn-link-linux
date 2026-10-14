@@ -131,8 +131,9 @@ checks to guarded preparation and verified publication data, with two actual mpv
 processes qualified on a private core. Short duplicate aliases are now explicitly
 refused (a new ninth catalog test); selection revisions also retain intervening edits.
 The foreground service remains read-only; native USB qualification remains single-app.
-Next connect explicit Rust app controls/status and lifecycle cleanup to those owners
-before qualifying multi-application native USB publication. Empty
+[Rust app controls/status and native lifecycle cleanup](rust-routing-control.md)
+now use those owners in private qualification. Next build the Rust interface before
+qualifying multi-application native USB publication. Empty
 lists, departed applications and reconnect must follow observed protocol semantics;
 do not guess that assignment zero means unroute. Then add the Rust UI around the
 same controls, explicit device/session state and meaningful error recovery.

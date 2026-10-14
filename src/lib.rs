@@ -305,6 +305,8 @@ pub mod execution;
 pub mod route_publication;
 /// Offline fixed-roster application/control integration; no device access.
 pub mod publication_epoch;
+/// Explicit start/stop/status and lifecycle cleanup over retained owned backends.
+pub mod routing_control;
 /// Guarded transport-neutral protocol exchanges; no USB or automatic routing.
 pub mod session;
 
@@ -323,3 +325,6 @@ pub mod native_usb;
 pub mod native_catalog;
 #[cfg(all(feature = "native-pipewire", target_os = "linux"))]
 pub mod native_pipewire;
+
+#[cfg(all(feature = "native-pipewire", target_os = "linux"))]
+pub mod native_routing_lease;

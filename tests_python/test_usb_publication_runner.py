@@ -27,6 +27,13 @@ def objects():
 
 
 class PublicationRunnerTests(unittest.TestCase):
+    def test_session_control_requires_no_usb_service_probe_before_any_child(self):
+        for stage, extra in [('run', []), ('routing-probe', []), ('run', ['--catalog-service-check', 'unused'])]:
+            argv=['test',stage,'--session-control-check','unused','--application-mpv','--evidence-dir','unused','--executor','unused',*extra]
+            with patch.object(sys,'argv',argv),patch.object(runner.subprocess,'Popen') as child,contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit):runner.main()
+                child.assert_not_called()
+
     def test_multi_app_qualification_requires_no_usb_service_probe_before_any_child(self):
         for stage, extra in [('run', []), ('routing-probe', []), ('run', ['--catalog-service-check', 'unused'])]:
             argv=['test',stage,'--multi-app-check','unused','--application-mpv','--evidence-dir','unused','--executor','unused',*extra]

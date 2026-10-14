@@ -11,7 +11,7 @@ import application_source
 import usb_handshake as owner
 
 
-def verify(binary, root, runtime, remote, env, dump, first_pid, media, properties, rate, multi_app=None, native_arguments=None):
+def verify(binary, root, runtime, remote, env, dump, first_pid, media, properties, rate, multi_app=None, native_arguments=None, session_control=None):
     root.mkdir(mode=0o700, exist_ok=False)
     _, before = dump()
     baseline = owner.core.filtered(before)
@@ -89,6 +89,9 @@ def verify(binary, root, runtime, remote, env, dump, first_pid, media, propertie
                 'MULTI complete usb=absent physical_audio=absent'])
             if not proof['multi_app_native_verified'] or not proof['multi_app_routes_released']:
                 raise RuntimeError('native multi-app qualification failed; inspect multi-app.json')
+        if session_control is not None:
+            import session_control as control_check
+            proof['session_control']=control_check.verify(session_control,root/'session-control',native_arguments,first,second_id,lambda:stop(second),env,dump)
         stop(second);status(1,1)
         proof['departed_selection_revoked']=True
         reopened=launch('reopened');status(2,1);reopened_id=find_app(reopened.pid)
@@ -134,13 +137,15 @@ def verify(binary, root, runtime, remote, env, dump, first_pid, media, propertie
         # these retained disposable nodes. Preserve the exact intermediate
         # comparison (including false); the enclosing owner must destroy every
         # owned source/destination and require its original whole-core baseline.
-        proof['private_graph_teardown_deferred']=multi_app is not None
+        proof['private_graph_teardown_deferred']=multi_app is not None or session_control is not None
         proof['desktop_exact_equal']=owner.snapshot()==desktop
         proof['private_configs_removed']=set(Path('/tmp').glob('beacn-linx-catalog-*'))==configs
         proof['all_owned_processes_stopped']=all(p.poll() is not None for p in processes)
         owner.save(root/'journal.json',proof);owner.save(root/'service-output.json',output)
     required=['two_app_selections_verified','departed_selection_revoked','reopened_not_automatically_selected','bounded_input_rejected','eof_stop','deadline_stop','desktop_exact_equal','private_configs_removed','all_owned_processes_stopped']
-    required += ['private_graph_restored'] if multi_app is None else ['multi_app_native_verified','multi_app_routes_released']
+    if not proof['private_graph_teardown_deferred']:required+=['private_graph_restored']
+    if multi_app is not None:required+=['multi_app_native_verified','multi_app_routes_released']
+    if session_control is not None:required+=['session_control']
     if proof['error'] or not all(proof.get(k) for k in required):
         raise RuntimeError('Rust catalog/service qualification failed; inspect journal')
     return proof

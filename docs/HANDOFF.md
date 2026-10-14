@@ -1,7 +1,42 @@
 # Beacn LinX — continuation handoff
 Updated 2026-10-14. Resume development; do not restart the investigation.
 
-## Current checkpoint: native two-app private routing and publication data pass
+## Current checkpoint: Rust start/stop/status and native lifecycle cleanup pass
+
+The owner remains live streaming. Continue software/private-core tests only: no
+USB/physical audio, Windows app/routing changes or desktop apply. See
+[rust-routing-control.md](rust-routing-control.md).
+
+Rust RoutingControl now provides explicit start/stop/status, fixed-roster lifecycle
+checks and verified assignment handling. Idle opens nothing; empty selection and
+duplicate start cannot invoke a factory. Selection/core/source changes stop the
+whole owned test session. Opaque/empty protocol replies do not stop or unroute.
+Cached status separates observed and verified revisions. Unverified cleanup clears
+assignments, enters NeedsReview and blocks restart. Stop is idempotent.
+
+NativeRoutingLease retains the original private executor plus an independent
+source-unbound inspector. It releases its own native handles even after source
+departure or observation failure. Receipt-owner comparison verifies removal of
+known surviving links and exact preservation of every remaining graph object;
+it never selects deletion targets by ID/tag. No C/default USB gates changed.
+
+Two actual mpv processes passed start, pairs 1/4, zero/no-mutation, stop/restart,
+and pairs 2/3. Killing one source stopped the session: two links already absent,
+two remaining owned links released, and a foreign same-tag link preserved by full
+identity. No automatic restart occurred. Full private-core/desktop/state/config/
+process cleanup passed after owned-node teardown. Source
+`beacn-native-source-20261014T230633Z`; control journal SHA256
+`a97d576faf3c6fd470999c44a45e654013a6f8fe28a71927b1e1082ada4c947c`.
+55 Windows Rust checks, 54 Linux Rust checks and 30 Linux Python checks pass.
+
+Remaining apps currently stop together when a selected app exits; unaffected-app
+continuity is not implemented. Default foreground service remains read-only; these
+controls are an API plus bounded native qualification example, not a GUI or daemon.
+Next: Rust interface around discovery/control/status. UI framework not selected.
+Shared-desktop apply, multi-app USB/physical interoperability and durable reconnect
+remain open. Keep Actions disabled, hardware closed and local [skip ci] commits.
+
+## Previous checkpoint: native two-app private routing and publication data pass
 
 The owner is live streaming. Continue software work only; no USB/physical audio,
 Windows app/routing changes or desktop apply. See

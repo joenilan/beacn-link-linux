@@ -19,6 +19,11 @@ reply planning, native private routing and verified publication data. Two real m
 processes simultaneously routed separate pairs, moved and recovered safely on a
 disposable core. Multi-app USB/physical interoperability remains untested.
 
+[Rust routing controls](docs/rust-routing-control.md) now provide start/stop/status
+and verified lifecycle cleanup. On the private core, closing one of two real apps
+released the owned routes while preserving a foreign link with the same owner tag.
+The foreground application remains read-only; a graphical Rust interface is next.
+
 The owner placed the Linux test application in the streaming PC's first Link In
 channel. Linux received assignment 1, applied its private stereo route and
 published freshly verified assignment 1 through forty hardware cycles. This

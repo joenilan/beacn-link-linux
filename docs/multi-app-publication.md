@@ -99,8 +99,9 @@ attempts and their private artifacts are retained; they are not acceptance runs.
 
 This proves simultaneous native private-core application routing and multi-app
 publication **data**, not multi-app USB interoperability or physical audio. The
-foreground application service remains read-only. Next integrate explicit Rust
-app controls/status with these owners and qualify lifecycle-triggered stopping
-and receipt cleanup before enabling a native transport mode. UI, shared-desktop
+foreground application service remains read-only. Subsequent
+[Rust routing controls](rust-routing-control.md) now qualify explicit start/stop,
+lifecycle-triggered stopping and native receipt cleanup. Next build the Rust
+interface before enabling a native transport mode. UI, shared-desktop
 apply, durable selections/autostart and automatic reconnect remain separate work.
 No hardware test or streaming-PC observation is implied by this checkpoint.
