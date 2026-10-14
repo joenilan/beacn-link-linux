@@ -6,6 +6,47 @@ This is an explicitly authorized physical feasibility test, separate from the
 [accepted assignment/publication checkpoint](native-assignment-publication.md).
 Ordinary desktop apply remains disabled. No audible acceptance is claimed.
 
+## Native feasibility without installing Linux
+
+The gaming PC currently has no Linux installation. The owner needs the
+replacement demonstrated before migrating. VM-based software work continues;
+the next proposed hardware comparison is a temporary desktop live session,
+not a prerequisite to install Linux or abandon Windows. Ubuntu's official
+[Try Ubuntu guide](https://ubuntu.com/desktop/docs/en/latest/tutorial/try-ubuntu-desktop/)
+describes this temporary session; the matching
+[26.04.1 desktop image](https://releases.ubuntu.com/26.04.1/) is available.
+Creating media and temporarily rebooting the gaming PC are separate owner actions
+that have not occurred during this work.
+
+`tests_native/studio_native_preflight.py` saves a complete private baseline using
+the durable shared writer, reads cached USB identity and existing graph data,
+verifies one selected card and all four actual pair mappings, and reports normal
+device access plus PCM-idle/isolation checks. It detects virtualization and will
+not report native readiness for a VM or unknown context. No audio child, vendor
+transfer, route/default/volume/mute change or dependency installation occurs.
+Its readiness flag prepares a separate authorized silence check; it cannot
+establish an advancing hardware clock or a finished replacement app. The existing
+isolation guard can refuse a native machine containing other audio devices;
+preserve that report instead of bypassing the guard or changing those devices.
+
+`tools/package_native_preflight.py` creates an exclusive portable ZIP from eight
+explicit source paths, an instruction file and a per-file SHA256 manifest. It
+includes the existing guarded silence runner but no Rust/proprietary binaries,
+private data or access credentials. The read-only command in the bundle is:
+
+```sh
+python3 tests_native/studio_native_preflight.py --evidence-dir "$HOME/beacn-native-preflight-$(date -u +%Y%m%dT%H%M%SZ)"
+```
+
+Private prepared ZIP label: `beacn-native-preflight-20261014T1330Z.zip`.
+SHA256: `710d97e1deaeda047655ec67717e603beef2130d1d4bb1c88498ce4f240e3790`.
+Windows verifies its allowlist, integrity and exact current source hashes.
+Linux imports the unpacked bundle, saves a stable metadata baseline, verifies
+four endpoints and returns native-readiness false for VMware as intended.
+Two focused readiness/detection cases pass on both platforms. No native hardware
+or new physical playback was tested. Live-session evidence must be retained
+before shutting down because its home directory is temporary.
+
 ## Latest controller comparison and recovery (2026-10-14)
 
 Workstation 26.0.1 build 25688693 ran a backed-up, selected-VM-only xHCI comparison

@@ -1,6 +1,32 @@
 # BEACN Link Linux — continuation handoff
 Updated 2026-10-14. Resume development; do not restart the investigation.
 
+## Feasibility before migration; portable preflight prepared
+
+The owner clarified that the gaming PC has **no native Linux installation**.
+This work must establish feasibility before a switch; do not ask the owner to
+migrate in order to prove the replacement. Keep software development in the VM.
+A temporary Ubuntu desktop live USB session is the proposed later hardware
+comparison, using Try Ubuntu and returning to Windows afterward. No boot-media
+write, host reboot, Linux installation or native hardware test has occurred.
+
+`tests_native/studio_native_preflight.py` is read-only: existing durable snapshot
+and cached USB/endpoint owners, one selected card, four actual pair mappings,
+normal device access and explicit native-versus-VM detection. It starts no audio
+and changes no routing. Its readiness flag is for a separate guarded test, not
+audio or full-product acceptance; other physical devices can block the existing
+isolation guard. Unknown/virtualized contexts never claim native readiness.
+Two focused cases pass on Windows/Linux. The eight-source-file portable ZIP
+imports and runs on Linux, saves a stable baseline, verifies four endpoints and
+correctly rejects the VM as native. Its manifest/allowlist/source hashes and ZIP
+integrity are verified. `tools/package_native_preflight.py` rebuilds it outside
+the repository with no Rust/proprietary binaries, credentials or private evidence.
+Prepared private ZIP label: beacn-native-preflight-20261014T1330Z.zip;
+SHA256 `710d97e1deaeda047655ec67717e603beef2130d1d4bb1c88498ce4f240e3790`.
+The VM remains on recovered EHCI. A fresh host PnP query finds no present
+33AE:4003 instances, so there is no evidence of native Windows interfaces still
+owning this selected device; this does not prove isochronous delivery works.
+
 ## Current controller recovery and durable evidence checkpoint (2026-10-14)
 
 **EHCI restored; no further physical playback.** The xHCI comparison lost SSH
