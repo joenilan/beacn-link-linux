@@ -376,7 +376,7 @@ def main():
         owner.save(root / "baseline.json", {"snapshot": before, "binding": before_binding, "endpoint": pinned})
         owner.save(root / "baseline-objects.json", objects)
         raw = pcm(args.audible, args.rate)
-        (root / "authored-pcm.s16le").write_bytes(raw)
+        owner.save_bytes(root / "authored-pcm.s16le", raw)
         journal["pcm_sha256"] = hashlib.sha256(raw).hexdigest()
         config = root / "client-config"
         config.mkdir(mode=0o700)

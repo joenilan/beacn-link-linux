@@ -86,7 +86,7 @@ def main():
         playback.owner.save(root / "baseline-objects.json", objects)
         binary = Path("/usr/bin/aplay").resolve(strict=True)
         raw = pcm()
-        (root / "authored-pcm.floatle").write_bytes(raw)
+        playback.owner.save_bytes(root / "authored-pcm.floatle", raw)
         journal.update(binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
                        pcm_sha256=hashlib.sha256(raw).hexdigest(),
                        harness_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest())

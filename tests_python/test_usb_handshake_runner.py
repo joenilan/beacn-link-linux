@@ -18,6 +18,35 @@ spec.loader.exec_module(runner)
 
 
 class RunnerTests(unittest.TestCase):
+    def test_evidence_is_durable_and_exclusive_for_json_and_authored_bytes(self):
+        for path, value, save in ((self.parent / "metadata.json", {"backup": "contents"}, runner.save),
+                                  (self.parent / "authored.bin", b"\0\1\2", runner.save_bytes)):
+            with patch.object(runner.os, "fsync", wraps=runner.os.fsync) as sync:
+                save(path, value)
+                self.assertGreaterEqual(sync.call_count, 1)
+                if runner.os.name == "posix":
+                    self.assertEqual(sync.call_count, 3)
+            original = path.read_bytes()
+            with self.assertRaises(FileExistsError):
+                save(path, value)
+            self.assertEqual(path.read_bytes(), original)
+        self.assertEqual(json.loads((self.parent / "metadata.json").read_text()), {"backup": "contents"})
+        self.assertEqual((self.parent / "authored.bin").read_bytes(), b"\0\1\2")
+
+    def test_failed_backup_flush_blocks_native_execution(self):
+        self.prepare()
+        baseline = (self.root / "baseline.json").read_bytes()
+        argv = ["runner", "run", "--evidence-dir", str(self.root), "--executor", str(self.binary), *self.run_args()]
+        with patch.object(sys, "argv", argv), patch.object(runner.sys, "platform", "linux"), \
+             patch.object(runner, "targets", return_value=[self.device]), \
+             patch.object(runner, "snapshot", return_value=self.snapshot), \
+             patch.object(runner.os, "fsync", side_effect=OSError("synthetic flush failure")), \
+             patch.object(runner.subprocess, "Popen") as child:
+            with self.assertRaises(OSError):
+                runner.main()
+            child.assert_not_called()
+        self.assertEqual((self.root / "baseline.json").read_bytes(), baseline)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

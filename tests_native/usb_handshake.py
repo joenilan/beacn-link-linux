@@ -51,9 +51,26 @@ def targets():
             and (p / "idProduct").read_text().strip() == "4003"]
 
 
+def save_bytes(path, value):
+    """Exclusive durable evidence, including its directory entry, before device I/O."""
+    with path.open("xb") as handle:
+        handle.write(value)
+        handle.flush()
+        os.fsync(handle.fileno())
+    if os.name == "posix":
+        # Evidence roots are newly created under an existing private parent.
+        # Persist both the file entry and that new root's entry before playback.
+        for parent in dict.fromkeys((path.parent, path.parent.parent)):
+            directory = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+
+
 def save(path, value):
-    with path.open("x", encoding="utf-8") as handle:
-        json.dump(value, handle, indent=2)
+    # Serialize first so invalid evidence cannot leave a newly created empty file.
+    save_bytes(path, json.dumps(value, indent=2).encode("utf-8"))
 
 
 def connected_binding(directory):
@@ -149,8 +166,7 @@ def main():
         if len(raw) > 256 * 1024:
             parser.error("expected cache too large")
         pinned = root / "expected-cache.bin"
-        with pinned.open("xb") as handle:
-            handle.write(raw)
+        save_bytes(pinned, raw)
         attached = snapshot()
         save(root / "run-started.json", {"binary_sha256": digest,
                                         "expected_cache_sha256": hashlib.sha256(raw).hexdigest(), "snapshot": attached})

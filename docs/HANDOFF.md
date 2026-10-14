@@ -1,6 +1,52 @@
 # BEACN Link Linux — continuation handoff
 Updated 2026-10-14. Resume development; do not restart the investigation.
 
+## Current controller recovery and durable evidence checkpoint (2026-10-14)
+
+**EHCI restored; no further physical playback.** The xHCI comparison lost SSH
+and the guest-tools heartbeat during the same direct ALSA silence diagnostic.
+Its completion, clock progress and initial cleanup are unconfirmed. A graceful
+stop timed out; the dedicated test VM required a recorded forced power-off.
+The owned xHCI/PCIe trial fields were removed and original EHCI slot 34 restored.
+The owner logged into Ubuntu again. Fresh read-only comparison passes selected
+`ehci-pci` at 480 Mb/s, released USB profile, cached descriptor hash, all four
+endpoints, logical nodes/ports/links/defaults and saved-file values/permissions.
+`stream-properties` differs only in JSON member order; retain its raw diff.
+Windows endpoint defaults/volumes/mutes/formats/states match, while two session
+lists, sixteen existing binary registry values and one added policy entry differ
+across the controller/recovery restarts. Preserve those unclassified differences;
+do not claim full byte-identical restoration or overwrite unrelated state.
+
+The owner-requested power-on connection automation is now verified: Studio
+reattached without a manual USB handoff on both controller starts. The retained
+rule matches VID/PID plus the exact cached host port; its machine-specific value
+and VMX backups remain private. This is power-on autoconnect, not a live USB reset
+API. Windows Link stays closed and Studio remains attached to the recovered VM.
+No mouse automation, driver/firmware change, incoming capture or REA was used.
+
+The forced stop exposed an evidence durability defect: nine newest guest attempt
+files survived as empty files, including its baseline/PCM and four clock records.
+Preserve them and the transport-loss marker; never derive sample progress from
+their filenames. Complete pre-controller backups had already been copied to
+Windows and remain intact. The existing shared evidence writer now exclusively
+creates and flushes file data and POSIX directory entries before execution.
+Pinned descriptor files and authored PCM reuse it; a failed flush prevents native
+child launch. All 37 focused handshake/playback/graph/ALSA Python cases pass on
+Linux; Windows passes 35 with two existing skips. This is offline validation,
+not a new forced-crash or successful hardware run. Exact source:
+beacn-link-physical-playback-20261014T131759Z/source. Unchanged Rust inputs reuse
+the prior exact built CLI with recorded provenance. Free guest disk: about 18.2 GB.
+
+Fourteen final recovery artifacts were copied and hash-verified on Windows;
+final recovery SHA256:
+`cdbc18f84d0f8056b84f9a1a1fadec981315cd227a566b2bb9676a25ffe8e7b1`.
+Read [native-studio-playback.md](native-studio-playback.md) for details. The next
+useful hardware comparison is native Linux outside VMware, with fresh native
+preflight/backups and preserved device/route guards. Prepare that separately;
+do not repeat VM controller variants or visibility/drag tests. This supersedes
+earlier next-step/recovery instructions below. Ordinary physical native route
+application remains disabled.
+
 ## Current recovery checkpoint (2026-10-14)
 
 **Recovery verified; physical clock remains unresolved.** Read

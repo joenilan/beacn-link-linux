@@ -6,6 +6,76 @@ This is an explicitly authorized physical feasibility test, separate from the
 [accepted assignment/publication checkpoint](native-assignment-publication.md).
 Ordinary desktop apply remains disabled. No audible acceptance is claimed.
 
+## Latest controller comparison and recovery (2026-10-14)
+
+Workstation 26.0.1 build 25688693 ran a backed-up, selected-VM-only xHCI comparison
+through CLI. The first power-on failed before Linux boot because the minimal VM
+lacked a PCIe slot for xHCI. After retaining that error and configuration, one
+PCIe root-port bridge was added while powered off. Boot then succeeded. Linux
+confirmed the selected Studio beneath `xhci_hcd` at 480 Mb/s, unchanged cached
+descriptors, released interfaces, all four actual endpoint mappings, logical
+routes/defaults and exact saved-file contents. Login to the normal Ubuntu desktop
+was necessary for its existing uaccess permissions; no ACL/group/driver bypass
+was added and no desktop automation was used.
+
+The existing direct ALSA silence diagnostic then lost its SSH transport with
+exit 255; cached VMware logs also recorded a guest-tools heartbeat timeout.
+The Windows audio/registry comparison for that attempt matches exactly, but
+guest child exit, hardware-clock progress and cleanup are unconfirmed. No retry
+was performed. The graceful selected-VM stop timed out. A recorded recovery
+power-off was required, after which only owned controller fields were restored:
+EHCI at its original slot 34; xHCI and the trial PCIe root port removed.
+Unrelated current VMX fields were preserved instead of replacing the entire VMX.
+
+After the owner's desktop login, fresh read-only recovery passes `ehci-pci`,
+480 Mb/s, released USB interfaces, descriptor hash, four actual endpoints, logical
+nodes/ports/links/defaults and parsed saved-file values including permissions.
+The 416-byte `stream-properties` file has only reordered JSON members; the other
+tracked saved files match exactly. Windows endpoint defaults, volumes, mutes,
+formats and states match, while two session lists, sixteen existing 16-byte binary
+registry values and one added policy entry differ across the restarts. Their
+full snapshots/diffs remain private and unclassified; no blanket registry or
+foreign-settings restoration was attempted.
+
+The owner-requested direct power-on USB connection automation works on both
+starts. It uses VMware's documented
+[autoconnect rule](https://knowledge.broadcom.com/external/article?legacyId=1648),
+constrained to VID/PID and the selected cached host port. The machine-specific
+rule stays in the private VMX/backups, and is intentionally retained after the
+controller trial to avoid repeated handoffs. Its scope is VM power-on/restart;
+it is not a verified live detach/reconnect API. The recovered VM keeps Studio
+attached and Windows Link closed. No further hardware playback followed recovery.
+
+## Evidence durability repair
+
+The recovery power-off exposed a harness defect: the nine newest guest attempt
+artifacts were empty after restart, including baseline metadata, authored PCM and
+four clock-record files. There is no final journal or comparison. Preserve the
+empty files, hashes and transport-loss marker; a filename alone is not a clock
+observation. Complete pre-controller settings/file backups were already copied
+to Windows. Fourteen final recovery artifacts were downloaded and hash-verified
+separately; recovery SHA256:
+`cdbc18f84d0f8056b84f9a1a1fadec981315cd227a566b2bb9676a25ffe8e7b1`.
+
+`tests_native/usb_handshake.py` now owns a shared exclusive binary evidence
+writer. It serializes JSON before file creation, flushes and fsyncs file contents,
+and on POSIX fsyncs the containing directory and its private parent so a newly
+created evidence root is persisted before device execution. The handshake's
+pinned descriptor cache and both playback runners' authored PCM reuse this
+writer. A flush failure stops before launching the native child. Tests verify
+JSON/byte round trips, refusal to overwrite existing evidence, directory flushes
+and blocked execution on a flush failure. No user persistent file is rewritten.
+
+Exact new source: `beacn-link-physical-playback-20261014T131759Z/source`.
+All 37 focused Python cases pass on Linux; Windows passes 35 with two existing
+Linux-only skips. The unchanged Rust input map and exact reused CLI remain
+recorded with build provenance. No redundant Rust matrix or toolchain install
+was run. These checks validate the writer's behavior, not crash-recovery
+durability under a new forced power-off or successful audio. Free guest disk is
+about 18.2 GB. Next prepare a native Linux comparison outside VMware, with fresh
+native preflight/backups and intact device/route guards. The VM results do not
+distinguish a Linux driver problem from virtualization or device behavior.
+
 ## Current recovery state (2026-10-14)
 
 **Recovery now passes.** The owner completed a Studio disconnect/reconnect after
