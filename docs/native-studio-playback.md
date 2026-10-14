@@ -8,6 +8,79 @@ Ordinary desktop apply remains disabled. No audible acceptance is claimed.
 
 ## Current recovery state (2026-10-14)
 
+**Recovery now passes.** The owner completed a Studio disconnect/reconnect after
+the failed rate experiment below. Before reconnect, cached enumeration confirmed
+Studio absent from Linux and present on Windows; the same PipeWire process was
+responsive in state S rather than D. After reconnect, the read-only comparison
+passes logical nodes, ports, links and defaults, exact saved-file bytes, unchanged
+cached descriptor hash and rate overrides, absence of the owned playback node,
+and the released USB interface profile. No audio-service restart was required.
+Windows audio state is exact, but registry state differs in seventeen values:
+sixteen existing binary machine-audio values and one added user-policy string.
+Those changes remain unclassified and preserved privately; do not rewrite them.
+Fresh recovery observations and hashes were copied to exclusive host evidence
+directories, separately from the failed journal/comparison. Studio stays attached
+to Linux; no further playback or incoming capture occurred during recovery.
+
+Existing VMware logs contain `NOT_BOUND` failures while aborting audio endpoints
+02/82, including at the earlier 48 kHz stop and the recovery disconnect. These
+are abort diagnostics, not proof of missing packets or a VMware root cause. No
+isochronous-delivery detail appears in those logs. The subsequent direct ALSA
+test below isolates selected-device playback from PipeWire rather than rerunning
+the same rate workaround.
+
+## Direct ALSA diagnostic (2026-10-14)
+
+`tests_native/studio_alsa_playback.py` is an explicit finite silence diagnostic,
+not a native route executor or audio-input capture. It correlates the selected
+cached USB device to one ALSA card, pins its playback device node identity,
+requires both PCM directions closed, and uses the existing graph/endpoint,
+snapshot, binding, activation and comparison owners. It refuses other application
+streams, physical devices and rate overrides. Baseline settings, full saved-file
+backups, graph and released interfaces must remain stable before launch.
+
+The retained `aplay` child opens only the selected raw `hw:card,0` endpoint at
+48 kHz/eight FLOAT_LE channels, with ALSA resampling/channel/format/soft-volume
+conversion disabled and a system config path. Four seconds of all-zero PCM is
+authored privately. No graph stream, default, volume, mute or vendor command is
+created or changed by this runner. Each bounded observation verifies the foreign
+PipeWire graph, selected node/endpoint, ALSA owner PID and exact hardware format,
+USB activation and monotonically advancing hardware pointer. A two-second stall,
+format/owner change, graph change, log bound or deadline stops only the retained
+child. Cleanup never kills the desktop server or deletes its links; a child that
+fails to exit leaves cleanup explicitly unverified.
+
+The real run at source
+`beacn-link-physical-playback-20261014T124203Z/source` verified ten observations
+with actual `aplay` PCM ownership and matching hardware format, but both first
+and last hardware pointer were zero. It stopped for the two-second stall; the
+owned process exited and the desktop, routes, saved files, released USB binding
+and per-attempt Windows audio/registry comparisons pass exactly. The same
+PipeWire server remains responsive after this run. Studio stays attached and no
+reconnect is needed. This is evidence of a stall on the direct ALSA/USB/device
+path, not proof of which component caused it or of audible output.
+
+Three new direct-probe cases cover finite silent PCM, rejected format/rate/channel
+conversion, foreign/stopped/missing PCM ownership and oversized metadata. Linux
+passes all 24 direct/playback/graph Python cases. Windows passes 22 with two
+existing Linux-only skips. No unchanged Rust build matrix was repeated; exact
+Rust inputs and the reused CLI hash remain recorded with the isolated source.
+Latest guest free disk is about 18.3 GB; no packages or toolchains were installed.
+
+Harness SHA256: `3af5cf40bdd045f3f1c1f38bcfd247904e87bcef4fb110b8fd9218213c9376ed`.
+`aplay` SHA256: `4436d05a3f9ce9d92432ea73dd5b6233f69d6243a6cfb3b6b1b8852622cb26c5`.
+Silence SHA256: `b15b79e1f79b625b7be660d31da74943bff98b94eee89544d233aabfbb91d51a`.
+Journal SHA256: `f1ac1e8a866ef2f2f0536a48e3a830485a7cfabcf1eb5b13b6c643e445e28cf6`.
+Comparison SHA256: `09a3abe120d3f11bf3ecb97741aa923ca1c7a570ef8563df4af875fb8cead606`.
+Eighteen private guest artifacts were downloaded and hashed; tool versions and
+host snapshots are retained separately (`aplay` 1.2.15.2, Python 3.14.4,
+guest kernel 7.0.0-38-generic). Next isolate VM USB controller/delivery
+behavior before another physical playback attempt. Keep the failed rate journal
+and the USB-cycle registry differences separate from this clean per-attempt
+comparison.
+
+## Previous activation and rate experiments
+
 The new cached activation diagnostic verified audio interfaces 1 and 2 at
 alternate 1 throughout nine stalled 48 kHz observations. OUT 02 has attributes
 05; IN 82 has attributes 25 (implicit-feedback data), both with 416-byte maximum
@@ -38,15 +111,18 @@ but the post-test PipeWire query timed out. Subsequent read-only inspection foun
 the PipeWire server in kernel state D, waiting in `usb_kill_urb`; audio interfaces
 1/2 remained at alternate 1, with ALSA PCM in SETUP. All four saved WirePlumber
 files still match exactly, and the connected Windows audio/registry comparison
-passes. Guest graph restoration remains **unverified**, not successful.
+passes. Guest graph restoration was **unverified** at that point; the later
+recovery result above is separate evidence and does not turn this attempt into
+successful playback.
 
-The owner has been asked to disconnect/reconnect only Studio through VMware to
-clear this USB operation, with Windows Link closed. No audio-service restart or
-termination, driver change or further physical attempt was performed. After reconnect, run the
-prepared read-only recovery comparison: confirm released interfaces, absence of
-the owned rate-forcing node, reachable desktop, logical settings/channels/routes/
-defaults and saved-file equality. Preserve recreated IDs/format-cache differences
-instead of deleting foreign resources or rewriting current saved files.
+The owner was asked to disconnect/reconnect only Studio through VMware to clear
+this USB operation, with Windows Link closed, and subsequently completed recovery.
+No audio-service restart or termination, driver change or further physical attempt
+was performed. The read-only recovery comparison confirms released interfaces,
+absence of the owned rate-forcing node, reachable desktop, logical settings/
+channels/routes/defaults and saved-file equality. Recreated object IDs and format
+caches are retained in raw observations, rather than deleting foreign resources
+or rewriting current saved files.
 
 The comparison now stops after the first unavailable desktop query and explicitly
 reports cleanup unverified, rather than repeatedly querying a blocked server.

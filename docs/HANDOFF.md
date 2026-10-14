@@ -3,20 +3,28 @@ Updated 2026-10-14. Resume development; do not restart the investigation.
 
 ## Current recovery checkpoint (2026-10-14)
 
-**Recover before further hardware work.** Read
+**Recovery verified; physical clock remains unresolved.** Read
 [native-studio-playback.md](native-studio-playback.md) first. New cached USB
 observations prove both playback and implicit-feedback audio alternates active
 during the 48 kHz stall. A maintainer-supported, temporary owned-stream 96 kHz
 experiment selected the requested ALSA rate but advanced only 298 samples before
 freezing. Its playback child exited; PipeWire subsequently stopped answering
 queries and is in kernel state D at `usb_kill_urb`, with audio alternates still 1.
-Saved guest files and per-attempt Windows comparisons match, but guest routing/
-binding recovery is **not verified**. The owner has been asked to disconnect
-Studio from the VM, wait five seconds and reconnect it; Windows Link stays closed.
-No mouse automation, capture, driver change or service restart was performed.
-Do not repeat playback until the explicit recovery comparison passes.
+The post-test graph query failed; preserve that failed comparison. On October 14
+the owner disconnected and reconnected Studio. The same PipeWire process left
+kernel state D and resumed answering without a service restart. Fresh comparison
+passes logical nodes, ports, links, defaults, all four saved files byte for byte,
+cached descriptor hash, original rate overrides and released USB interfaces.
+The owned playback node is absent. Windows audio state matches exactly, while
+the USB cycle left seventeen registry-value differences (sixteen binary values
+in machine audio and one added string in user policy); retain these unclassified
+differences and full backups, not a blanket restoration claim. Studio stays on
+the VM and Windows Link stays closed. No mouse automation, capture, driver change
+or further rate-workaround playback was performed. A subsequent direct ALSA
+silence diagnostic (below) narrows the clock stall beyond PipeWire playback.
+Do not repeat the failed rate test.
 
-Ignored `local/physical_rate_recovery.py` is prepared to compare the recovered
+Ignored `local/physical_rate_recovery.py` has compared the recovered
 desktop against the pre-rate-test full backups, including logical foreign
 resources/defaults and absence of the owned force-rate node. Existing private
 evidence is preserved. The runner now records USB activation, supports explicit
@@ -26,6 +34,25 @@ nine graph Python cases pass on Windows/Linux; unchanged Rust inputs reuse the
 previous exact built CLI. New offline source:
 beacn-link-physical-playback-20261014T040623Z/source. Latest free disk: about 18.3 GB.
 This recovery checkpoint supersedes the earlier exact-cleanup status below.
+
+**Direct ALSA diagnostic completed:** new `tests_native/studio_alsa_playback.py`
+uses one retained `aplay` process, explicit raw hardware selection, eight-channel
+FLOAT_LE 48 kHz authored silence, four-second input and bounded clock supervision.
+It refuses an occupied card or competing app/device/rate override, verifies that
+the unchanged PipeWire graph remains foreign, and checks actual PCM owner/format
+and cached USB activation. Source
+beacn-link-physical-playback-20261014T124203Z/source passes 24 focused Python checks
+on Linux; Windows passes 22 with two existing Linux-only skips. Unchanged Rust
+inputs still reuse the exact prior built CLI. The hardware run verified ten
+observations but stayed at hardware pointer zero and stopped after two stalled
+seconds. It created no PipeWire playback stream or native routing receipt.
+Owned child exit, desktop/routes/defaults, saved files, released USB binding and
+per-attempt Windows audio/registry comparisons all pass exactly; the same
+PipeWire server remains responsive. No additional reconnect is needed. Raw
+evidence and hashes are preserved privately. This narrows the failure to the
+ALSA/USB/device path but does not identify Linux versus VMware versus the device.
+Next isolate VM USB controller/passthrough behavior; do not rerun visibility/drag
+tests or claim physical/audible output.
 
 ## Current hardware checkpoint (2026-10-13)
 
