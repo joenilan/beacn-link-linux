@@ -22,6 +22,22 @@ recovery before a new justified hardware attempt. Do not repeat the failed
 controller/rate experiments or restart the initial audit. Keep ordinary native
 physical apply disabled and distinguish VM audio failure from Linux feasibility.
 
+## Handoff launcher refused an additional reconnect
+
+The owner reconnected Studio after launcher 170306 preparation, changing its
+pinned USB generation. Both commands refused before creating test evidence.
+Read-only verification confirms unchanged source, nonexpired baseline, released
+interfaces, no owned audio/observer process and matching logical settings/routes/
+metadata/device settings/persistent files. The opaque RuntimeError output was a
+private launcher reporting defect, not a probe-load or playback outcome.
+
+The replacement prints specific controlled refusal reasons while retaining
+generation/settings/source/expiry/one-attempt guards. Fresh snapshots and a
+byte-verified launcher are staged at `beacn-feedback-ready-20261014T170813Z/run.py`
+on unchanged validated source 170230. Leave Studio attached for execution;
+do not reconnect between preparation and launch. The twelve-probe load and USB
+handoff measurement remain pending. Earlier launcher 170306 is superseded.
+
 ## Matched-clock input and remaining controller-handoff gap
 
 The seven-probe 96-kHz run measured matching device/source/sink rates and

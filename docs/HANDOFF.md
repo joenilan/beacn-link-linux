@@ -22,6 +22,25 @@ mouse automation, driver/firmware changes, traffic/audio capture or REA executio
 is authorized by this clarification. Existing session execution authority and
 settings-preservation requirements still apply.
 
+## Prelaunch reconnect refused; fresh handoff launcher staged (2026-10-14)
+
+The owner reconnected Studio again after launcher 170306 was prepared. Both
+invocations reported only RuntimeError. Read-only verification finds unchanged
+source, a nonexpired baseline, changed USB generation, no evidence directory and
+no aplay/bpftrace process. No new probe/audio run occurred. Fresh logical node/
+port/link/metadata/device settings and persistent-state bytes match the old
+baseline despite regenerated identities. Host differences are retained privately.
+
+The private launcher now prints controlled RuntimeError reasons and distinguishes
+USB generation drift, settings drift, expiry, changed source and reused evidence.
+It retains all guards. Fresh guest/Windows snapshots and a byte-verified replacement
+are staged at `beacn-feedback-ready-20261014T170813Z/run.py`, using unchanged
+57-case validated source `beacn-link-physical-playback-20261014T170230Z/source`.
+Launcher SHA256: `073567620e1fea40818755ca7087dae9ca61bed1feab9555ba743d7c4ecfa983`.
+Leave Studio attached when running it; another reconnect requires new preparation.
+The ten-minute baseline expiry remains. Twelve-probe kernel loading/USB handoff
+observation is still pending; no further playback outcome is claimed.
+
 ## Matched-clock input progressed; USB handoff observation is next (2026-10-14)
 
 The owner ran `beacn-feedback-ready-20261014T164723Z/run.py`. Seven probes loaded
