@@ -37,6 +37,14 @@ def checked_rate(rate):
     return rate
 
 
+def check_held_arguments(pid, start):
+    if pid is None and start is None:
+        return
+    if (type(pid) is not int or pid < 1 or not isinstance(start, str)
+            or re.fullmatch(r"[0-9]{1,20}", start) is None or int(start) < 1):
+        raise ValueError("held vendor coexistence requires a positive PID and exact process start identity")
+
+
 def pcm(rate=RATE):
     # IEEE float positive zero is all-zero bytes, on every selected channel.
     return bytes(checked_rate(rate) * CHANNELS * 4 * DURATION)
@@ -68,9 +76,15 @@ def main():
                         help="explicit diagnostic for an independently observed 96000-Hz device clock")
     parser.add_argument("--sysfs-device", required=True)
     parser.add_argument("--evidence-dir", required=True)
+    parser.add_argument("--held-vendor-pid", type=int, help="caller-owned initialized helper; never stopped here")
+    parser.add_argument("--held-vendor-start")
     args = parser.parse_args()
     if sys.platform != "linux" or not args.authorize_direct_alsa_silence:
         parser.error("requires Linux and explicit direct ALSA silence authorization")
+    try:
+        check_held_arguments(args.held_vendor_pid, args.held_vendor_start)
+    except ValueError as error:
+        parser.error(str(error))
     rate = 96000 if args.matched_device_clock_96000 else RATE
     root = Path(args.evidence_dir).resolve()
     if root == playback.REPO or playback.REPO in root.parents:
@@ -79,6 +93,7 @@ def main():
     journal = {"audible": False, "rate": rate, "channels": CHANNELS,
                "progress_kind": "alsa_queue_pointer", "independent_delivery_evidence": False,
                "matched_device_clock_requested": args.matched_device_clock_96000,
+               "held_vendor_coexistence": args.held_vendor_pid is not None,
                "duration": DURATION, "pipewire_playback_stream": False,
                "native_executor_apply": False, "child_exited": True,
                "clock_checks": 0, "error": None}
@@ -86,7 +101,7 @@ def main():
     baseline = None
     cancellation = Cancellation()
     previous_signal = signal.signal(signal.SIGTERM, cancellation.request)
-    get_binding = lambda: playback.owner.connected_binding(args.sysfs_device)
+    get_binding = lambda: playback.binding(args.sysfs_device, args.held_vendor_pid, args.held_vendor_start)
     try:
         binding = get_binding()
         before = playback.owner.snapshot()

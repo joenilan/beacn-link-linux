@@ -6,21 +6,45 @@ This is an explicitly authorized physical feasibility test, separate from the
 [accepted assignment/publication checkpoint](native-assignment-publication.md).
 Ordinary desktop apply remains disabled. No audible acceptance is claimed.
 
-## Current owner constraint: keep feasibility testing in the VM
+## Current owner plan: direct Debian laptop comparison over SSH
 
-The owner provided the VM so Linux testing can retain the active Windows agent
-execution environment. Continue through existing CLI/strict SSH access. A gaming
-PC live boot would remove that execution environment, and no replacement agent
-session/access has been established. Native installation, live USB boot, host
-reboot or another agent computer must not become a requirement for progress.
-The previously proposed native comparison is deferred; retain its optional
-source bundle and provenance without treating it as the current test path.
+The owner volunteered a separate Debian 13 laptop after the VMware failures.
+The active agent remains on Windows with authenticated, privately pinned SSH
+access to the laptop. No gaming-PC migration/reboot or replacement agent session
+is required. Initial inventory reports kernel 6.12.111, PipeWire 1.4.2 and
+WirePlumber 0.5.8; no BEACN USB device/card is yet visible. The full graph,
+settings and persistent-state copies/hashes are preserved privately. Resolve
+enumeration and inspect the actual endpoint layout/access/ABI before preparing
+one bounded native test; do not import VM assumptions or force desktop rates.
+GNOME remote login is configured for owner access and its RDP/TLS connection
+has been verified; an interactive login and laptop hardware playback remain
+unverified. Keep ordinary physical apply disabled and all VM evidence retained.
 
-Next investigate VMware USB transport diagnostics and the guest ALSA clock/driver
-path using the preserved recovered baseline. Prepare bounded observability and
-recovery before a new justified hardware attempt. Do not repeat the failed
-controller/rate experiments or restart the initial audit. Keep ordinary native
-physical apply disabled and distinguish VM audio failure from Linux feasibility.
+## Latest VM result: accepted enqueue without OUT completion
+
+The 17-probe owner run passed loading and aggregate validation. USB submit, HCD
+submit and EHCI enqueue each returned zero for all three OUT and 15 IN entries.
+OUT still produced no givebacks/completions; IN produced three completions,
+24 successful packets and 7,232 bytes at 96000 Hz/416-byte geometry. Three OUT
+buffers total 298 queued frames, matching the stalled ALSA pointer. Zero return
+proves software enqueue acceptance only. Cancellation returned zero for the
+outstanding three OUT/12 IN URBs; a later OUT -16 return means already unlinked.
+Owner reconnect then restored all guest logical settings/routes/state-file checks.
+
+One initialized vendor-helper coexistence attempt at 96 kHz also stalled at
+pointer 298. The helper's claim release succeeded, but full baseline restoration
+failed because audio remained active and the owned ALSA child stayed in
+D / usb_kill_urb. No further VM playback is justified. Check read-only recovery
+after the owner's physical move. Exact evidence hashes and the preserved host
+differences are recorded in [HANDOFF](HANDOFF.md).
+
+The ALSA runner now accepts a caller-owned held helper only with a complete
+positive PID/start pair and exact current process identity/selected-device FD.
+It shares the existing binding checks and rechecks retention during activation;
+it never stops/releases the caller's helper. All 62 focused Linux cases passed
+on exact source `beacn-link-physical-playback-20261014T173834Z/source`.
+Unchanged native inputs reuse the previously validated CLI. The laptop's actual
+ABI and endpoint compatibility remain to be checked independently.
 
 ## Handoff reached EHCI entry; acceptance return still unknown
 

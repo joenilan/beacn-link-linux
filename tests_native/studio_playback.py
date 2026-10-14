@@ -300,6 +300,8 @@ def audio_activation(directory, baseline):
     submissions = usb_submission_counter(selected)
     if owner.usb_cache.sample(selected) != first:
         raise RuntimeError("selected USB activation changed across observation")
+    if baseline.get("held_pid") is not None:
+        held_process_identity(selected, baseline["held_pid"], baseline["held_start"])
     return {"interfaces": interfaces, "endpoints": endpoints,
             "urb_submission_counter": submissions,
             "urb_counter_scope": "selected_device_all_endpoints",
@@ -307,13 +309,8 @@ def audio_activation(directory, baseline):
             "both_audio_alternates_active": all(i["alternate"] == 1 for i in interfaces if i["number"] in (1, 2))}
 
 
-def binding(directory, held_pid=None, held_start=None):
-    if held_pid is None:
-        return owner.connected_binding(directory)
-    selected = Path(directory).resolve(strict=True)
-    found = owner.targets()
-    if len(found) != 1 or found[0].resolve() != selected:
-        raise RuntimeError("held selected USB device absent or ambiguous")
+def held_process_identity(selected, held_pid, held_start):
+    """Revalidate the caller's helper and actual open device; never cleanup authority."""
     process = Path("/proc") / str(held_pid)
     # Coexistence checks, never authority to release the caller's claim.
     if process.joinpath("stat").read_text().rsplit(")", 1)[1].split()[19] != held_start:
@@ -329,6 +326,18 @@ def binding(directory, held_pid=None, held_start=None):
             continue
     if not opened:
         raise RuntimeError("held vendor child no longer retains the selected USB device")
+    if process.joinpath("stat").read_text().rsplit(")", 1)[1].split()[19] != held_start:
+        raise RuntimeError("held vendor child identity changed during observation")
+
+
+def binding(directory, held_pid=None, held_start=None):
+    if held_pid is None:
+        return owner.connected_binding(directory)
+    selected = Path(directory).resolve(strict=True)
+    found = owner.targets()
+    if len(found) != 1 or found[0].resolve() != selected:
+        raise RuntimeError("held selected USB device absent or ambiguous")
+    held_process_identity(selected, held_pid, held_start)
     first = owner.usb_cache.sample(selected)
     if owner.usb_cache.sample(selected) != first:
         raise RuntimeError("held selected device changed across observation")

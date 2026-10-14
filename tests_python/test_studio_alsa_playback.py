@@ -81,6 +81,14 @@ print('owned child exited')
                 with self.assertRaises(ValueError):
                     alsa.parameters("", rate)
 
+    def test_held_vendor_identity_requires_both_positive_exact_arguments(self):
+        alsa.check_held_arguments(None, None)
+        alsa.check_held_arguments(123, "456")
+        for pid, start in ((None, "456"), (123, None), (0, "456"), (True, "456"),
+                           (123, "0"), (123, "456x"), (123, "1" * 21)):
+            with self.subTest(pid=pid, start=start), self.assertRaises(ValueError):
+                alsa.check_held_arguments(pid, start)
+
     def test_clock_refuses_foreign_owner_stopped_missing_or_oversized_metadata(self):
         good = "state: RUNNING\nowner_pid   : 123\nhw_ptr      : 298\n"
         self.assertEqual(alsa.clock(good, 123), 298)

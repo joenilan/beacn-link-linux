@@ -1,26 +1,77 @@
 # BEACN Link Linux — continuation handoff
 Updated 2026-10-14. Resume development; do not restart the investigation.
 
-## Owner constraint: continue development and feasibility testing in the VM
+## Current owner plan: separate Debian laptop with the Windows agent retained
 
-The owner clarified that the gaming PC has **no native Linux installation**.
-This work must establish feasibility before a switch; do not ask the owner to
-migrate in order to prove the replacement. The owner reaffirmed that the VM was
-provided to keep agent access available while testing Linux. Continue development
-and feasibility testing through the existing Windows/VM CLI and strict SSH access.
-Do not make a live USB, native Linux installation, host reboot or second agent
-computer a requirement for progress. The proposed native test lacked an active
-execution environment after reboot and has been deferred. No boot-media write,
-host reboot, Linux installation or native hardware test has occurred.
+The gaming PC has **no native Linux installation**; establishing feasibility
+before migration remains the goal. After the VMware transport failures below,
+the owner volunteered a separate Linux laptop for a direct Studio comparison.
+The agent remains active on Windows and now has authenticated SSH access to
+Debian 13, kernel 6.12.111, PipeWire 1.4.2 and WirePlumber 0.5.8. This supersedes
+the earlier VM-only next step without requiring a gaming-PC installation/reboot
+or another agent session. The owner explicitly accepted the laptop's first
+observed SSH host key; it is pinned privately for subsequent connections.
 
-Next inspect the existing VMware USB transport diagnostics and guest ALSA clock/
-driver behavior, preserving the recovered baseline and all failed evidence.
-Improve bounded observability/recovery before another justified physical attempt;
-do not repeat failed controller/rate tests or the initial static audit. The VM's
-physical audio gap is unresolved, not proof that Linux itself is unviable. No
-mouse automation, driver/firmware changes, traffic/audio capture or REA execution
-is authorized by this clarification. Existing session execution authority and
-settings-preservation requirements still apply.
+The owner also requested remote desktop. Existing GNOME Remote Desktop 48.1
+remote login was configured after a private baseline, with credentials delivered
+through stdin and TLS key/certificate held by the service account. The service
+is active; Windows-to-laptop RDP negotiation and the pinned TLS certificate were
+verified. An interactive owner login remains unverified. An unused desktop-sharing
+setup stalled on keyring access; its settings were restored to the saved baseline.
+After setup, the saved graph/settings and persistent-state hashes compare equal.
+No Chrome Remote Desktop, mouse automation or additional desktop was installed.
+
+The first laptop inventory contains no BEACN USB device or ALSA card, despite the
+owner reporting attachment. Resolve physical enumeration before a hardware test.
+Full audio graph/settings and persistent-state copies/hashes were saved privately.
+Next inspect the selected device and laptop-specific endpoint/access/ABI details,
+then prepare one bounded direct comparison with fresh pre/post snapshots. Do not
+assume the VM's split endpoints, physical-device isolation or binary ABI applies.
+No native laptop USB claim, playback or physical route application has occurred.
+Keep ordinary apply and Actions disabled; preserve all VM evidence. Do not repeat
+failed controller/rate tests or the initial audit, or install/run REA.
+
+## USB return evidence and initialized direct-ALSA coexistence (2026-10-14)
+
+Owner launcher 172808 loaded all 17 probes, passed review and exited 0. At
+96000 Hz and 416-byte endpoint sizes, OUT had three entries and three zero returns
+at USB-submit, HCD-submit and EHCI-enqueue, but no givebacks/completions. IN had
+15 entries/zero returns at each stage and three completions: 24 successful packets,
+six empty and 18 nonempty, 7,232 bytes. The three OUT buffers total 9,536 bytes,
+matching the ALSA queue pointer 298 -> 298. Successful enqueue is software
+acceptance, not hardware delivery. Cancellation returned zero for three OUT and
+12 IN URBs; the later OUT dequeue returned -16 (already unlinked), not a new
+playback submission rejection. The child remained D / usb_kill_urb. Thirty result
+files were retained/hash-verified. Summary SHA256:
+`eec7e1b28d9a3fdd63f41ea916e623155b2f9ecac14f60cd50d8e32b17bbaf15`.
+
+Owner reconnect released the child and closed all PCMs; graph/settings/state-file
+comparisons passed. Recovery SHA256:
+`1b4b998dbcb70b93b96770dcfd1d5b71f07c1f3aea143f21e955b723baa0ac53`.
+Windows audio matched; 16 machine-audio registry differences remain preserved and
+unclassified. No blanket restore was performed.
+
+The direct ALSA runner now supports caller-owned initialized vendor coexistence,
+sharing the existing exact process-start and retained selected-USB-FD checks.
+PID/start arguments must be a complete positive pair; identity/FD are rechecked
+during activation. These checks never grant authority to terminate the helper.
+All 62 focused Linux cases passed on exact source
+`beacn-link-physical-playback-20261014T173834Z/source`; 39 unchanged Rust inputs
+reuse the validated CLI without a heavy rebuild.
+
+One separately snapshotted initialized 96-kHz direct-ALSA attempt still stalled
+at pointer 298. The vendor helper released its claim successfully, but reported
+baseline_restored false while audio remained active; aplay 15077 remained in
+D / usb_kill_urb. No whole-device recovery is claimed for this latest attempt.
+Twenty-seven artifacts were copied/hashed; outer journal SHA256:
+`8203690395fb4e6a96d321c4f29cf907efcda0c2f56451c9963a68ef72482be3`;
+ALSA journal `3b1ace6bd9299b77c94836e7b784fe2e92296e05da14c51f310b6a3f5bd0eec9`.
+Windows endpoint/default settings and registry matched; one unrelated session-list
+change was preserved. Three read-only samples found active device/controller power
+and a shared IRQ counter unchanged; this is not EHCI-specific causal evidence.
+No additional root probe/audio run occurred. An optional bounded root-readonly
+VM diagnostic was staged but is superseded by the owner's laptop plan. Verify
+VM recovery after the physical move; do not start further VM playback.
 
 ## Live USB handoff entries, recovered default and return-code preparation (2026-10-14)
 

@@ -8,6 +8,7 @@ from unittest.mock import patch, Mock
 import subprocess
 import hashlib
 import tempfile
+import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests_native"))
 import studio_playback as playback
@@ -45,6 +46,42 @@ def fixture():
 
 
 class StudioPlaybackTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "linux", "actual process start/open-FD identity")
+    def test_held_helper_requires_current_start_and_retained_device_fd(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            selected = root / "selected"
+            selected.mkdir()
+            (selected / "busnum").write_text("1")
+            (selected / "devnum").write_text("2")
+            devices = root / "devices"
+            (devices / "001").mkdir(parents=True)
+            device = devices / "001/002"
+            device.write_bytes(b"")
+            ready, closed = root / "ready", root / "closed"
+            script = "import sys,pathlib; f=open(sys.argv[1],'rb'); pathlib.Path(sys.argv[2]).touch(); sys.stdin.readline(); f.close(); pathlib.Path(sys.argv[3]).touch(); sys.stdin.readline()"
+            child = subprocess.Popen([sys.executable, "-c", script, str(device), str(ready), str(closed)],
+                                     stdin=subprocess.PIPE)
+            def wait_for(path):
+                deadline = time.monotonic() + 2
+                while not path.exists() and child.poll() is None and time.monotonic() < deadline:
+                    time.sleep(.01)
+                self.assertTrue(path.exists())
+            try:
+                wait_for(ready)
+                start = Path("/proc", str(child.pid), "stat").read_text().rsplit(")", 1)[1].split()[19]
+                def mapped_path(*args):
+                    return devices if args == ("/dev/bus/usb",) else Path(*args)
+                with patch.object(playback, "Path", side_effect=mapped_path):
+                    playback.held_process_identity(selected, child.pid, start)
+                    with self.assertRaises(RuntimeError):
+                        playback.held_process_identity(selected, child.pid, str(int(start) + 1))
+                    child.stdin.write(b"close\n"); child.stdin.flush(); wait_for(closed)
+                    with self.assertRaises(RuntimeError):
+                        playback.held_process_identity(selected, child.pid, start)
+            finally:
+                child.terminate(); child.wait(timeout=2)
+                child.stdin.close()
     def test_submission_counter_is_optional_bounded_and_refuses_invalid_or_wrapped_values(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "urbnum"
