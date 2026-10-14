@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -15,6 +16,19 @@ import studio_playback as playback
 RATE = 48000
 CHANNELS = 8
 DURATION = 4
+
+
+class Cancellation:
+    def __init__(self):
+        self.requested = False
+
+    def request(self, signum, frame):
+        # Do not throw from a signal handler while owned cleanup is running.
+        self.requested = True
+
+    def check(self):
+        if self.requested:
+            raise RuntimeError("direct ALSA diagnostic cancellation requested")
 
 
 def pcm():
@@ -59,6 +73,8 @@ def main():
                "clock_checks": 0, "error": None}
     child = log = None
     baseline = None
+    cancellation = Cancellation()
+    previous_signal = signal.signal(signal.SIGTERM, cancellation.request)
     get_binding = lambda: playback.owner.connected_binding(args.sysfs_device)
     try:
         binding = get_binding()
@@ -98,12 +114,14 @@ def main():
                    str(root / "authored-pcm.floatle")]
         log = (root / "aplay.log").open("xb")
         playback.owner.save(root / "run-started.json", {"time": time.time(), "direct_alsa": True})
+        cancellation.check()
         child = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                                  env=dict(os.environ, ALSA_CONFIG_PATH="/usr/share/alsa/alsa.conf"))
         journal.update(owned_pid=child.pid, child_exited=False)
         started = last_progress = time.monotonic()
         last_pointer = None
         while child.poll() is None:
+            cancellation.check()
             elapsed = time.monotonic() - started
             if elapsed > DURATION + 3 or log.tell() > 65536:
                 raise RuntimeError("direct ALSA child exceeded its time or log bound")
@@ -164,6 +182,7 @@ def main():
             playback.owner.save(root / "comparison.json", comparison)
             journal["comparison"] = {k: v for k, v in comparison.items() if k != "after"}
         playback.owner.save(root / "journal.json", journal)
+        signal.signal(signal.SIGTERM, previous_signal)
     print(json.dumps(journal))
     return 0 if (journal["error"] is None and journal["child_exited"] and all(
         journal.get("comparison", {}).get(k) for k in

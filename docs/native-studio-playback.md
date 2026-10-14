@@ -22,6 +22,50 @@ recovery before a new justified hardware attempt. Do not repeat the failed
 controller/rate experiments or restart the initial audit. Keep ordinary native
 physical apply disabled and distinguish VM audio failure from Linux feasibility.
 
+## Aggregate completion observer and current access blocker
+
+`tests_native/studio_feedback_stats.py` prepares identity-pinned graph/USB/settings
+baselines and generates aggregate bpftrace probes for `snd_complete_urb` and
+`snd_usb_handle_sync_urb`. The filter matches the selected bus/device, 33AE:4003,
+and audio endpoints OUT `0x02` / IN `0x82`. It reads only completion and bounded
+packet status/length metadata; no transfer/setup buffer is read, no raw pointer
+or per-event record is exported. Cancelled URBs contribute only to completion
+counts, since their old packet fields are not useful feedback observations.
+Maps group relative second, endpoint and these status buckets:
+0 success, 1 EXDEV, 2 EPROTO, 3 EOVERFLOW, 4 ETIMEDOUT, 5 cancellation/removal,
+6 other status. Unsupported packet counts above 64 and lengths above 416 stay
+explicitly unclassified. Successful lengths are summed, not payloads copied.
+
+Preparation is inert by default; execution requires an explicit status/silence
+flag. The first administrator operation is an audio-free `--dry-run` attachment
+check. bpftrace 0.25's
+[CLI contract](https://bpftrace.org/docs/release_025/cli) covers this check;
+its [versioned implementation](https://raw.githubusercontent.com/bpftrace/bpftrace/v0.25.0/src/bpftrace.cpp)
+starts a `-c` child after probe attachment. The subsequent audio child uses
+`setpriv` and a clean normal-user environment to run the existing finite guarded
+ALSA diagnostic. `BEGIN` is used only for relative time, never as readiness proof.
+The existing collector child is retained, time/output are bounded, and SIGTERM
+now marks ALSA cancellation so its owned-child cleanup remains reachable.
+No ordinary native executor apply is enabled.
+
+The actual VM has the tools, both function symbols and module/kernel BTF.
+Its normal SSH identity has zero capabilities, no passwordless sudo, disabled
+unprivileged BPF and administrator-only tracefs. Unprivileged compilation fails
+at event/function discovery, including a metadata-only symbol-list attempt.
+The actual noninteractive attachment gate refuses before audio, with exact guest
+and Windows baseline comparisons. This is failure-path validation, not compiler,
+verifier, attachment, complete aggregate coverage or new audio acceptance.
+All 43 focused Python checks pass on Linux, including real SIGTERM cleanup
+signals; exact code source is `beacn-link-physical-playback-20261014T144527Z/source`.
+Gate summary SHA256:
+`49eb91e43e0ed54ac41371575ec6d58c88c92e01eb7749c0afba4f355479b6a5`.
+Private staged launcher `beacn-feedback-ready-20261014T144550Z/run.py` is byte-verified
+and validates its source manifest before execution. Run it as the normal Ubuntu
+user; its sudo prompt stays in that terminal. An administrator access method is
+needed, rather than new test authorization. Preserve all output and compare the
+fresh private host baseline after execution. Payload recording, driver/policy
+changes, another controller/rate trial or UI watching are not part of this test.
+
 ## Latest VM-only request-submission diagnostic
 
 The shared `studio_playback.audio_activation` owner now records bounded cached

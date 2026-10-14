@@ -22,6 +22,52 @@ mouse automation, driver/firmware changes, traffic/audio capture or REA executio
 is authorized by this clarification. Existing session execution authority and
 settings-preservation requirements still apply.
 
+## Aggregate completion observer prepared; administrator access needed (2026-10-14)
+
+`tests_native/studio_feedback_stats.py` generates selected-device-only aggregate
+kernel observations for Studio OUT `0x02` / implicit-feedback IN `0x82`. It reads
+completion status, bounded per-packet status/length fields and counts sync-handler
+calls. It never accesses transfer/setup buffers or emits per-event rows. Counts
+are grouped by relative second and endpoint; packets beyond the 64-entry bound,
+unexpected lengths and other errors remain explicitly unclassified. Cancelled
+completions are counted but their stale packet fields are excluded. These are
+transport/driver metadata, not audio/USB payload capture or delivery acceptance.
+
+Normal preparation is metadata only. Authorized execution first requires a
+successful `bpftrace --dry-run` compile/load/attach check with no audio child.
+Then bpftrace starts the existing guarded finite ALSA silence runner only after
+its probes attach, using `setpriv` to return audio execution to the desktop owner.
+The collector has a 30-second ceiling and retained-process time/output guards.
+ALSA now handles SIGTERM as a cancellation request, leaving owned child cleanup
+reachable; a Linux test verifies two actual signals including one during cleanup.
+Root-child outcome/aggregate coverage never become verified merely from exit 0.
+
+The VM has bpftrace 0.25.0, bpftool, kernel/module BTF and both target symbols.
+The existing SSH account has no effective capabilities or passwordless sudo;
+unprivileged BPF is disabled and tracefs is administrator-only. Unprivileged
+compilation stops at function/event discovery, before bytecode validation.
+The noninteractive attachment gate was exercised: it refused before any audio
+child, and full guest settings/routes/file/binding plus Windows audio/registry
+comparisons passed exactly. Gate summary SHA256:
+`49eb91e43e0ed54ac41371575ec6d58c88c92e01eb7749c0afba4f355479b6a5`.
+No new physical playback, live probe attachment or kernel compiler success is
+claimed for this batch. No sudoers/capability/SSH/driver changes were made.
+
+All 43 focused Linux checks pass on exact code source
+`beacn-link-physical-playback-20261014T144527Z/source`; unchanged Rust inputs reuse
+the prior verified CLI with provenance. Guest free disk remains about 18.1 GB;
+no installation or heavy build occurred. A single normal-user Ubuntu terminal
+launcher has been staged and byte-verified, with a fresh private Windows baseline.
+Private launcher label: `beacn-feedback-ready-20261014T144550Z/run.py`;
+SHA256 `19f3ba63c2132710019d70f0282b5d2cc4d0c44dcc5070bc8d9c0cccf677e9ed`.
+It checks the exact prepared source hashes, prompts for sudo in Ubuntu only,
+performs the attachment gate and runs the bounded counter/silence diagnostic if
+that gate passes. Next obtain administrator execution via that owner-terminal
+launcher or an existing authorized administrator path. The access method is
+missing; owner authorization for the bounded test already exists. Never request
+a password in chat or broaden permissions. After execution, use strict SSH to
+collect/hash private results and compare the retained fresh host baseline.
+
 ## Latest VM-only submission/clock diagnostic (2026-10-14)
 
 The existing physical playback activation owner now records the bounded cached
