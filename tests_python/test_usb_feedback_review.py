@@ -15,6 +15,11 @@ def output(maps):
 
 
 class FeedbackReviewTests(unittest.TestCase):
+    def test_current_eight_packet_bound_is_enforced_without_reinterpreting_legacy_evidence(self):
+        raw = output({"@completions": {"0,130,0": 1}, "@packets": {"0,130,3": 9}})
+        feedback.review(raw)  # Legacy records had an explicit 64-packet bound.
+        with self.assertRaises(ValueError):feedback.review(raw, max_packets=8)
+
     def test_urb_success_does_not_hide_frame_overflow_or_empty_feedback(self):
         raw = output({"@completions": {"0,130,0": 2, "0,130,5": 1},
                       "@packets": {"0,130,3": 10, "0,130,0": 6},

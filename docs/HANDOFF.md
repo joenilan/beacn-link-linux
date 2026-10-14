@@ -22,7 +22,46 @@ mouse automation, driver/firmware changes, traffic/audio capture or REA executio
 is authorized by this clarification. Existing session execution authority and
 settings-preservation requirements still apply.
 
-## Live feedback error checkpoint and next clock/geometry test (2026-10-14)
+## Clock/geometry collector load failure and corrected preflight (2026-10-14)
+
+The owner ran `beacn-feedback-ready-20261014T152029Z/run.py`. Its audio-free
+attachment check exited 0, but the actual collector exited 255 before any audio
+marker or playback journal. Retained stderr reports BPF program-load error -12
+(ENOMEM) for the snd_complete_urb probe. This is an observer-load failure, not a
+new physical playback outcome. Immediate/fresh guest comparisons and Windows
+audio/registry comparisons pass exactly; no aplay/bpftrace process remains.
+Ten private artifacts were copied/hashed. Summary SHA256:
+`8ce2438793f3d185da558a9954049acf6dec8a97e86895ad89a2339daae604b9`.
+
+The preflight omitted the actual run's `-k` helper-warning instrumentation and
+`-c` child context. It therefore did not validate the same load configuration.
+The precise allocation/verifier/JIT cause remains unknown without verbose logs;
+do not assert that the VM exhausted all RAM or that the device failed. Both
+phases now use one command builder, differing only by `--dry-run`. The versioned
+bpftrace implementation returns from dry-run before running a non-USDT child;
+these probes contain no USDT. One failed preflight may collect a verbose,
+audio-free load diagnostic, then stops; it never retries audio or disables warnings.
+
+The packet guard/unrolled body is narrowed from 64 to eight, matching every
+observed callback in the first live run and the upstream capture/implicit-feedback
+one-millisecond cap at this endpoint's 125-us interval. Larger counts become
+explicitly unsupported, rather than silently truncated. This reduces static
+unrolled work; successful kernel loading/memory benefit remains unverified.
+The decoder checks the eight-packet bound for new runs while preserving legacy
+64-bound evidence. Nonzero collector exits now populate `error`; a launch marker
+without a final journal leaves the audio outcome unknown, not false success.
+
+All 51 focused Linux cases pass on exact code source
+`beacn-link-physical-playback-20261014T153912Z/source`; new regression cases cover
+matched preflight/runtime arguments, failed-exit reporting and packet bounds.
+Unchanged Rust inputs reuse the verified CLI. No heavy build or installation.
+Private next launcher: `beacn-feedback-ready-20261014T153914Z/run.py`, byte-verified,
+with a fresh Windows baseline. The same bounded clock/request-geometry check is
+pending owner-terminal execution; keep Studio attached. Collect/hash outputs and
+compare guest/host baselines afterward. Do not claim the revised observer loads
+or that physical audio works before that evidence exists.
+
+## Live feedback error checkpoint and clock/geometry preparation (2026-10-14)
 
 The owner ran the prepared Ubuntu terminal launcher. Compilation/load/attachment
 passed; five probes attached, the collector exited 0 and the normal-user ALSA

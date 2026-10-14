@@ -19,7 +19,9 @@ def unique(pairs):
     return result
 
 
-def review(raw):
+def review(raw, *, max_packets=64):
+    if type(max_packets) is not int or max_packets not in (8, 64):
+        raise ValueError("unknown observation packet bound")
     if len(raw) > MAX_BYTES:
         raise ValueError("aggregate output exceeds bound")
     text = raw.decode("utf-8", errors="strict")
@@ -94,7 +96,7 @@ def review(raw):
         successful_bytes = sum(n for key, n in maps.get("@successful_bytes", {}).items() if key[1] == ep)
         if empty > packets[0] or successful_bytes > (packets[0] - empty) * 416:
             raise ValueError("inconsistent successful packet totals")
-        if sum(packets) > (sum(completions) - completions[5]) * 64:
+        if sum(packets) > (sum(completions) - completions[5]) * max_packets:
             raise ValueError("packet totals exceed bounded callbacks")
         if "@requested_lengths" in maps or "@invalid_requests" in maps:
             requested = sum(n for k, n in maps.get("@requested_lengths", {}).items() if k[0] == ep)

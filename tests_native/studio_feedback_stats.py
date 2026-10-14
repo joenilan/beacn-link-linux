@@ -6,7 +6,6 @@ import json
 import os
 from pathlib import Path
 import shlex
-import signal
 import subprocess
 import sys
 import time
@@ -14,7 +13,7 @@ import time
 import studio_playback as playback
 import usb_feedback_review
 
-MAX_PACKETS = 64
+MAX_PACKETS = 8
 WINDOW_SECONDS = 30
 
 
@@ -45,11 +44,11 @@ kprobe:snd_usb_audio:snd_complete_urb
             $packets = (uint64)$u->number_of_packets;
             if ($bucket == 5) {
                 // The ALSA callback returns before considering cancelled packets.
-            } else if ($packets < 1 || $packets > 64) {
+            } else if ($packets < 1 || $packets > PACKET_LIMIT) {
                 @unsupported_urbs[$second, $ep] = count();
             } else {
                 $i = 0;
-                unroll(64) {
+                unroll(PACKET_LIMIT) {
                     if ($i < $packets) {
                         $ps = $u->iso_frame_desc[$i].status;
                         $length = $u->iso_frame_desc[$i].actual_length;
@@ -112,7 +111,22 @@ kretprobe:snd_usb_audio:get_sample_rate_v2v3
 }
 interval:s:30 { @window_limit = count(); exit(); }
 END { clear(@start); clear(@clock_pending); }
-'''.replace("SELECTED", selected)
+'''.replace("SELECTED", selected).replace("PACKET_LIMIT", str(MAX_PACKETS))
+
+
+def tracer_command(program, audio_child, *, attachment_check=False):
+    # Check the identical load options and -c context, including helper warnings.
+    command = ["/usr/bin/bpftrace", "-k", "-f", "json", "-B", "line", "-e", program, "-c", audio_child]
+    if attachment_check:
+        command.append("--dry-run")
+    return command
+
+
+def observer_outcome(exit_code, marker, journal):
+    started = "owned_pid" in journal if journal is not None else (None if marker else False)
+    return {"probe_exit": exit_code, "audio_started": started,
+            "audio_launch_marker_present": marker, "playback_journal_present": journal is not None,
+            "error": None if exit_code in (None, 0) else "aggregate observer exited %d; review retained diagnostics" % exit_code}
 
 
 def child_command(uid, gid, home, source, selected, evidence):
@@ -180,22 +194,30 @@ def main():
             summary["prepared_only"] = True
         elif playback.binding(selected) != binding or playback.owner.snapshot() != before:
             raise RuntimeError("baseline changed during observer preparation")
+        audio_child = child_command(os.getuid(), os.getgid(), Path.home(), playback.REPO, selected, root / "playback")
+        privilege = ["/usr/bin/sudo"] + ([] if args.interactive_sudo else ["-n"])
         command = ["/usr/bin/bpftrace", "-d", "codegen", "-e", program] if args.compile_only else (
-            ["/usr/bin/sudo"] + ([] if args.interactive_sudo else ["-n"]) +
-            ["/usr/bin/bpftrace", "-k", "-f", "json", "-B", "line", "-e", program, "-c",
-             child_command(os.getuid(), os.getgid(), Path.home(), playback.REPO, selected, root / "playback")])
+            privilege + tracer_command(program, audio_child))
         env = {"PATH": "/usr/bin:/bin", "HOME": str(Path.home()), "LANG": "C"}
         if summary.get("prepared_only"):
             command = None
         elif not args.compile_only:
-            check_command = ["/usr/bin/sudo"] + ([] if args.interactive_sudo else ["-n"]) + [
-                "/usr/bin/bpftrace", "--dry-run", "-e", program]
+            check_command = privilege + tracer_command(program, audio_child, attachment_check=True)
+            playback.owner.save(root / "execution-options.json", {"packet_bound": MAX_PACKETS,
+                                 "matched_preflight_runtime_flags": True, "preflight_runs_audio": False})
             with (root / "attach-check.stdout").open("xb") as out, (root / "attach-check.stderr").open("xb") as err:
                 child = subprocess.Popen(check_command, stdin=None if args.interactive_sudo else subprocess.DEVNULL,
                                          stdout=out, stderr=err, env=env)
                 child.wait(timeout=60 if args.interactive_sudo else 20)
             summary["attach_check_exit"] = child.returncode
             if child.returncode != 0:
+                # One diagnostic-only load, never an audio/I/O retry. Keep full verifier evidence.
+                diagnostic = check_command + ["-v"]
+                with (root / "attach-diagnostic.stdout").open("xb") as out, (root / "attach-diagnostic.stderr").open("xb") as err:
+                    child = subprocess.Popen(diagnostic, stdin=None if args.interactive_sudo else subprocess.DEVNULL,
+                                             stdout=out, stderr=err, env=env)
+                    child.wait(timeout=20)
+                summary["attach_diagnostic_exit"] = child.returncode
                 raise RuntimeError("probe attachment check failed; no audio child was launched")
             summary["probe_attach_check_passed"] = True
             if playback.binding(selected) != binding or playback.owner.snapshot() != before:
@@ -215,23 +237,20 @@ def main():
             for handle in (stdout, stderr):
                 handle.flush()
                 os.fsync(handle.fileno())
-        summary.update(probe_exit=child.returncode if child is not None else None, compile_only=args.compile_only,
+        summary.update(compile_only=args.compile_only,
                        stderr_present=(root / "observer.stderr").stat().st_size != 0)
         journal = root / "playback/journal.json"
         marker = (root / "playback/run-started.json").exists()
-        summary["audio_launch_marker_present"] = marker
-        summary["audio_started"] = None if marker else False
-        summary["playback_journal_present"] = journal.is_file()
+        result = json.loads(journal.read_text()) if journal.is_file() else None
+        summary.update(observer_outcome(child.returncode if child is not None else None, marker, result))
         if journal.is_file():
-            result = json.loads(journal.read_text())
-            summary["audio_started"] = "owned_pid" in result
             playback.owner.save(root / "playback-result.json", result)
         # A successful compiler/exit code alone never establishes complete probe coverage.
         summary["aggregate_review_required"] = not args.compile_only and child is not None and child.returncode == 0
         if summary["aggregate_review_required"]:
             with (root / "observer.stdout").open("rb") as handle:
                 raw = handle.read(usb_feedback_review.MAX_BYTES + 1)
-            reviewed = usb_feedback_review.review(raw)
+            reviewed = usb_feedback_review.review(raw, max_packets=MAX_PACKETS)
             playback.owner.save(root / "aggregate-review.json", reviewed)
             summary["aggregate_review_required"] = (reviewed["needs_review"] or summary["stderr_present"] or
                                                      not reviewed["has_request_geometry"] or

@@ -22,7 +22,48 @@ recovery before a new justified hardware attempt. Do not repeat the failed
 controller/rate experiments or restart the initial audit. Keep ordinary native
 physical apply disabled and distinguish VM audio failure from Linux feasibility.
 
-## Live aggregate feedback evidence and next clock/geometry diagnostic
+## Failed clock/geometry load and corrected checker
+
+The owner-terminal clock/geometry run reached an attachment-check exit 0, then
+the actual collector exited 255 before audio. No launch marker or playback
+journal exists. Its stderr reports -12 (ENOMEM) while loading the
+snd_complete_urb BPF program. All immediate/fresh guest settings/file/binding
+comparisons and Windows audio/registry comparisons pass exactly. No owned audio
+or collector process remains. Ten private artifacts were copied/hash-verified;
+summary SHA256:
+`8ce2438793f3d185da558a9954049acf6dec8a97e86895ad89a2339daae604b9`.
+No clock or requested-size observations were obtained in this run.
+
+The checker had omitted `-k` and the `-c` child context used by the actual run.
+The [bpftrace CLI](https://bpftrace.org/docs/release_025/cli) describes `-k` as
+runtime probe-read/map-helper warning instrumentation. One shared command builder
+now supplies both phases' options; only `--dry-run` differs. The
+[versioned implementation](https://raw.githubusercontent.com/bpftrace/bpftrace/v0.25.0/src/bpftrace.cpp)
+returns on dry-run before executing a non-USDT child. These scripts use kernel
+probes only. A failed checker may collect one verbose, audio-free load diagnostic
+before stopping; it does not retry audio, suppress warnings or change limits.
+The exact allocation/verifier/JIT cause of ENOMEM remains unknown.
+
+The observer now handles at most eight packets per callback. All 1,437 measured
+noncancelled callbacks in the earlier run account for eight packets each. The
+[upstream endpoint setup](https://raw.githubusercontent.com/torvalds/linux/v7.0/sound/usb/endpoint.c)
+also caps capture/implicit-feedback URBs to one millisecond: eight packets at the
+selected endpoint's 125-us interval. Larger counts remain unsupported. Narrowing
+the 64-copy unrolled body reduces static work, but runtime load/memory improvement
+has not yet been demonstrated. The decoder enforces eight for new runs and
+retains the historical 64-bound input contract for old evidence.
+
+Nonzero collector exit now reports a non-null error. A partial launch marker
+without a journal stays unknown. Collector completion remains independent of
+playback success. All 51 focused Linux cases pass on exact source
+`beacn-link-physical-playback-20261014T153912Z/source`, including the flag/context,
+exit-status and packet-limit regressions. The unchanged Rust CLI is reused with
+provenance. The corrected owner-terminal launcher is staged/byte-verified at
+`beacn-feedback-ready-20261014T153914Z/run.py`; a fresh Windows baseline is retained.
+Kernel load and the clock/geometry measurements remain pending. Studio stays
+attached, with ordinary native physical apply disabled.
+
+## Live aggregate feedback evidence and clock/geometry preparation
 
 The owner-terminal run compiled and attached five probes. Collection exited 0,
 but the normal-user silent ALSA child still stalled at pointer zero for two

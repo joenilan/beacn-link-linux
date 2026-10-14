@@ -21,11 +21,31 @@ class FeedbackStatsTests(unittest.TestCase):
             self.assertNotIn(forbidden, program)
         self.assertIn("number_of_packets", program)
         self.assertIn("actual_length", program)
-        self.assertIn("unroll(64)", program)
+        self.assertIn("unroll(8)", program)
+        self.assertIn("$packets > 8", program)
         self.assertIn("interval:s:30", program)
         self.assertIn("0x33ae", program)
         self.assertIn("0x4003", program)
         self.assertIn("$ep == 2 || $ep == 130", program)
+
+    def test_attachment_check_uses_exact_runtime_load_flags_and_child_context(self):
+        program = stats.probe_program(1, 2)
+        child = stats.child_command(1000, 1000, "/tmp/home", "/tmp/source", "/tmp/device", "/tmp/evidence")
+        run = stats.tracer_command(program, child)
+        check = stats.tracer_command(program, child, attachment_check=True)
+        self.assertEqual(check[:-1], run)
+        self.assertEqual(check[-1], "--dry-run")
+        self.assertIn("-k", check)
+        self.assertEqual(check[check.index("-c") + 1], child)
+
+    def test_failed_collector_exit_is_error_and_partial_audio_outcome_stays_unknown(self):
+        failed = stats.observer_outcome(255, False, None)
+        self.assertIsNotNone(failed["error"])
+        self.assertFalse(failed["audio_started"])
+        self.assertIsNone(stats.observer_outcome(255, True, None)["audio_started"])
+        completed = stats.observer_outcome(0, True, {"owned_pid": 123, "error": "clock stalled"})
+        self.assertIsNone(completed["error"])  # Collector success is independent of playback success.
+        self.assertTrue(completed["audio_started"])
 
     def test_audio_child_drops_root_and_preserves_literal_paths(self):
         with self.assertRaises(ValueError):
