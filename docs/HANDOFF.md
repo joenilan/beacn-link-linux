@@ -22,6 +22,63 @@ mouse automation, driver/firmware changes, traffic/audio capture or REA executio
 is authorized by this clarification. Existing session execution authority and
 settings-preservation requirements still apply.
 
+## Matched-clock input progressed; USB handoff observation is next (2026-10-14)
+
+The owner ran `beacn-feedback-ready-20261014T164723Z/run.py`. Seven probes loaded
+without warnings/stderr and exited 0. Device clock and both endpoint configurations
+were **96000 Hz**, current/maximum packet sizes **416 bytes**. Three IN completions
+contained 24 successful packets: six empty and 18 nonempty, totaling **7,232 bytes**.
+All requested lengths were 416 bytes; no packet errors were observed. Three sync
+callbacks occurred, all in the first relative second, and no OUT completion was
+observed. Unlike the 48-kHz run, this startup received usable implicit-feedback
+lengths; the pipeline then stopped. Do not claim sustained transport or audio.
+
+ALSA pointer stayed 298 -> 298 across ten samples. The owned aplay process 11432
+remained in D / usb_kill_urb after termination. Twenty-nine result files were
+copied/hashed. Summary SHA256:
+`637baf5ed39d8cbd6864d94f0fbdbba5b05229f378fbd1f19146edb241f8fb21`;
+playback journal:
+`82c6231978195faf0f1eccfce426199e3108e877c7a141add0a9e11ba9df6ee7`.
+Windows endpoint settings and registry match the immediate attempt baseline;
+one session list differs and is retained privately.
+
+The owner disconnected/reconnected Studio. Fresh recovery verifies no aplay/
+bpftrace process, both PCMs closed, released interfaces, matching descriptor/
+attributes and responsive desktop services. Logical nodes/ports/links/metadata/
+device settings and all persistent-state file bytes match. USB generation changed;
+identity equality is not claimed. Thirty recovered result files were copied/hashed.
+Recovery SHA256:
+`d1d2a74b28fc5a8b411dffba1b55a479af66b96895cb6f523d1bdfea615eee0b`.
+Windows endpoint defaults/volumes/mutes/formats/states match after reconnect.
+Full host audio differs and 17 machine-audio registry differences remain
+unclassified and preserved; no blanket restoration occurred.
+
+The next optional `--observe-usb-handoff` mode adds five selected-device ISO
+entry probes: usb_submit_urb, usb_hcd_submit_urb, ehci_urb_enqueue,
+usb_hcd_giveback_urb and usb_kill_urb. It distinguishes reaching submission,
+controller enqueue, giveback and cancellation from ALSA completion. **Entry is
+not a successful return or acceptance receipt.** The requested submission geometry
+is a bounded aggregate of packet count, buffer byte count and interval; no buffer
+contents, per-event rows or addresses are read/exported. usb_submit_urb has not
+initialized urb->ep at entry, so endpoint/type filtering uses its initialized pipe.
+The mode requires the selected EHCI controller. All five actual guest symbols are
+present in vmlinux. Kernel compile/load remains pending the matched preflight gate.
+
+The decoder keeps legacy five/seven-probe evidence separate from twelve-probe
+handoff evidence, checks bounded dimensions and per-endpoint geometry accounting,
+and reports invalid/missing observations. Full raw baseline objects are now saved
+before execution to support logical comparison after device generation changes.
+The 57 focused Linux checks pass on exact source
+`beacn-link-physical-playback-20261014T170230Z/source`; unchanged Rust inputs reuse
+the validated CLI. Fresh guest/Windows baselines and the byte-verified launcher
+`beacn-feedback-ready-20261014T170306Z/run.py` are staged. Launcher SHA256:
+`bc06f5bff9073c8beaab0ed21dd3b8776a7bbf3dcadaf019fe013a88dc5296f2`.
+Its baseline expires after ten minutes; source/settings/generation drift refuses
+execution. No root/audio execution has started. Next run one 96-kHz handoff
+observer through the owner's terminal sudo context, then collect and compare. Keep
+ordinary physical apply off and Actions disabled. Earlier staged/pending notes
+below are historical; the matched-rate run and its recovery are complete.
+
 ## Matched-rate recovery verified; packet check staged (2026-10-14)
 
 After the owner's VMware disconnect/reconnect, read-only recovery confirms no

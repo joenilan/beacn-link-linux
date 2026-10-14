@@ -7,7 +7,10 @@ SHAPES = {"@completions": 3, "@packets": 3, "@empty_packets": 2,
           "@successful_bytes": 2, "@unsupported_urbs": 2, "@invalid_lengths": 2,
           "@sync_callbacks": 1, "@requested_lengths": 3, "@invalid_requests": 1,
           "@sync_configuration": 6, "@invalid_configuration": 0, "@window_limit": 0,
-          "@device_clock_rates": 1, "@clock_unknown": 0}
+          "@device_clock_rates": 1, "@clock_unknown": 0,
+          "@handoff_stages": 3, "@submission_geometry": 4, "@invalid_submission_geometry": 1}
+HANDOFF_STAGES = ("usb_submit_entry", "usb_hcd_submit_entry", "ehci_enqueue_entry",
+                  "usb_hcd_giveback_entry", "usb_kill_entry")
 
 
 def unique(pairs):
@@ -41,7 +44,7 @@ def review(raw, *, max_packets=64):
             continue  # The known audio child's own final JSON journal.
         if kind == "attached_probes":
             count = value.get("data", {}).get("probes")
-            if attached is not None or type(count) is not int or count not in (5, 7):
+            if attached is not None or type(count) is not int or count not in (5, 7, 12):
                 raise ValueError("unexpected probe attachment record")
             attached = count
             continue
@@ -67,7 +70,15 @@ def review(raw, *, max_packets=64):
                     raise ValueError("invalid aggregate value")
                 if dimensions in parsed:
                     raise ValueError("reused aggregate dimensions")
-                if name == "@sync_configuration":
+                if name == "@handoff_stages":
+                    if dimensions[0] > 90 or dimensions[1] not in range(1, 6) or dimensions[2] not in (2, 130):
+                        raise ValueError("unexpected USB handoff stage/endpoint/time")
+                elif name == "@submission_geometry":
+                    ep, packets, length, interval = dimensions
+                    if (ep not in (2, 130) or not 1 <= packets <= 64 or not 0 < length <= packets * 416
+                            or length % 32 or not 1 <= interval <= 8192 or interval & (interval - 1)):
+                        raise ValueError("unexpected submission geometry")
+                elif name == "@sync_configuration":
                     for rate, packet, maximum in (dimensions[:3], dimensions[3:]):
                         if rate not in (48000, 96000) or not 0 < packet <= 416 or packet % 32 or maximum != 416:
                             raise ValueError("unexpected endpoint configuration")
@@ -77,7 +88,7 @@ def review(raw, *, max_packets=64):
                 elif name == "@sync_callbacks":
                     if dimensions[0] > 90:
                         raise ValueError("observation time exceeds bound")
-                elif name in ("@requested_lengths", "@invalid_requests"):
+                elif name in ("@requested_lengths", "@invalid_requests", "@invalid_submission_geometry"):
                     if dimensions[0] not in (2, 130):
                         raise ValueError("unexpected endpoint")
                     if name == "@requested_lengths" and (dimensions[1] > 6 or not 0 < dimensions[2] <= 416 or dimensions[2] % 32):
@@ -86,8 +97,11 @@ def review(raw, *, max_packets=64):
                     raise ValueError("unexpected endpoint/time/status")
                 parsed[dimensions] = count
             maps[name] = parsed
-    if attached not in (5, 7):
+    if attached not in (5, 7, 12):
         raise ValueError("missing attachment record")
+    if attached != 12 and any(name in maps for name in
+                             ("@handoff_stages", "@submission_geometry", "@invalid_submission_geometry")):
+        raise ValueError("USB handoff observations lack matching probe coverage")
     endpoints = {}
     for ep in (2, 130):
         completions = [sum(n for key, n in maps.get("@completions", {}).items() if key[1:] == (ep, bucket)) for bucket in range(7)]
@@ -106,21 +120,36 @@ def review(raw, *, max_packets=64):
         endpoints[str(ep)] = {"completion_buckets": completions, "packet_buckets": packets,
                               "empty_successful_packets": empty, "successful_bytes": successful_bytes}
     flags = {name: sum(maps.get(name, {}).values()) for name in
-             ("@unsupported_urbs", "@invalid_lengths", "@invalid_requests", "@invalid_configuration", "@window_limit", "@clock_unknown")}
+             ("@unsupported_urbs", "@invalid_lengths", "@invalid_requests", "@invalid_configuration", "@window_limit", "@clock_unknown",
+              "@invalid_submission_geometry")}
     sync = sum(maps.get("@sync_callbacks", {}).values())
     if sync > sum(endpoints["130"]["completion_buckets"]) - endpoints["130"]["completion_buckets"][5]:
         raise ValueError("sync callbacks exceed noncancelled incoming completions")
     if "@sync_configuration" in maps or "@invalid_configuration" in maps:
         if sum(maps.get("@sync_configuration", {}).values()) + flags["@invalid_configuration"] != sync:
             raise ValueError("configuration samples do not account for sync callbacks")
+    if attached == 12:
+        for ep in (2, 130):
+            submissions = sum(n for k, n in maps.get("@handoff_stages", {}).items() if k[1:] == (1, ep))
+            geometry = sum(n for k, n in maps.get("@submission_geometry", {}).items() if k[0] == ep)
+            invalid = maps.get("@invalid_submission_geometry", {}).get((ep,), 0)
+            if geometry + invalid != submissions:
+                raise ValueError("submission geometry does not account for selected-endpoint submit entries")
     return {"attached_probes": attached, "compiler_warnings": warnings, "flags": flags,
             "endpoints": endpoints, "sync_callbacks": sync,
             "has_request_geometry": "@requested_lengths" in maps,
             "has_sync_configuration": "@sync_configuration" in maps,
+            "has_usb_handoff": attached == 12 and bool(maps.get("@handoff_stages")),
+            "usb_handoff_entries": {str(ep): {name: sum(n for k, n in maps.get("@handoff_stages", {}).items()
+                                                        if k[1:] == (stage, ep))
+                                             for stage, name in enumerate(HANDOFF_STAGES, 1)} for ep in (2, 130)},
+            "submission_geometry": [{"endpoint": k[0], "packets": k[1], "buffer_bytes": k[2],
+                                     "interval": k[3], "count": n}
+                                    for k, n in sorted(maps.get("@submission_geometry", {}).items())],
             "device_clock_rates": [{"rate": k[0], "count": n} for k, n in sorted(maps.get("@device_clock_rates", {}).items())],
             "requested_lengths": [{"endpoint": k[0], "status_bucket": k[1], "requested_bytes": k[2], "count": n}
                                   for k, n in sorted(maps.get("@requested_lengths", {}).items())],
             "sync_configurations": [{"source_rate": k[0], "source_packet": k[1], "source_maximum": k[2],
                                      "sink_rate": k[3], "sink_packet": k[4], "sink_maximum": k[5], "count": n}
                                     for k, n in sorted(maps.get("@sync_configuration", {}).items())],
-            "needs_review": warnings > 0 or any(flags.values())}
+            "needs_review": warnings > 0 or any(flags.values()) or (attached == 12 and not maps.get("@handoff_stages"))}

@@ -38,6 +38,22 @@ class FeedbackStatsTests(unittest.TestCase):
         self.assertIn("-k", check)
         self.assertEqual(check[check.index("-c") + 1], child)
 
+    def test_optional_handoff_probes_filter_initialized_pipe_without_payload_reads(self):
+        normal = stats.probe_program(1, 2)
+        program = stats.probe_program(1, 2, observe_usb_handoff=True)
+        extra = program[len(normal):]
+        self.assertNotIn("@handoff_stages", normal)
+        self.assertEqual(extra.count("kprobe:"), 5)
+        self.assertNotIn("$u->ep", extra)  # Not yet initialized at usb_submit_urb entry.
+        self.assertIn("($u->pipe >> 15) & 15", extra)
+        self.assertIn("($u->pipe >> 30) == 0", extra)
+        self.assertIn("kprobe:ehci_urb_enqueue", extra)
+        self.assertIn("(struct urb *)arg1", extra)
+        for forbidden in ("transfer_buffer;", "transfer_buffer[", "setup_packet", "buf(", "str(", "printf(", "system(", "signal("):
+            self.assertNotIn(forbidden, extra)
+        self.assertIn("$packets <= 64", extra)
+        self.assertEqual(program.count("unroll(8)"), 1)
+
     def test_failed_collector_exit_is_error_and_partial_audio_outcome_stays_unknown(self):
         failed = stats.observer_outcome(255, False, None)
         self.assertIsNotNone(failed["error"])

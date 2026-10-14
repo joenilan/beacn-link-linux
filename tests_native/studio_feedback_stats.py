@@ -15,15 +15,17 @@ import usb_feedback_review
 
 MAX_PACKETS = 8
 WINDOW_SECONDS = 30
+HANDOFF_PROBES = (("usb_submit_urb", 0), ("usb_hcd_submit_urb", 0),
+                  ("ehci_urb_enqueue", 1), ("usb_hcd_giveback_urb", 1), ("usb_kill_urb", 0))
 
 
-def probe_program(bus, device):
+def probe_program(bus, device, *, observe_usb_handoff=False):
     if type(bus) is not int or not 1 <= bus <= 999 or type(device) is not int or not 1 <= device <= 127:
         raise ValueError("invalid selected USB bus/device metadata")
     selected = ("$u->dev->bus->busnum == %d && $u->dev->devnum == %d && "
                 "$u->dev->descriptor.idVendor == 0x33ae && "
                 "$u->dev->descriptor.idProduct == 0x4003" % (bus, device))
-    return r'''config = { max_map_keys = 4096; }
+    program = r'''config = { max_map_keys = 4096; }
 BEGIN { @start = nsecs; }
 kprobe:snd_usb_audio:snd_complete_urb
 {
@@ -112,6 +114,36 @@ kretprobe:snd_usb_audio:get_sample_rate_v2v3
 interval:s:30 { @window_limit = count(); exit(); }
 END { clear(@start); clear(@clock_pending); }
 '''.replace("SELECTED", selected).replace("PACKET_LIMIT", str(MAX_PACKETS))
+    if observe_usb_handoff:
+        for stage, (name, argument) in enumerate(HANDOFF_PROBES, 1):
+            # usb_submit_urb populates urb->ep after entry. Decode the already
+            # initialized pipe instead; never dereference that endpoint here.
+            block = r'''
+kprobe:PROBE_NAME
+{
+    $u = (struct urb *)argARGUMENT;
+    if ($u != 0 && SELECTED && ($u->pipe >> 30) == 0) {
+        $ep = (($u->pipe >> 15) & 15) | ($u->pipe & 128);
+        if ($ep == 2 || $ep == 130) {
+            @handoff_stages[(nsecs - @start) / 1000000000, STAGE, $ep] = count();
+            GEOMETRY
+        }
+    }
+}
+'''
+            geometry = r'''
+            $packets = (uint64)$u->number_of_packets;
+            $length = (uint64)$u->transfer_buffer_length;
+            $interval = (uint64)$u->interval;
+            if ($packets >= 1 && $packets <= 64 && $length > 0 &&
+                $length <= $packets * 416 && $length % 32 == 0 &&
+                $interval >= 1 && $interval <= 8192 && ($interval & ($interval - 1)) == 0) {
+                @submission_geometry[$ep, $packets, $length, $interval] = count();
+            } else { @invalid_submission_geometry[$ep] = count(); }
+''' if stage == 1 else ""
+            program += (block.replace("PROBE_NAME", name).replace("ARGUMENT", str(argument))
+                        .replace("SELECTED", selected).replace("STAGE", str(stage)).replace("GEOMETRY", geometry))
+    return program
 
 
 def tracer_command(program, audio_child, *, attachment_check=False):
@@ -158,6 +190,8 @@ def main():
     parser.add_argument("--compile-only", action="store_true")
     parser.add_argument("--matched-device-clock-96000", action="store_true",
                         help="observe bounded silence matching an independently measured 96000-Hz clock")
+    parser.add_argument("--observe-usb-handoff", action="store_true",
+                        help="add selected-EHCI USB submit/giveback/cancel entry counters; not acceptance receipts")
     args = parser.parse_args()
     if sys.platform != "linux" or os.getuid() == 0 or os.geteuid() != os.getuid():
         parser.error("run as the normal Linux desktop owner, never as root")
@@ -173,6 +207,7 @@ def main():
     root.mkdir(mode=0o700, parents=False, exist_ok=False)
     summary = {"audio_started": False, "aggregate_only": True, "payload_reads": False,
                "requested_rate": 96000 if args.matched_device_clock_96000 else 48000,
+               "usb_handoff_requested": args.observe_usb_handoff,
                "live_probe_validated": False, "error": None}
     child = None
     baseline = None
@@ -193,7 +228,15 @@ def main():
                 raise RuntimeError("selected PCM is already in use")
         baseline = {"snapshot": before, "binding": binding, "endpoint": pins[0]}
         playback.owner.save(root / "baseline.json", {**baseline, "endpoints": pins})
-        program = probe_program(int((selected / "busnum").read_text()), int((selected / "devnum").read_text()))
+        playback.owner.save(root / "baseline-objects.json", objects)
+        if args.observe_usb_handoff:
+            controllers = [p for p in selected.parents if (p / "class").is_file()
+                           and (p / "class").read_text().strip().startswith("0x0c03")
+                           and (p / "driver").exists()]
+            if len(controllers) != 1 or (controllers[0] / "driver").resolve().name != "ehci-pci":
+                raise RuntimeError("USB handoff observer requires the selected EHCI controller")
+        program = probe_program(int((selected / "busnum").read_text()), int((selected / "devnum").read_text()),
+                                observe_usb_handoff=args.observe_usb_handoff)
         playback.owner.save_bytes(root / "observer.bt", program.encode())
         dependencies = ("tests_native/studio_feedback_stats.py", "tests_native/studio_alsa_playback.py",
                         "tests_native/studio_playback.py", "tests_native/usb_handshake.py",
@@ -268,7 +311,8 @@ def main():
                                                      not reviewed["has_request_geometry"] or
                                                      not reviewed["has_sync_configuration"] or
                                                      not reviewed["device_clock_rates"] or
-                                                     reviewed["attached_probes"] != 7)
+                                                     reviewed["attached_probes"] != (12 if args.observe_usb_handoff else 7) or
+                                                     (args.observe_usb_handoff and not reviewed["has_usb_handoff"]))
             summary["live_probe_validated"] = (not summary["aggregate_review_required"] and
                                                 reviewed["sync_callbacks"] > 0)
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:

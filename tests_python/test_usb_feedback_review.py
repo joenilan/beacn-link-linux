@@ -64,6 +64,30 @@ class FeedbackReviewTests(unittest.TestCase):
         self.assertTrue(result["needs_review"])
         with self.assertRaises(ValueError):feedback.review(output({"@device_clock_rates": {"192000": 1}}))
 
+    def test_submit_entries_remain_separate_from_enqueue_giveback_and_completions(self):
+        raw = output({"@handoff_stages": {"0,1,2": 2, "0,2,2": 2, "0,3,2": 1, "2,5,2": 1},
+                      "@submission_geometry": {"2,8,3072,1": 2}}).replace(b'"probes": 5', b'"probes": 12')
+        result = feedback.review(raw, max_packets=8)
+        self.assertTrue(result["has_usb_handoff"])
+        counts = result["usb_handoff_entries"]["2"]
+        self.assertEqual(counts["usb_submit_entry"], 2)
+        self.assertEqual(counts["ehci_enqueue_entry"], 1)
+        self.assertEqual(counts["usb_hcd_giveback_entry"], 0)
+        self.assertEqual(sum(result["endpoints"]["2"]["completion_buckets"]), 0)
+        self.assertFalse(result["needs_review"])
+        self.assertFalse(feedback.review(output({}))["has_usb_handoff"])
+
+    def test_handoff_probe_coverage_geometry_bounds_and_endpoint_accounting(self):
+        maps = {"@handoff_stages": {"0,1,2": 1}, "@submission_geometry": {"2,8,3072,1": 1}}
+        with self.assertRaises(ValueError):feedback.review(output(maps))
+        for geometry in ("130,8,3072,1", "2,65,3072,1", "2,8,3330,1", "2,8,3072,3", "2,8,0,1"):
+            raw = output({"@handoff_stages": maps["@handoff_stages"], "@submission_geometry": {geometry: 1}})
+            with self.subTest(geometry=geometry), self.assertRaises(ValueError):
+                feedback.review(raw.replace(b'"probes": 5', b'"probes": 12'))
+        raw = output({"@handoff_stages": maps["@handoff_stages"], "@invalid_submission_geometry": {"2": 1}})
+        self.assertTrue(feedback.review(raw.replace(b'"probes": 5', b'"probes": 12'))["needs_review"])
+        self.assertTrue(feedback.review(output({}).replace(b'"probes": 5', b'"probes": 12'))["needs_review"])
+
 
 if __name__ == "__main__":
     unittest.main()

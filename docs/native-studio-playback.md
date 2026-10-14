@@ -22,6 +22,51 @@ recovery before a new justified hardware attempt. Do not repeat the failed
 controller/rate experiments or restart the initial audit. Keep ordinary native
 physical apply disabled and distinguish VM audio failure from Linux feasibility.
 
+## Matched-clock input and remaining controller-handoff gap
+
+The seven-probe 96-kHz run measured matching device/source/sink rates and
+416-byte current/maximum packet sizes. Three IN completions contained 24 successful
+packets: six empty, 18 nonempty, 7,232 successful bytes. Requested lengths were
+416 bytes; no packet errors were observed. All three sync callbacks occurred in
+the first relative second. No OUT completion was observed. This startup differs
+from the 48-kHz overflow case, but it did not sustain playback: pointer 298 -> 298,
+then the owned aplay process blocked in D / usb_kill_urb after termination.
+Summary SHA256 `637baf5ed39d8cbd6864d94f0fbdbba5b05229f378fbd1f19146edb241f8fb21`;
+journal `82c6231978195faf0f1eccfce426199e3108e877c7a141add0a9e11ba9df6ee7`.
+
+The [upstream endpoint implementation](https://raw.githubusercontent.com/torvalds/linux/v7.0/sound/usb/endpoint.c)
+queues output lengths from successful nonempty implicit-feedback input. The
+[USB core](https://raw.githubusercontent.com/torvalds/linux/v7.0/drivers/usb/core/urb.c)
+waits in usb_kill_urb until the URB use count reaches zero. These references
+motivate inspecting submission/giveback, but do not establish the Ubuntu/VMware
+root cause. Output submission, enqueue return and controller progress remain
+unmeasured; ALSA's queue pointer is not independent delivery evidence.
+
+Owner reconnect recovered the selected device. No owned audio/collector process
+remains, both PCMs are closed, all logical nodes/ports/links/metadata/device
+settings match and persistent files match byte-for-byte. Thirty recovered files
+were copied/hashed; recovery SHA256
+`d1d2a74b28fc5a8b411dffba1b55a479af66b96895cb6f523d1bdfea615eee0b`.
+Windows endpoint settings match. Full audio and 17 machine-audio registry
+differences remain preserved/unclassified after reconnect; no blanket restore.
+
+The optional `--observe-usb-handoff` adds bounded selected-device ISO entry counts
+for usb_submit_urb, usb_hcd_submit_urb, ehci_urb_enqueue, usb_hcd_giveback_urb and
+usb_kill_urb, plus requested packet-count/buffer-length/interval aggregates.
+Endpoint/type come from urb->pipe, since usb_submit_urb initializes urb->ep after
+entry. No payload or addresses are exported, and entry never means accepted
+submission. The selected controller must be EHCI. All five guest symbols exist;
+the new twelve-probe kernel load remains unverified. The same matched-flag,
+audio-free preflight gate must pass before one authorized 96-kHz silence child.
+Full baseline objects are saved before audio for post-reconnect comparison.
+The decoder validates coverage, bounds and per-endpoint geometry accounting;
+legacy five/seven-probe observations retain their original meaning. Fifty-seven
+focused Linux checks pass on exact source
+`beacn-link-physical-playback-20261014T170230Z/source`. A byte-verified launcher is
+staged at `beacn-feedback-ready-20261014T170306Z/run.py` with fresh host/guest
+baselines and ten-minute expiry. No root/audio execution has started. Ordinary
+physical apply remains off.
+
 ## Matched-rate recovery and next packet check
 
 The owner's single VMware reconnect released the blocked aplay process. Both
