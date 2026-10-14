@@ -77,6 +77,7 @@ def main():
         parser.error("evidence must be outside the source tree")
     root.mkdir(mode=0o700, parents=False, exist_ok=False)
     journal = {"audible": False, "rate": rate, "channels": CHANNELS,
+               "progress_kind": "alsa_queue_pointer", "independent_delivery_evidence": False,
                "matched_device_clock_requested": args.matched_device_clock_96000,
                "duration": DURATION, "pipewire_playback_stream": False,
                "native_executor_apply": False, "child_exited": True,
@@ -162,14 +163,14 @@ def main():
             if last_pointer is None or pointer > last_pointer:
                 last_progress = time.monotonic()
             elif pointer < last_pointer:
-                raise RuntimeError("direct ALSA hardware clock restarted")
+                raise RuntimeError("direct ALSA queue pointer restarted")
             journal["last_hw_pointer"] = pointer
             last_pointer = pointer
             if time.monotonic() - last_progress > 2:
-                raise RuntimeError("direct ALSA hardware clock stalled for two seconds")
+                raise RuntimeError("direct ALSA queue pointer stalled for two seconds")
             time.sleep(0.2)
         if child.returncode or last_pointer is None or last_pointer < rate * (DURATION - 1):
-            raise RuntimeError("direct ALSA did not complete sufficient clock-verified silence")
+            raise RuntimeError("direct ALSA did not complete sufficient queue-progress-checked silence")
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
         journal["error"] = str(error)
     finally:

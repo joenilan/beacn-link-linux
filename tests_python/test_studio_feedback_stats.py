@@ -54,6 +54,19 @@ class FeedbackStatsTests(unittest.TestCase):
         self.assertIn("$packets <= 64", extra)
         self.assertEqual(program.count("unroll(8)"), 1)
 
+    def test_return_observation_uses_typed_arguments_without_thread_correlation(self):
+        with self.assertRaises(ValueError):
+            stats.probe_program(1, 2, observe_usb_returns=True)
+        program = stats.probe_program(1, 2, observe_usb_handoff=True, observe_usb_returns=True)
+        returns = program[program.index("fexit:"):]
+        self.assertEqual(returns.count("fexit:"), 4)
+        self.assertIn("$u = args.urb", returns)
+        self.assertIn("(int32)retval", returns)
+        self.assertIn("kprobe:ehci_urb_dequeue", program)
+        self.assertIn("$frame <= 65535", returns)
+        for forbidden in ("tid", "cpu", "transfer_buffer[", "setup_packet", "buf(", "str(", "printf(", "system("):
+            self.assertNotIn(forbidden, returns)
+
     def test_failed_collector_exit_is_error_and_partial_audio_outcome_stays_unknown(self):
         failed = stats.observer_outcome(255, False, None)
         self.assertIsNotNone(failed["error"])

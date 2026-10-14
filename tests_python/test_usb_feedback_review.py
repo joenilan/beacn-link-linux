@@ -88,6 +88,32 @@ class FeedbackReviewTests(unittest.TestCase):
         self.assertTrue(feedback.review(raw.replace(b'"probes": 5', b'"probes": 12'))["needs_review"])
         self.assertTrue(feedback.review(output({}).replace(b'"probes": 5', b'"probes": 12'))["needs_review"])
 
+    def test_enqueue_return_success_and_rejection_do_not_imply_completion(self):
+        raw = output({"@handoff_stages": {"0,3,2": 2, "2,6,2": 1},
+                      "@submission_returns": {"0,3,2,0": 1, "0,3,2,28": 1, "2,4,2,0": 1},
+                      "@enqueue_return_geometry": {"2,8,3072,1,1024": 1}}).replace(b'"probes": 5', b'"probes": 17')
+        result = feedback.review(raw, max_packets=8)
+        self.assertTrue(result["has_usb_returns"])
+        self.assertEqual([q["return_code"] for q in result["usb_returns"]], [0, -28, 0])
+        self.assertEqual(result["enqueue_return_geometry"][0]["start_frame"], 1024)
+        self.assertEqual(sum(result["endpoints"]["2"]["completion_buckets"]), 0)
+        self.assertFalse(result["needs_review"])
+
+    def test_return_coverage_counts_errors_and_frames_are_bounded(self):
+        maps = {"@handoff_stages": {"0,3,2": 1}, "@submission_returns": {"0,3,2,0": 1},
+                "@enqueue_return_geometry": {"2,8,3072,1,1024": 1}}
+        with self.assertRaises(ValueError):feedback.review(output(maps).replace(b'"probes": 5', b'"probes": 12'))
+        for name, value in (("@submission_returns", {"0,3,2,0": 2}),
+                            ("@submission_returns", {"0,3,2,4096": 1}),
+                            ("@submission_returns", {"0,3,2,-28": 1}),
+                            ("@enqueue_return_geometry", {"2,8,3072,1,65536": 1}),
+                            ("@enqueue_return_geometry", {"130,8,3072,1,1024": 1})):
+            changed=dict(maps);changed[name]=value
+            with self.subTest(name=name, value=value), self.assertRaises(ValueError):
+                feedback.review(output(changed).replace(b'"probes": 5', b'"probes": 17'))
+        raw=output({"@handoff_stages": {"0,3,2": 1}, "@invalid_return_codes": {"3,2": 1}})
+        self.assertTrue(feedback.review(raw.replace(b'"probes": 5', b'"probes": 17'))["needs_review"])
+
 
 if __name__ == "__main__":
     unittest.main()

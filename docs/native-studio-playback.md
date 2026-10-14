@@ -22,6 +22,56 @@ recovery before a new justified hardware attempt. Do not repeat the failed
 controller/rate experiments or restart the initial audit. Keep ordinary native
 physical apply disabled and distinguish VM audio failure from Linux feasibility.
 
+## Handoff reached EHCI entry; acceptance return still unknown
+
+The twelve-probe run loaded/exited cleanly and passed aggregate review. OUT had
+three USB-submit/HCD-submit/EHCI-enqueue entries, zero givebacks/completions and
+one kill entry at relative second four. IN had 15 entries at each submission/
+enqueue stage, three givebacks/completions, 24 successful packets (six empty,
+18 nonempty), 7,232 successful bytes. Rates were all 96000 Hz, current/max sizes
+416 bytes, with no packet errors. The three eight-packet OUT buffers were
+3,072/3,136/3,328 bytes, interval one. Summing them gives 9,536 bytes or 298
+eight-channel FLOAT_LE frames, matching the stuck ALSA pointer. Submission entry
+and this queued-frame count are not accepted transfers or independent delivery.
+Summary SHA256 `7e20fb44aa455262ddc4a2b2b6d21c011f0a76e838609729945fe2ae9dc08d93`;
+journal `1eb87c89d4fcf257b42615b88e519b9843d4e82dd7aff52cbf265222714a7b4e`.
+
+Owner reconnect released the blocked aplay process. Linux persistent files and
+node/port/link/device settings matched, but live default sink moved Link 1 -> Link
+4. After a fresh full snapshot and exact current-value/unique-target revalidation,
+only that default was restored through normal-user metadata. All logical metadata/
+settings/routes and persistent-state comparisons then pass. Thirty-five recovered
+files are retained/hash-verified; recovery SHA256
+`b49346de6fdb23ec13f0515112ad80290aa04d441861a8cd81fa48f14e5f4001`.
+Windows audio matches before/after the attempt and recovery; registry matched the
+attempt, but 18 machine-audio differences remain preserved/unclassified after
+reconnect. No unrelated host state was restored.
+
+The [EHCI implementation](https://raw.githubusercontent.com/torvalds/linux/v7.0/drivers/usb/host/ehci-hcd.c)
+describes a non-error enqueue return as a promise of later giveback, and ISO
+dequeue waits for ordinary completion/time-slot expiry. These upstream contracts
+do not establish what the guest/VMware actually did. Optional
+`--observe-usb-returns` now adds four typed function-return probes plus an EHCI
+dequeue entry. [bpftrace fexit](https://bpftrace.org/docs/release_025/language#fentry-and-fexit)
+exposes typed function arguments at return, avoiding cross-thread/CPU pairing.
+Guest BTF confirms all urb arguments. Only bounded return codes and successful
+enqueue packet/buffer/interval/start-frame metadata are exported; no payloads or
+addresses. Zero return does not prove delivery. The decoder validates 17-probe
+coverage, entry/return/geometry counts, errors and scheduling bounds. Older probe
+formats keep their meanings. New fexit kernel loading remains unverified and must
+pass the matched audio-free preflight before a bounded child. No automatic audio
+fallback. The ALSA journal now labels queue progress explicitly; ordinary apply
+remains off.
+
+All 60 focused Linux cases pass on exact source
+`beacn-link-physical-playback-20261014T172651Z/source`, reusing unchanged validated
+Rust inputs. An inert fexit-only code-generation check stopped at tracefs permission
+discovery, before compilation; no attachment/audio occurred. The full 17-probe
+load remains pending owner-terminal sudo. Fresh snapshots and a byte-verified
+launcher `beacn-feedback-ready-20261014T172808Z/run.py` are staged, with ten-minute
+expiry and source/settings/generation guards. Keep Studio attached when running.
+No root/audio execution or accepted-enqueue/delivery result is claimed yet.
+
 ## Handoff launcher refused an additional reconnect
 
 The owner reconnected Studio after launcher 170306 preparation, changing its

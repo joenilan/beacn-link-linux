@@ -22,6 +22,66 @@ mouse automation, driver/firmware changes, traffic/audio capture or REA executio
 is authorized by this clarification. Existing session execution authority and
 settings-preservation requirements still apply.
 
+## Live USB handoff entries, recovered default and return-code preparation (2026-10-14)
+
+The owner ran launcher 170813. Twelve probes loaded without warnings/stderr,
+exited 0 and passed aggregate review. At matching 96000-Hz rates/416-byte packet
+sizes, three IN completions again contained six empty and 18 nonempty successful
+packets (7,232 bytes). OUT had three usb_submit_urb, usb_hcd_submit_urb and
+ehci_urb_enqueue entries, but zero givebacks/completions. IN had 15 entries at
+each submission/enqueue stage and three givebacks/completions. One OUT kill entry
+occurred at relative second four. These are function entries, not return/acceptance
+evidence. OUT URBs each contained eight packets, buffers 3,072/3,136/3,328 bytes,
+interval one. Their total 9,536 bytes / 32 bytes per frame = 298 frames matches
+the ALSA queue pointer 298 -> 298. This does not prove hardware delivery.
+
+The owned aplay process 13181 remained in D / usb_kill_urb. Twenty-nine result
+files were copied/hashed before recovery. Summary SHA256:
+`7e20fb44aa455262ddc4a2b2b6d21c011f0a76e838609729945fe2ae9dc08d93`;
+journal `1eb87c89d4fcf257b42615b88e519b9843d4e82dd7aff52cbf265222714a7b4e`.
+Windows audio and registry match the immediate attempt baseline exactly.
+
+Owner reconnect released all owned processes/PCMs and preserved persistent files,
+nodes/ports/links/device settings, but changed live default.audio.sink from Link 1
+to Link 4. This was classified before proceeding. Fresh complete guest snapshots,
+bindings and endpoint pins were saved, the single old default was restored via
+the normal-user metadata API after revalidating its exact current value and
+unique original Link-1 target, then all logical metadata/settings/routes/file
+comparisons passed. No persistent file was changed by restoration. Thirty-five
+recovered artifacts were copied/hashed. Recovery SHA256:
+`b49346de6fdb23ec13f0515112ad80290aa04d441861a8cd81fa48f14e5f4001`;
+default restoration SHA256:
+`77e74075099f1fb49dd793b8a620da0d92d862b715c63aef5484917e1e5efbfe`.
+Windows audio matches exactly after reconnect; 18 machine-audio registry
+differences remain unclassified/preserved, with no blanket restore.
+
+New optional `--observe-usb-returns` requires the handoff mode and adds an EHCI
+dequeue entry plus typed fexit probes for USB submit, HCD submit, EHCI enqueue and
+dequeue. Actual guest vmlinux BTF confirms the urb arguments. Typed return arguments
+avoid PID/CPU/pointer correlation maps. Bounded negative errno/zero return counts
+and successful enqueue packet/buffer/interval/start-frame aggregates distinguish
+rejection, a missing return and queued software work from eventual giveback.
+Zero enqueue return remains neither delivery nor audible acceptance. The decoder
+requires 17-probe coverage, validates matching per-endpoint entry/return counts
+and geometry totals, and retains legacy 5/7/12-probe meanings. New kernel fexit
+loading remains pending the matched audio-free preflight; no fallback audio retry.
+The ALSA journal now explicitly calls its progress an ALSA queue pointer, not
+independent delivery evidence. Ordinary physical apply and Actions stay disabled.
+
+All 60 focused Linux cases pass on exact source
+`beacn-link-physical-playback-20261014T172651Z/source`; unchanged Rust inputs reuse
+the validated CLI. An inert fexit-only code-generation attempt refused on
+administrator-only tracefs discovery, before compilation/attachment/audio; it is
+not syntax/load proof. The existing SSH context still cannot perform this check.
+Fresh guest/Windows snapshots and the byte-verified launcher
+`beacn-feedback-ready-20261014T172808Z/run.py` are staged. Launcher SHA256:
+`e921f8b4e832a498d11fe473e103a4c235175457522961b989d43f36926666b4`.
+Leave Studio attached; source/settings/generation drift and ten-minute expiry
+refuse execution. No root/audio run has started. Next owner-terminal execution
+first checks all 17 probes without audio, then one bounded 96-kHz child if that
+gate succeeds. Collect return/accepted-enqueue/giveback evidence and compare.
+Another blocked child requires selected-device recovery before further playback.
+
 ## Prelaunch reconnect refused; fresh handoff launcher staged (2026-10-14)
 
 The owner reconnected Studio again after launcher 170306 was prepared. Both

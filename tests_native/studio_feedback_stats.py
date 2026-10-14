@@ -19,9 +19,11 @@ HANDOFF_PROBES = (("usb_submit_urb", 0), ("usb_hcd_submit_urb", 0),
                   ("ehci_urb_enqueue", 1), ("usb_hcd_giveback_urb", 1), ("usb_kill_urb", 0))
 
 
-def probe_program(bus, device, *, observe_usb_handoff=False):
+def probe_program(bus, device, *, observe_usb_handoff=False, observe_usb_returns=False):
     if type(bus) is not int or not 1 <= bus <= 999 or type(device) is not int or not 1 <= device <= 127:
         raise ValueError("invalid selected USB bus/device metadata")
+    if observe_usb_returns and not observe_usb_handoff:
+        raise ValueError("USB return observation requires matching handoff entry probes")
     selected = ("$u->dev->bus->busnum == %d && $u->dev->devnum == %d && "
                 "$u->dev->descriptor.idVendor == 0x33ae && "
                 "$u->dev->descriptor.idProduct == 0x4003" % (bus, device))
@@ -115,7 +117,8 @@ interval:s:30 { @window_limit = count(); exit(); }
 END { clear(@start); clear(@clock_pending); }
 '''.replace("SELECTED", selected).replace("PACKET_LIMIT", str(MAX_PACKETS))
     if observe_usb_handoff:
-        for stage, (name, argument) in enumerate(HANDOFF_PROBES, 1):
+        probes = HANDOFF_PROBES + ((("ehci_urb_dequeue", 1),) if observe_usb_returns else ())
+        for stage, (name, argument) in enumerate(probes, 1):
             # usb_submit_urb populates urb->ep after entry. Decode the already
             # initialized pipe instead; never dereference that endpoint here.
             block = r'''
@@ -143,6 +146,37 @@ kprobe:PROBE_NAME
 ''' if stage == 1 else ""
             program += (block.replace("PROBE_NAME", name).replace("ARGUMENT", str(argument))
                         .replace("SELECTED", selected).replace("STAGE", str(stage)).replace("GEOMETRY", geometry))
+    if observe_usb_returns:
+        for stage, name in enumerate(("usb_submit_urb", "usb_hcd_submit_urb", "ehci_urb_enqueue", "ehci_urb_dequeue"), 1):
+            block = r'''
+fexit:PROBE_NAME
+{
+    $u = args.urb;
+    if ($u != 0 && SELECTED && ($u->pipe >> 30) == 0) {
+        $ep = (($u->pipe >> 15) & 15) | ($u->pipe & 128);
+        if ($ep == 2 || $ep == 130) {
+            $status = (int32)retval;
+            if ($status <= 0 && $status >= -4095) {
+                $error = (uint64)(0 - $status);
+                @submission_returns[(nsecs - @start) / 1000000000, STAGE, $ep, $error] = count();
+                if (STAGE == 3 && $status == 0) {
+                    $packets = (uint64)$u->number_of_packets;
+                    $length = (uint64)$u->transfer_buffer_length;
+                    $interval = (uint64)$u->interval;
+                    $frame = (uint64)$u->start_frame;
+                    if ($packets >= 1 && $packets <= 64 && $length > 0 &&
+                        $length <= $packets * 416 && $length % 32 == 0 &&
+                        $interval >= 1 && $interval <= 8192 && ($interval & ($interval - 1)) == 0 &&
+                        $frame <= 65535) {
+                        @enqueue_return_geometry[$ep, $packets, $length, $interval, $frame] = count();
+                    } else { @invalid_return_geometry[$ep] = count(); }
+                }
+            } else { @invalid_return_codes[STAGE, $ep] = count(); }
+        }
+    }
+}
+'''
+            program += block.replace("PROBE_NAME", name).replace("SELECTED", selected).replace("STAGE", str(stage))
     return program
 
 
@@ -192,6 +226,8 @@ def main():
                         help="observe bounded silence matching an independently measured 96000-Hz clock")
     parser.add_argument("--observe-usb-handoff", action="store_true",
                         help="add selected-EHCI USB submit/giveback/cancel entry counters; not acceptance receipts")
+    parser.add_argument("--observe-usb-returns", action="store_true",
+                        help="add typed function returns and accepted-enqueue scheduling metadata; not delivery proof")
     args = parser.parse_args()
     if sys.platform != "linux" or os.getuid() == 0 or os.geteuid() != os.getuid():
         parser.error("run as the normal Linux desktop owner, never as root")
@@ -201,6 +237,8 @@ def main():
         parser.error("compile-only cannot launch silence")
     if args.matched_device_clock_96000 and not args.authorize_feedback_status_silence:
         parser.error("matched-clock diagnostic requires explicit status/silence execution")
+    if args.observe_usb_returns and not args.observe_usb_handoff:
+        parser.error("USB return observation requires handoff entry observation")
     root = Path(args.evidence_dir).resolve()
     if root == playback.REPO or playback.REPO in root.parents:
         parser.error("evidence must remain outside source")
@@ -208,6 +246,7 @@ def main():
     summary = {"audio_started": False, "aggregate_only": True, "payload_reads": False,
                "requested_rate": 96000 if args.matched_device_clock_96000 else 48000,
                "usb_handoff_requested": args.observe_usb_handoff,
+               "usb_returns_requested": args.observe_usb_returns,
                "live_probe_validated": False, "error": None}
     child = None
     baseline = None
@@ -236,7 +275,8 @@ def main():
             if len(controllers) != 1 or (controllers[0] / "driver").resolve().name != "ehci-pci":
                 raise RuntimeError("USB handoff observer requires the selected EHCI controller")
         program = probe_program(int((selected / "busnum").read_text()), int((selected / "devnum").read_text()),
-                                observe_usb_handoff=args.observe_usb_handoff)
+                                observe_usb_handoff=args.observe_usb_handoff,
+                                observe_usb_returns=args.observe_usb_returns)
         playback.owner.save_bytes(root / "observer.bt", program.encode())
         dependencies = ("tests_native/studio_feedback_stats.py", "tests_native/studio_alsa_playback.py",
                         "tests_native/studio_playback.py", "tests_native/usb_handshake.py",
@@ -311,8 +351,9 @@ def main():
                                                      not reviewed["has_request_geometry"] or
                                                      not reviewed["has_sync_configuration"] or
                                                      not reviewed["device_clock_rates"] or
-                                                     reviewed["attached_probes"] != (12 if args.observe_usb_handoff else 7) or
-                                                     (args.observe_usb_handoff and not reviewed["has_usb_handoff"]))
+                                                     reviewed["attached_probes"] != (17 if args.observe_usb_returns else 12 if args.observe_usb_handoff else 7) or
+                                                     (args.observe_usb_handoff and not reviewed["has_usb_handoff"]) or
+                                                     (args.observe_usb_returns and not reviewed["has_usb_returns"]))
             summary["live_probe_validated"] = (not summary["aggregate_review_required"] and
                                                 reviewed["sync_callbacks"] > 0)
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
