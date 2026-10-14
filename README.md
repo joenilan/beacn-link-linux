@@ -1,4 +1,4 @@
-# beacn-link-linux
+# Beacn LinX
 
 Independent, unofficial Linux compatibility research; not affiliated with BEACN.
 
@@ -35,8 +35,12 @@ A subsequent [continuous native test](docs/native-continuous-studio.md) kept
 first-pair audio active while publication and polling continued through 40 cycles.
 The owner heard repeating tones and confirmed the app stayed in Link In after
 assignment. Exact laptop settings and owned cleanup comparisons passed.
-Ordinary desktop applications, the remaining pairs and long-lived recovery still
-need integration.
+A subsequent [real-application test](docs/native-application-routing.md) routed
+unmodified mpv through each of Studio's four pairs. The owner heard every pair;
+concurrent control and exact laptop cleanup passed. A no-USB source-exit check
+stopped safely, and a fresh isolated session routed all four destinations.
+Whole-desktop discovery, multiple applications, the Rust application/service and
+long-lived recovery still need integration.
 Read the current handoff and playback report before another test.
 Windows Link stays closed during hardware tests.
 

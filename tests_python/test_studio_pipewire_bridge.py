@@ -31,6 +31,14 @@ def graph():
 
 
 class PhysicalBridgeTests(unittest.TestCase):
+    def test_selected_pair_maps_disjoint_stereo_slots_and_refuses_non_pairs(self):
+        channels = [bridge.pair_channels(pair) for pair in range(1, 5)]
+        self.assertEqual(channels, [[('FL','AUX0'),('FR','AUX1')], [('FL','AUX2'),('FR','AUX3')],
+                                    [('FL','AUX4'),('FR','AUX5')], [('FL','AUX6'),('FR','AUX7')]])
+        self.assertEqual(len({slot for pair in channels for _, slot in pair}), 8)
+        for invalid in (0, 5, True, '2', None):
+            with self.assertRaises(RuntimeError): bridge.pair_channels(invalid)
+
     def test_continuous_inventory_excludes_only_exact_live_controller_bridge_refs(self):
         objects,target=graph()
         def obj(id,kind,p):return {"id":id,"type":"PipeWire:Interface:"+kind,"info":{"state":"active","props":{"object.serial":id+100,**p}}}

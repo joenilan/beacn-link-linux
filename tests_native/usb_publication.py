@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import re
 import selectors
 from pathlib import Path
@@ -35,8 +36,10 @@ def inventory_message(inventory):
     return f'{inventory["snapshot_id"]}\t{len(text)}\n'.encode("ascii") + text
 
 
-def execute_periodic(command, fresh, cycles, timeout=50, physical=None, concurrent=None, pulse=None):
+def execute_periodic(command, fresh, cycles, timeout=50, physical=None, concurrent=None, pulse=None, pair=1):
     """Linux-only bounded IPC; no shell, retries, or background inventory writer."""
+    if type(pair) is not int or pair not in range(1, 5) or (pair != 1 and concurrent is None):
+        raise RuntimeError('physical pair/continuous authority refused before child start')
     child = subprocess.Popen(command, env={**os.environ, "LIBUSB_DEBUG": "0"},
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     result = {"private_child_pid": child.pid, "child_exited": False, "timed_out": False, "exit": 2}
@@ -74,8 +77,8 @@ def execute_periodic(command, fresh, cycles, timeout=50, physical=None, concurre
                         line, _, remainder = pending.partition(b"\n")
                         pending = bytearray(remainder)
                         if line.startswith(b"PHYSICAL"):
-                            if line in (b"PHYSICAL START 1", b"PHYSICAL STOP 1"):
-                                starting = line == b"PHYSICAL START 1"
+                            if line in (f"PHYSICAL START {pair}".encode(), f"PHYSICAL STOP {pair}".encode()):
+                                starting = line == f"PHYSICAL START {pair}".encode()
                                 if concurrent is None or requests < 3 or (starting and continuous_started) or (not starting and not continuous_active):
                                     raise RuntimeError("continuous physical request sequence/authority refused")
                                 if concurrent("start" if starting else "stop", child) is not True:
@@ -83,7 +86,7 @@ def execute_periodic(command, fresh, cycles, timeout=50, physical=None, concurre
                                 continuous_active = starting
                                 continuous_started |= starting
                                 physical_requests += int(starting)
-                                message = b"PHYSICAL ACTIVE 1\n" if starting else b"PHYSICAL COMPLETE 1\n"
+                                message = (f"PHYSICAL ACTIVE {pair}\n" if starting else f"PHYSICAL COMPLETE {pair}\n").encode()
                                 if not starting:result["physical_stage_completed"] = True
                             elif line != b"PHYSICAL 1" or physical is None or physical_requests or requests < 3:
                                 raise RuntimeError("physical request authority/sequence refused")
@@ -141,7 +144,7 @@ def execute_periodic(command, fresh, cycles, timeout=50, physical=None, concurre
     return result
 
 
-def owned_inventory(objects, pid, node_name, snapshot_id, destinations=None):
+def owned_inventory(objects, pid, node_name, snapshot_id, destinations=None, wire_name=None):
     snapshot = base.inventory.observe(objects, snapshot_id)
     matching = [a for a in snapshot["applications"] if a["process_pid"] == pid]
     if len(matching) != 1:
@@ -170,7 +173,7 @@ def owned_inventory(objects, pid, node_name, snapshot_id, destinations=None):
             input_nodes.add(target)
         if len(input_nodes) != 1:
             raise RuntimeError("private stereo route split across destinations")
-    return base.inventory.project(snapshot, {app["application_id"]: WIRE_NAME})
+    return base.inventory.project(snapshot, {app["application_id"]: WIRE_NAME if wire_name is None else wire_name})
 
 
 def stop_owned(process):
@@ -205,15 +208,27 @@ def main():
     parser.add_argument("--single-publication-hold", action="store_true", help="one metadata-only cycle followed by 30 seconds without USB requests")
     parser.add_argument("--private-routing", action="store_true", help="explicit native routing on owned private synthetic destinations only")
     parser.add_argument("--authorize-isolated-routing", action="store_true")
+    parser.add_argument("--application-mpv", action="store_true", help="ordinary retained mpv process on the private core; no desktop application takeover")
+    parser.add_argument('--probe-source-exit', action='store_true', help='no-USB negative lifecycle test after two native routes')
     parser.add_argument("--authorize-studio-first-pair-silence", action="store_true",
                         help="native-only assignment-1 physical stage; pauses USB until owned audio cleanup")
     parser.add_argument("--authorize-studio-first-pair-tone", action="store_true")
     parser.add_argument("--audible-first-pair", action="store_true", help="owner-ready quiet tones, only through the guarded first pair")
     parser.add_argument("--continuous-studio-first-pair", action="store_true", help="explicit concurrent playback and guarded vendor publication, bounded to this run")
+    parser.add_argument('--studio-pair', type=int, choices=range(1, 5), default=1)
+    parser.add_argument('--authorize-studio-pair-tone', action='store_true', help='explicit authorization for selected pair 2..4')
+    parser.add_argument('--audible-studio-pair', action='store_true')
     args = parser.parse_args()
+    if args.authorize_studio_pair_tone != args.audible_studio_pair:
+        parser.error('selected pair tone requires both authorization and audible selection')
+    if args.studio_pair != 1 and (not args.authorize_studio_pair_tone or not args.continuous_studio_first_pair):
+        parser.error('pairs 2..4 require explicit selected-pair tone authority and continuous mode')
+    if args.authorize_studio_pair_tone and (args.studio_pair == 1 or args.authorize_studio_first_pair_tone or args.authorize_studio_first_pair_silence):
+        parser.error('selected-pair authority is separate from legacy first-pair modes')
     if args.authorize_studio_first_pair_tone != args.audible_first_pair or (args.authorize_studio_first_pair_tone and args.authorize_studio_first_pair_silence):
         parser.error("audible first pair requires its tone authorization; silence and tone are exclusive")
-    physical_requested = args.authorize_studio_first_pair_silence or args.authorize_studio_first_pair_tone
+    physical_requested = args.authorize_studio_first_pair_silence or args.authorize_studio_first_pair_tone or args.authorize_studio_pair_tone
+    audible = args.audible_first_pair or args.audible_studio_pair
     if args.continuous_studio_first_pair and not physical_requested:
         parser.error("continuous physical mode requires explicit silence/tone authority")
     if args.continuous_studio_first_pair and args.cycles < 9:
@@ -223,6 +238,10 @@ def main():
     if args.single_publication_hold and (args.stage != "run" or args.cycles != 1 or args.private_routing or not args.windows_c_string_names):
         parser.error("single publication hold requires one C-string hardware cycle without routing")
     routing_probe = args.stage == "routing-probe"
+    if args.probe_source_exit and not (routing_probe and args.application_mpv and args.cycles == 5):
+        parser.error('source exit injection requires the five-cycle ordinary no-USB routing probe')
+    if args.application_mpv and (not args.private_routing or args.stage not in ('run', 'routing-probe') or args.single_publication_hold):
+        parser.error('ordinary application test requires explicit private routing')
     if routing_probe and not args.private_routing:
         parser.error("routing-probe requires private-routing")
     if args.private_routing and (not args.authorize_isolated_routing or not args.windows_c_string_names or not args.cycles or args.stage not in ("run", "routing-probe")):
@@ -290,6 +309,7 @@ def main():
     attached = base.snapshot()
     physical_before = None
     rate = 96000 if physical_requested else 48000
+    wire_name = 'mpv' if args.application_mpv else WIRE_NAME
     if physical_requested:
         import studio_pipewire_bridge as physical_bridge
         physical_before = physical_bridge.preflight(selected)
@@ -298,7 +318,9 @@ def main():
         base.save(root / "physical-preflight.json", physical_before)
     base.save(root / "run-started.json", {"snapshot": attached, "binary_sha256": digest,
                                           "expected_cache_sha256": cache_hash, "usb_io_requested": not source_only,
-                                          "wire_name": WIRE_NAME, "initial_assignment": 0,
+                                          "wire_name": wire_name, "initial_assignment": 0,
+                                          "application_mpv": args.application_mpv,
+                                          "selected_pair": args.studio_pair,
                                           "periodic_cycles": args.cycles,
                                           "observed_startup": args.observed_startup,
                                           "observe_rejected_polls": args.observe_rejected_polls,
@@ -342,7 +364,7 @@ def main():
     destinations = None
     native_arguments = []
     result = {"binary_sha256": digest, "child_exited": True, "exit": 2, "timed_out": False,
-              "wire_name": WIRE_NAME, "remote_visibility": "unobserved", "routes_applied": False}
+              "wire_name": wire_name, "remote_visibility": "unobserved", "routes_applied": False}
     result["usb_io_requested"] = not source_only
     result["periodic_cycles"] = args.cycles
     result["observed_startup"] = args.observed_startup
@@ -355,7 +377,9 @@ def main():
     result["physical_first_pair_requested"] = physical_before is not None
     result["audible_first_pair"] = args.audible_first_pair
     result["continuous_first_pair_requested"] = args.continuous_studio_first_pair
+    result['selected_pair'] = args.studio_pair
     continuous_job = None
+    application = None
 
     def start(name, command, child_env, stdin=None):
         log = (root / (name + ".log")).open("xb")
@@ -410,7 +434,7 @@ def main():
                 cp = base.inventory.properties(client)
                 if int(cp.get("pipewire.sec.pid", cp.get("application.process.id", 0))) != controller.pid or p.get("device.id") is not None or p.get("media.class") != "Audio/Sink" or p.get("node.virtual") is not True:
                     raise RuntimeError("private destination ownership/layout refused")
-                node_config = {**port_config, "monitor": physical_before is not None and node is ordered[0]}
+                node_config = {**port_config, "monitor": physical_before is not None and node is ordered[args.studio_pair - 1]}
                 controller.stdin.write(("set-param " + str(node["id"]) + " PortConfig " + json.dumps(node_config) + "\n").encode())
                 controller.stdin.flush()
             end = time.monotonic() + 4
@@ -428,8 +452,8 @@ def main():
             core = next(o for o in objects if o.get("type") == "PipeWire:Interface:Core")
             native_arguments = [str(runtime), remote, str(core["info"]["cookie"]), str(server.pid), token] + [f'{i}:{o["id"]}:{destinations[o["id"]]}' for i, o in enumerate(ordered, 1)]
             base.save(root / "private-destinations.json", {"destinations": destinations, "routing_scope": "owned_private_core"})
-        pcm = root / ("owned-synthetic-tone.raw" if args.audible_first_pair else "owned-synthetic-silence.raw")
-        pcm.write_bytes(physical_bridge.stereo_pcm(args.audible_first_pair) if physical_before is not None else bytes(rate * 2 * 2 * 120 if args.private_routing else 1024 * 1024))
+        pcm = root / ("owned-synthetic-tone.raw" if audible else "owned-synthetic-silence.raw")
+        pcm.write_bytes(physical_bridge.stereo_pcm(audible) if physical_before is not None else bytes(rate * 2 * 2 * 120 if args.private_routing else 1024 * 1024))
         result["authored_pcm_sha256"] = hashlib.sha256(pcm.read_bytes()).hexdigest()
         node_name = "beacn-publication-" + uuid.uuid4().hex[:8]
         properties = {"node.name": node_name, "application.name": "BEACN Linux VM Test", "node.autoconnect": False,
@@ -438,12 +462,27 @@ def main():
             properties["beacn.test.token"] = token
             properties["adapter.auto-port-config"] = {"mode": "dsp", "monitor": False, "position": "preserve"}
         with pcm.open("rb") as handle:
-            playback = start("owned-playback", ["pw-cat", "-p", "-a", "-R", remote, "--target", "0", "--rate", str(rate), "--channels", "2", "--format", "s16", "-P", json.dumps(properties), "-"], env, handle)
+            if args.application_mpv:
+                import application_source
+                binary_path = shutil.which('mpv')
+                if binary_path is None:raise RuntimeError('ordinary mpv application is unavailable')
+                media = root / 'authored-application.wav'
+                application_source.write_wave(media, pcm.read_bytes(), rate)
+                # PipeWire applies these only to this retained process's stream.
+                # Its real application name/PID remain supplied by mpv/library.
+                app_props = {k: v for k, v in properties.items() if k != 'application.name'}
+                playback = start('owned-playback', application_source.command(binary_path, media, rate, remote),
+                                 {**env, 'PIPEWIRE_PROPS': json.dumps(app_props)})
+                application = application_source.RetainedMpv(playback, binary_path, node_name, token)
+                result['ordinary_application'] = application.proof()
+            else:
+                playback = start("owned-playback", ["pw-cat", "-p", "-a", "-R", remote, "--target", "0", "--rate", str(rate), "--channels", "2", "--format", "s16", "-P", json.dumps(properties), "-"], env, handle)
         deadline = time.monotonic() + 4
         while True:
             raw_dump, objects = dump()
             try:
-                inventory = owned_inventory(objects, playback.pid, node_name, time.time_ns(), destinations)
+                if application is not None:application.validate(objects)
+                inventory = owned_inventory(objects, playback.pid, node_name, time.time_ns(), destinations, wire_name)
                 break
             except RuntimeError:
                 if playback.poll() is not None or time.monotonic() >= deadline:
@@ -456,7 +495,8 @@ def main():
         projected.write_text(text, encoding="ascii")
         # Confirm the same owned source immediately before the single native child.
         _, objects = dump()
-        if playback.poll() is not None or owned_inventory(objects, playback.pid, node_name, inventory["snapshot_id"], destinations) != inventory:
+        if application is not None:application.validate(objects)
+        if playback.poll() is not None or owned_inventory(objects, playback.pid, node_name, inventory["snapshot_id"], destinations, wire_name) != inventory:
             raise RuntimeError("owned source changed before native execution")
         if args.cycles:
             last_id = inventory["snapshot_id"]
@@ -467,8 +507,15 @@ def main():
                     raise RuntimeError("owned source/core exited")
                 raw, current_objects = dump()
                 if continuous_job is not None:current_objects = continuous_job.filtered(current_objects)
+                if args.probe_source_exit and request == 4:
+                    result['source_exit_injected'] = True
+                    result['source_exit_process_stopped'] = stop_owned(playback)
+                    if not result['source_exit_process_stopped']:raise RuntimeError('controlled application exit unconfirmed')
+                    _, current_objects = dump()
+                    base.save(root / 'application-exited.json', current_objects)
                 last_id = max(last_id + 1, time.time_ns())
-                current = owned_inventory(current_objects, playback.pid, node_name, last_id, destinations)
+                if application is not None:application.validate(current_objects)
+                current = owned_inventory(current_objects, playback.pid, node_name, last_id, destinations, wire_name)
                 if current["applications"] != inventory["applications"]:
                     raise RuntimeError("pinned source identity changed")
                 (root / f"cycle-{request:03d}-dump.json").write_bytes(raw)
@@ -479,6 +526,7 @@ def main():
                        [str(binary), "--authorize-periodic-publication-hold" if args.single_publication_hold else "--authorize-periodic-c-string-names" if args.windows_c_string_names else "--authorize-periodic-initialization-diagnostic" if args.initialization_diagnostic else "--authorize-periodic-observed-polls" if args.observe_rejected_polls else "--authorize-periodic-startup" if args.observed_startup else "--authorize-periodic", str(selected), str(pinned), str(args.cycles)])
             if args.private_routing and not routing_probe:
                 command[1] = "--authorize-periodic-studio-continuous" if args.continuous_studio_first_pair else "--authorize-periodic-studio-first-pair" if physical_before is not None else "--authorize-periodic-private-routing"
+                if args.studio_pair != 1:command[1] += '-' + str(args.studio_pair)
                 command += native_arguments
             def physical_stage(child):
                 return physical_bridge.run(selected, physical_before, root / "physical-stage", env, remote,
@@ -488,8 +536,8 @@ def main():
                 if action == "start":
                     if continuous_job is not None:raise RuntimeError("continuous stage already exists")
                     continuous_job = physical_bridge.ContinuousBridge((selected, physical_before, root / "physical-stage", env, remote,
-                                                                      dump, server, controller, child, ordered[0], playback.pid, token, processes.append),
-                                                                     args.audible_first_pair)
+                                                                      dump, server, controller, child, ordered[args.studio_pair - 1], playback.pid, token, processes.append),
+                                                                     audible, args.studio_pair)
                     return True
                 return continuous_job.stop() if continuous_job is not None else True
             def pulse():
@@ -497,7 +545,7 @@ def main():
             result.update(execute_periodic(command, fresh, args.cycles, timeout=90 if args.private_routing else 50,
                                            physical=physical_stage if physical_before is not None and not args.continuous_studio_first_pair else None,
                                            concurrent=concurrent_stage if args.continuous_studio_first_pair else None,
-                                           pulse=pulse if args.continuous_studio_first_pair else None))
+                                           pulse=pulse if args.continuous_studio_first_pair else None, pair=args.studio_pair))
             result["private_routes_verified_count"] = result.get("stdout", "").count("private_route_applied assignment=")
             result["routes_applied"] = result["private_routes_verified_count"] > 0
             result["routing_scope"] = "owned_private_core" if args.private_routing else None
@@ -508,7 +556,12 @@ def main():
                        [str(binary), "--authorize-publication", str(selected), str(pinned), str(projected), str(inventory["snapshot_id"])])
             result.update(base.execute_child(command, timeout=12 if source_only else 30))
         _, objects = dump()
-        result["owned_source_preserved"] = playback.poll() is None and owned_inventory(objects, playback.pid, node_name, inventory["snapshot_id"], destinations) == inventory
+        if result.get('source_exit_injected'):
+            result['owned_source_preserved'] = False
+            result['source_exit_detected'] = result.get('supervisor_error') == 'RuntimeError: retained application process exited or changed'
+        else:
+            if application is not None:application.validate(objects)
+            result["owned_source_preserved"] = playback.poll() is None and owned_inventory(objects, playback.pid, node_name, inventory["snapshot_id"], destinations, wire_name) == inventory
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
         result["runner_error"] = type(error).__name__ + ": " + str(error)
     finally:

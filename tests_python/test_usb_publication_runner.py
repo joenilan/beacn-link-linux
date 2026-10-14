@@ -27,6 +27,37 @@ def objects():
 
 
 class PublicationRunnerTests(unittest.TestCase):
+    def test_source_exit_injection_cannot_enter_hardware_or_default_modes(self):
+        for extra in ([], ['--application-mpv'], ['--application-mpv','--cycles','5'], ['--cycles','5','--private-routing']):
+            argv=['test','run','--probe-source-exit','--evidence-dir','unused','--executor','unused',*extra]
+            with patch.object(sys,'argv',argv),patch.object(runner.subprocess,'Popen') as child,contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit):runner.main()
+                child.assert_not_called()
+
+    def test_selected_pair_requires_its_authority_before_any_child(self):
+        for extra in (['--studio-pair','2'], ['--studio-pair','2','--authorize-studio-first-pair-tone','--audible-first-pair'],
+                      ['--studio-pair','2','--authorize-studio-pair-tone'], ['--studio-pair','1','--authorize-studio-pair-tone','--audible-studio-pair']):
+            argv=['test','run','--evidence-dir','unused','--executor','unused',*extra]
+            with patch.object(sys,'argv',argv),patch.object(runner.subprocess,'Popen') as child,contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit):runner.main()
+                child.assert_not_called()
+
+    @unittest.skipUnless(sys.platform == 'linux', 'Linux pipe supervisor')
+    def test_selected_pair_ipc_accepts_only_the_authorized_pair(self):
+        for pair in (2, 3, 4):
+            for requested in (pair, 1):
+                actions=[]
+                def concurrent(action,child):actions.append(action);return True
+                def fresh(n):return runner.owned_inventory(objects(),123,'owned-source',n+1)
+                code="import sys\nfor n in range(3):\n print('INVENTORY '+str(n),flush=True)\n h=sys.stdin.buffer.readline();sys.stdin.buffer.read(int(h.split(b'\\t')[1]))\n"
+                code+="print('PHYSICAL START %d',flush=True);a=sys.stdin.buffer.readline();print('PHYSICAL STOP %d',flush=True);b=sys.stdin.buffer.readline()\n" % (requested, requested)
+                code+="assert a==%r and b==%r\n" % (('PHYSICAL ACTIVE %d\n' % pair).encode(), ('PHYSICAL COMPLETE %d\n' % pair).encode())
+                with patch.object(runner.base,'snapshot',return_value={}):
+                    result=runner.execute_periodic([sys.executable,'-c',code],fresh,2,timeout=2,concurrent=concurrent,pair=pair)
+                self.assertTrue(result['child_exited'])
+                self.assertEqual('supervisor_error' in result,requested!=pair)
+                if requested==pair:self.assertEqual(actions,['start','stop']);self.assertEqual(result['exit'],0)
+
     @unittest.skipUnless(sys.platform == "linux", "Linux pipe supervisor")
     def test_worker_failure_aborts_owned_audio_before_ending_native_ipc(self):
         actions=[]

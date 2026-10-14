@@ -1,7 +1,43 @@
-# BEACN Link Linux — continuation handoff
+# Beacn LinX — continuation handoff
 Updated 2026-10-14. Resume development; do not restart the investigation.
 
-## Current checkpoint: concurrent native audio/control and Link In retention pass
+## Current checkpoint: real Linux application heard on all four pairs
+
+The owner named the app **Beacn LinX** and selected Rust for the application.
+Rust already owns protocol/USB/planning/lifecycle/execution; Python remains
+qualification tooling with a small C PipeWire FFI. No UI framework selected yet.
+Full implementation, provenance, hashes and limits:
+[native-application-routing.md](native-application-routing.md).
+
+Unmodified Debian mpv 0.40.0 was discovered by actual application name/native peer
+PID and executable generation, then routed by Windows BEACN App assignments 1–4.
+Four separate 40-cycle runs passed concurrent physical playback/publication and
+owner-heard tones. Pairs 2–4 confirmations also covered the expected meter and
+continued mpv assignment. Two actual stereo receipts preceded each physical start.
+Each run stopped all four owned processes, closed PCMs and exactly restored the
+private graph, USB ACL/binding and full laptop settings/routes/state. Streaming-PC
+saved settings are outside the comparisons. No USB toggle was needed.
+
+Live source: first pair `beacn-native-source-20261014T215427Z`; pairs 2–4
+`beacn-native-source-20261014T215833Z`. A later no-USB source-exit probe detected
+ordinary mpv closure at request 4 after two routes, delivered no next inventory,
+terminated the waiting native test child and cleaned up exactly. Its expected
+runner exit 2/native -9 is negative-test teardown, not graceful native recovery.
+A fresh isolated core/session then routed a new mpv identity through all four
+destinations and cleaned up. Lifecycle source `beacn-native-source-20261014T220341Z`.
+34 focused Python checks pass and exact native programs build offline. 1,193
+private evidence/provenance/report files were copied and hashed outside Git.
+
+Hardware tests are finished for the owner's pre-stream window. Studio is released
+and may return to the gaming PC; Windows Link can be reopened by the owner after
+physical return. No more USB execution is assumed after that handoff. Private local
+runner enforces the window cutoff; do not extend it without new owner direction.
+Next software work: whole-desktop application discovery/selection, multiple apps,
+Rust service/UI controls and durable lifecycle/reconnect. Ordinary desktop apply
+remains disabled. This is bounded real-app/four-pair acceptance, not a shipped
+daemon or full replacement. Actions stay disabled; local [skip ci] commits only.
+
+## Previous checkpoint: concurrent native audio/control and Link In retention pass
 
 The separate Debian laptop now passes bounded continuous first-pair audio while
 native USB publication/polling continue. The owner confirmed silent-run Link In

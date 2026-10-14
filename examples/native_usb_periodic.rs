@@ -28,9 +28,21 @@ fn main() -> std::process::ExitCode {
     let offline = args.len() == 2 && args[0] == "--check-periodic";
     let execute = || -> Result<(), String> {
         let private_probe = args.first().is_some_and(|a| a == "--check-private-routing");
-        let continuous = args
-            .first()
-            .is_some_and(|a| a == "--authorize-periodic-studio-continuous");
+        let continuous = args.first().is_some_and(|a| {
+            matches!(
+                a.as_str(),
+                "--authorize-periodic-studio-continuous"
+                    | "--authorize-periodic-studio-continuous-2"
+                    | "--authorize-periodic-studio-continuous-3"
+                    | "--authorize-periodic-studio-continuous-4"
+            )
+        });
+        let selected_pair = match args.first().map(String::as_str) {
+            Some("--authorize-periodic-studio-continuous-2") => 2,
+            Some("--authorize-periodic-studio-continuous-3") => 3,
+            Some("--authorize-periodic-studio-continuous-4") => 4,
+            _ => 1,
+        };
         let physical_pair = continuous
             || args
                 .first()
@@ -184,10 +196,8 @@ fn main() -> std::process::ExitCode {
                     "probe_verified_publication assignment={}",
                     verified.records()[0].assignment.byte()
                 );
-                let desired = if cycle == 1 {
-                    Some(1)
-                } else if cycle == 2 {
-                    Some(2)
+                let desired = if cycle <= if cycles >= 5 { 4 } else { 2 } {
+                    Some(cycle as u8)
                 } else {
                     None
                 };
@@ -281,7 +291,10 @@ fn main() -> std::process::ExitCode {
             println!("initialized; bounded publication active; names and metadata redacted");
             for cycle in 1..=cycles {
                 if continuous_active && cycle == cycles {
-                    physical_ipc("PHYSICAL STOP 1", "PHYSICAL COMPLETE 1\n")?;
+                    physical_ipc(
+                        &format!("PHYSICAL STOP {selected_pair}"),
+                        &format!("PHYSICAL COMPLETE {selected_pair}\n"),
+                    )?;
                     continuous_active = false;
                     physical_completed = true;
                     println!("continuous physical stage stopped; final verified USB cycle follows");
@@ -369,8 +382,8 @@ fn main() -> std::process::ExitCode {
                         if known && !publication_hold {
                             #[cfg(feature = "native-pipewire")]
                             if let Some(router) = router.as_mut() {
-                                if physical_pair && assignments.iter().any(|a| (2..=4).contains(a)) {
-                                    return Err("physical diagnostic requires assignment 1; no physical route requested".into());
+                                if physical_pair && assignments.iter().any(|a| (1..=4).contains(a) && *a != selected_pair) {
+                                    return Err(format!("physical diagnostic requires assignment {selected_pair}; no physical route requested"));
                                 }
                                 router.apply(&current, &planning_records)?;
                                 if physical_pair && !physical_started {
@@ -381,7 +394,7 @@ fn main() -> std::process::ExitCode {
                                     // physical stage. Explicit continuous mode instead
                                     // validates its pinned active PCM before bulk I/O.
                                     if continuous {
-                                        physical_ipc("PHYSICAL START 1", "PHYSICAL ACTIVE 1\n")?;
+                                        physical_ipc(&format!("PHYSICAL START {selected_pair}"), &format!("PHYSICAL ACTIVE {selected_pair}\n"))?;
                                         continuous_active = true;
                                     } else {
                                         physical_ipc("PHYSICAL 1", "PHYSICAL COMPLETE 1\n")?;
@@ -390,10 +403,10 @@ fn main() -> std::process::ExitCode {
                                     physical_started = true;
                                     let after = fresh()?;
                                     check_fresh(&after, &mut tracker)?;
-                                    if router.verify(&after)?.records()[0].assignment.byte() != 1 {
+                                    if router.verify(&after)?.records()[0].assignment.byte() != selected_pair {
                                         return Err("route changed after physical diagnostic".into());
                                     }
-                                    println!("physical first-pair stage acknowledged; continuous={continuous}; native route reverified before USB resumes");
+                                    println!("physical pair={selected_pair} stage acknowledged; continuous={continuous}; native route reverified before USB resumes");
                                 }
                                 continue;
                             }
@@ -409,7 +422,9 @@ fn main() -> std::process::ExitCode {
                 }
             }
             if physical_pair && !physical_completed {
-                return Err("no assignment 1 received; physical stage was not started".into());
+                return Err(format!(
+                    "no assignment {selected_pair} received; physical stage was not started"
+                ));
             }
             if physical_pair && !physical_republished {
                 return Err("physical stage completed but no verified USB republication fit the cycle budget".into());
@@ -424,7 +439,10 @@ fn main() -> std::process::ExitCode {
         })();
         // Even a failed exchange must stop owned playback before USB cleanup.
         if continuous_active {
-            result = result.and(physical_ipc("PHYSICAL STOP 1", "PHYSICAL COMPLETE 1\n"));
+            result = result.and(physical_ipc(
+                &format!("PHYSICAL STOP {selected_pair}"),
+                &format!("PHYSICAL COMPLETE {selected_pair}\n"),
+            ));
         }
         let cleanup = session.into_transport().close();
         println!("cleanup: {cleanup:?}");

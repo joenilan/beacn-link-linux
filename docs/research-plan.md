@@ -1,5 +1,11 @@
 # Phased interoperability plan
 
+Current milestone: [Beacn LinX real-application interoperability](native-application-routing.md)
+passes with unmodified mpv, Windows assignment and owner-heard output on all four
+Studio pairs in separate bounded runs. The owner selected Rust for the app.
+Whole-desktop automation, multiple apps, persistent service/UI and long-lived
+reconnect remain next; earlier milestone descriptions below retain their scope.
+
 Goal: keep BEACN App/Mix Create on Windows and replace Link on the Linux gaming PC.
 Existing beacn-on-linux work reportedly exposes four stereo Link pairs; that
 prior research is context, not a locally verified replacement for discovery.

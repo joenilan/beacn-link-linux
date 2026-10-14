@@ -1,6 +1,6 @@
 """Bounded native Studio stage while the initialized USB owner awaits completion.
 
-Only an already verified assignment-1 private route can enter this stage.
+Only an already verified selected private stereo route can enter this stage.
 Legacy mode pauses vendor bulk exchanges; explicit continuous mode retains a
 bounded worker while the initialized USB owner publishes. No capture, defaults,
 desktop routes or driver changes occur here; the existing ALSA driver carries
@@ -51,6 +51,12 @@ def pcm_path(card, direction="p"):
 
 def pcms_closed(card):
     return all(pcm_path(card, d).read_text().strip() == "closed" for d in ("p", "c"))
+
+
+def pair_channels(pair):
+    if type(pair) is not int or pair not in range(1, 5):
+        raise RuntimeError('physical pair must be exactly 1..4')
+    return [('FL', 'AUX%d' % ((pair - 1) * 2)), ('FR', 'AUX%d' % ((pair - 1) * 2 + 1))]
 
 
 def preflight(selected):
@@ -117,9 +123,11 @@ def assignment_one(objects, target, target_pid, source_pid, native_pid, token):
 
 
 def run(selected, before, root, env, remote, dump, server, destinations, native,
-        target, source_pid, token, register, audible=False, seconds=4, stop_event=None, on_active=None):
+        target, source_pid, token, register, audible=False, seconds=4, stop_event=None, on_active=None, pair=1):
+    selected_channels = pair_channels(pair)
     root.mkdir(mode=0o700, exist_ok=False)
-    journal = {"error": None, "rate": RATE, "audible": audible, "assignment": 1,
+    journal = {"error": None, "rate": RATE, "audible": audible, "assignment": pair,
+               "selected_channels": selected_channels,
                "harness_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                "vendor_bulk_exchanges_paused": stop_event is None, "physical_progress_verified": False}
     bridge = None
@@ -188,7 +196,7 @@ def run(selected, before, root, env, remote, dump, server, destinations, native,
         objects = wait(lambda oo: sorted(props(o).get("audio.channel", "") for o in oo if o.get("type") == PORT
                                         and props(o).get("node.id") == hardware["id"] and props(o).get("port.direction") == "in") == positions)
         pairs = set()
-        for channel, auxiliary in (("FL", "AUX0"), ("FR", "AUX1")):
+        for channel, auxiliary in selected_channels:
             output = next(o for o in objects if o.get("type") == PORT and props(o).get("node.id") == target["id"]
                           and props(o).get("port.direction") == "out" and props(o).get("port.monitor") is True
                           and props(o).get("audio.channel") == channel)
@@ -273,7 +281,8 @@ def run(selected, before, root, env, remote, dump, server, destinations, native,
 
 class ContinuousBridge:
     """One retained worker; selector-owner checks failures before each IPC step."""
-    def __init__(self, args, audible=False):
+    def __init__(self, args, audible=False, pair=1):
+        pair_channels(pair)
         self.stop_event = threading.Event()
         self.active = threading.Event()
         self.error = None
@@ -289,7 +298,7 @@ class ContinuousBridge:
             self.active.set()
         def worker():
             try:
-                run(*args, audible=audible, seconds=45, stop_event=self.stop_event, on_active=activated)
+                run(*args, audible=audible, seconds=45, stop_event=self.stop_event, on_active=activated, pair=pair)
             except Exception as error:
                 self.error = type(error).__name__ + ": " + str(error)
         self.thread = threading.Thread(target=worker, name="beacn-owned-physical", daemon=True)
