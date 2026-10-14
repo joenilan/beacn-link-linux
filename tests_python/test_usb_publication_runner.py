@@ -27,6 +27,14 @@ def objects():
 
 
 class PublicationRunnerTests(unittest.TestCase):
+    def test_single_publication_hold_refuses_repetition_routing_and_offline_modes(self):
+        common = ["--windows-c-string-names", "--initialization-diagnostic", "--observe-rejected-polls", "--observed-startup"]
+        for stage, cycles, extra in (("run", "2", []), ("run", "1", ["--private-routing"]), ("source-probe", "1", []), ("run", "1", ["--private-routing", "--authorize-isolated-routing"])):
+            argv = ["test", stage, "--evidence-dir", "unused", "--executor", "unused", "--single-publication-hold", "--cycles", cycles, *common, *extra]
+            with patch.object(sys, "argv", argv), patch.object(runner.subprocess, "Popen") as child, contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit): runner.main()
+                child.assert_not_called()
+
     def test_private_routing_requires_explicit_authorization_and_mode(self):
         for stage, extra in (("run", []), ("routing-probe", []), ("run", ["--authorize-isolated-routing"]), ("source-probe", ["--authorize-isolated-routing", "--windows-c-string-names", "--cycles", "3"]), ("run", ["--windows-c-string-names", "--cycles", "3"])):
             argv = ["test", stage, "--evidence-dir", "unused", "--executor", "unused", "--private-routing", *extra]

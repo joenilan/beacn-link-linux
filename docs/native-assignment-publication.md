@@ -1,5 +1,31 @@
 # Native assignment execution and verified publication
 
+## Native Debian laptop checkpoint (2026-10-14)
+
+The separate Debian laptop now passes the integrated USB/private-route path.
+PipeWire 1.4.2 required explicit DSP stereo PortConfig on the owned destinations;
+the runner validates the retained controller PID, virtual destination and serial
+before configuration. Native C route/removal guards are unchanged. The no-USB
+probe acknowledged routes 1 then 2 and verified publications 0 -> 1 -> 2.
+
+Initial publication runs returned only rejected markers and the owner saw no
+name. A single-publication 30-second hold also failed visibility. After the owner
+reopened BEACN App, a fresh hold returned NoPayload and the owner saw the name
+briefly. No packet format or poll-word change was made. Peer state changed with
+the result; neither marker meaning nor the failure's cause is established.
+
+During the next owner-ready 40-cycle run, the owner placed the test in first Link
+In. Cycle 3 received assignment 1, applied two acknowledged private stereo links
+and verified the result. Cycles 4–40 published verified assignment 1. All 81
+fresh inventories completed, with one record reply, seven NoPayload replies and
+32 rejected-marker observations. Source identity, private baseline, three owned
+processes, selected USB ACL and connected desktop/state/binding cleanup passed.
+Journal SHA256:
+`ddc5cd50b191b73223d8d67b6555ff7228c9b60d37091074fc286c17553541fc`.
+Streaming-PC saved settings are outside the laptop comparisons. This confirms
+native USB assignment/private routing/publication; physical silent PipeWire and
+owner-heard raw ALSA are separate checks, not combined audible acceptance.
+
 Implemented 2026-10-13. This explicitly enabled integration connects received
 assignments to the existing native executor on an owned disposable PipeWire core.
 It does not enable ordinary desktop apply or route physical BEACN audio.

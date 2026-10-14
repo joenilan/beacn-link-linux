@@ -1,4 +1,4 @@
-//! Bounded VM diagnostic. Fresh inventories come from the supervising owner,
+//! Bounded Linux diagnostic. Fresh inventories come from the supervising owner,
 //! never a frozen TSV file. Private routing is separate and explicitly selected.
 #[cfg(all(
     feature = "native-usb",
@@ -38,7 +38,11 @@ fn main() -> std::process::ExitCode {
                 "private routing requires native-pipewire feature; no device I/O requested".into(),
             );
         }
+        let publication_hold = args
+            .first()
+            .is_some_and(|arg| arg == "--authorize-periodic-publication-hold");
         let windows_names = private_routing
+            || publication_hold
             || args
                 .first()
                 .is_some_and(|arg| arg == "--authorize-periodic-c-string-names");
@@ -63,7 +67,7 @@ fn main() -> std::process::ExitCode {
             && (args.len() != if private_routing { 13 } else { 4 }
                 || (args[0] != "--authorize-periodic" && !observed_startup))
         {
-            return Err("requires an explicit --authorize-periodic[-startup|-observed-polls|-initialization-diagnostic|-c-string-names] <sysfs-device> <expected-cache> <cycles>; or --check-periodic <cycles>".into());
+            return Err("requires an explicit --authorize-periodic[-startup|-observed-polls|-initialization-diagnostic|-c-string-names|-publication-hold] <sysfs-device> <expected-cache> <cycles>; or --check-periodic <cycles>".into());
         }
         let cycles = args
             .get(if offline { 1 } else { 3 })
@@ -72,6 +76,9 @@ fn main() -> std::process::ExitCode {
             .map_err(|_| "invalid cycle budget")?;
         if !(1..=MAX_PUBLICATION_CYCLES).contains(&cycles) {
             return Err("cycle budget outside 1..=40".into());
+        }
+        if publication_hold && cycles != 1 {
+            return Err("publication hold requires exactly one cycle".into());
         }
         let mut input = std::io::stdin().lock();
         let mut request = 0;
@@ -217,12 +224,18 @@ fn main() -> std::process::ExitCode {
             Session::new_with_poll_policy(transport, Duration::from_millis(500), poll_policy)
                 .expect("fixed deadline");
         let result = (|| -> Result<(), String> {
-            if initialization_diagnostic {
+            let initialization = if initialization_diagnostic {
                 session.initialize_with_read_timeout(DIAGNOSTIC_INITIALIZATION_TIMEOUT)
             } else {
                 session.initialize()
             }
             .map_err(|e| e.to_string())?;
+            // Match the one-shot diagnostic without assigning readiness or
+            // identity semantics to the opaque initialization body.
+            println!(
+                "A0/A1/A2 completed; response byte 28 nonzero={}; other metadata redacted",
+                initialization.body()[24] != 0
+            );
             println!("initialized; bounded publication active; names and metadata redacted");
             for cycle in 1..=cycles {
                 let before = fresh()?;
@@ -302,7 +315,7 @@ fn main() -> std::process::ExitCode {
                         if replies.len() > 4 {
                             println!("cycle={cycle} additional_record_diagnostics_omitted={}", replies.len() - 4);
                         }
-                        if known {
+                        if known && !publication_hold {
                             #[cfg(feature = "native-pipewire")]
                             if let Some(router) = router.as_mut() {
                                 router.apply(&current, &planning_records)?;
@@ -318,6 +331,12 @@ fn main() -> std::process::ExitCode {
                         }
                     }
                 }
+            }
+            if publication_hold {
+                println!("OBSERVE: single publication held for 30 seconds; no further USB requests or routing");
+                std::io::stdout().flush().map_err(|_| "output failed")?;
+                std::thread::sleep(Duration::from_secs(30));
+                check_fresh(&fresh()?, &mut tracker)?;
             }
             Ok(())
         })();

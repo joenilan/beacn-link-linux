@@ -159,9 +159,12 @@ def main():
     parser.add_argument("--observe-rejected-polls", action="store_true", help="explicit bounded rejected-marker observation policy; requires observed-startup")
     parser.add_argument("--initialization-diagnostic", action="store_true", help="single A2 read with a five-second diagnostic limit; all later bulk deadlines stay 500 ms")
     parser.add_argument("--windows-c-string-names", action="store_true", help="explicit received-name compatibility; requires initialization diagnostic periodic hardware mode")
+    parser.add_argument("--single-publication-hold", action="store_true", help="one metadata-only cycle followed by 30 seconds without USB requests")
     parser.add_argument("--private-routing", action="store_true", help="explicit native routing on owned private synthetic destinations only")
     parser.add_argument("--authorize-isolated-routing", action="store_true")
     args = parser.parse_args()
+    if args.single_publication_hold and (args.stage != "run" or args.cycles != 1 or args.private_routing or not args.windows_c_string_names):
+        parser.error("single publication hold requires one C-string hardware cycle without routing")
     routing_probe = args.stage == "routing-probe"
     if routing_probe and not args.private_routing:
         parser.error("routing-probe requires private-routing")
@@ -236,6 +239,7 @@ def main():
                                           "observe_rejected_polls": args.observe_rejected_polls,
                                           "initialization_diagnostic": args.initialization_diagnostic,
                                           "windows_c_string_names": args.windows_c_string_names,
+                                          "single_publication_hold": args.single_publication_hold,
                                           "private_routing": args.private_routing})
     # PipeWire also creates a '-manager' socket; evidence paths can exceed the
     # Linux Unix-socket limit. mkdtemp retains exclusive 0700 ownership.
@@ -273,6 +277,7 @@ def main():
     result["observed_startup"] = args.observed_startup
     result["observe_rejected_polls"] = args.observe_rejected_polls
     result["windows_c_string_names"] = args.windows_c_string_names
+    result["single_publication_hold"] = args.single_publication_hold
     result["initialization_diagnostic"] = args.initialization_diagnostic
     result["private_runtime"] = str(runtime)
     result["private_routing_requested"] = args.private_routing
@@ -318,6 +323,32 @@ def main():
                 time.sleep(0.05)
             ordered = [next(o for o in selected_nodes if base.inventory.properties(o)["node.name"] == name) for name in names]
             destinations = {o["id"]: int(base.inventory.properties(o)["object.serial"]) for o in ordered}
+            # PipeWire 1.4 can leave these adapters in unlabelled convert mode.
+            # Configure only retained, process-verified owned destinations.
+            base.save(root / "private-destinations-prepared.json", objects)
+            port_config = {"direction": "Input", "mode": "dsp", "monitor": False, "control": False,
+                           "format": {"mediaType": "audio", "mediaSubtype": "raw", "format": "F32P",
+                                      "rate": 48000, "channels": 2, "position": ["FL", "FR"]}}
+            for node in ordered:
+                p = base.inventory.properties(node)
+                client = next(o for o in objects if o.get("type") == "PipeWire:Interface:Client" and o["id"] == int(p["client.id"]))
+                cp = base.inventory.properties(client)
+                if int(cp.get("pipewire.sec.pid", cp.get("application.process.id", 0))) != controller.pid or p.get("device.id") is not None or p.get("media.class") != "Audio/Sink" or p.get("node.virtual") is not True:
+                    raise RuntimeError("private destination ownership/layout refused")
+                controller.stdin.write(("set-param " + str(node["id"]) + " PortConfig " + json.dumps(port_config) + "\n").encode())
+                controller.stdin.flush()
+            end = time.monotonic() + 4
+            while True:
+                _, objects = dump()
+                if all(sorted(base.inventory.properties(o).get("audio.channel", "") for o in objects
+                              if o.get("type") == "PipeWire:Interface:Port"
+                              and base.inventory.properties(o).get("node.id") == node_id
+                              and base.inventory.properties(o).get("port.direction") == "in") == ["FL", "FR"]
+                       for node_id in destinations):
+                    break
+                if controller.poll() is not None or time.monotonic() >= end:
+                    raise RuntimeError("private stereo DSP ports unavailable")
+                time.sleep(.05)
             core = next(o for o in objects if o.get("type") == "PipeWire:Interface:Core")
             native_arguments = [str(runtime), remote, str(core["info"]["cookie"]), str(server.pid), token] + [f'{i}:{o["id"]}:{destinations[o["id"]]}' for i, o in enumerate(ordered, 1)]
             base.save(root / "private-destinations.json", {"destinations": destinations, "routing_scope": "owned_private_core"})
@@ -367,7 +398,7 @@ def main():
                 return current
 
             command = ([str(binary), "--check-private-routing", "unused", "unused", str(args.cycles), *native_arguments] if routing_probe else [str(binary), "--check-periodic", str(args.cycles)] if source_only else
-                       [str(binary), "--authorize-periodic-c-string-names" if args.windows_c_string_names else "--authorize-periodic-initialization-diagnostic" if args.initialization_diagnostic else "--authorize-periodic-observed-polls" if args.observe_rejected_polls else "--authorize-periodic-startup" if args.observed_startup else "--authorize-periodic", str(selected), str(pinned), str(args.cycles)])
+                       [str(binary), "--authorize-periodic-publication-hold" if args.single_publication_hold else "--authorize-periodic-c-string-names" if args.windows_c_string_names else "--authorize-periodic-initialization-diagnostic" if args.initialization_diagnostic else "--authorize-periodic-observed-polls" if args.observe_rejected_polls else "--authorize-periodic-startup" if args.observed_startup else "--authorize-periodic", str(selected), str(pinned), str(args.cycles)])
             if args.private_routing and not routing_probe:
                 command[1] = "--authorize-periodic-private-routing"
                 command += native_arguments

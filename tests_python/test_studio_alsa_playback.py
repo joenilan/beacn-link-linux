@@ -14,6 +14,15 @@ import studio_alsa_playback as alsa
 
 
 class StudioAlsaTests(unittest.TestCase):
+    def test_completed_setup_requires_full_progress_and_the_retained_owner(self):
+        done = "state: SETUP\nowner_pid   : 123\nhw_ptr      : 384000\n"
+        self.assertTrue(alsa.completed_pcm(done, 123, 384000))
+        for raw in (done.replace("384000", "383999"), done.replace("123", "456"),
+                    done.replace("SETUP", "PREPARED"), done.replace("SETUP", "XRUN"),
+                    done.replace("hw_ptr", "appl_ptr"), done + "x" * 16384, "closed"):
+            with self.subTest(raw=raw[:70]):
+                self.assertFalse(alsa.completed_pcm(raw, 123, 384000))
+
     def test_audible_authorization_is_separate_and_exact(self):
         alsa.check_authorization(True, False, False)
         alsa.check_authorization(False, True, True)

@@ -20,9 +20,16 @@ Owned cleanup and connected comparisons pass; reboot-wide state differences are
 recorded separately. A separate Debian 13 laptop now completes four seconds of
 96-kHz direct-ALSA silence with queue progress, natural exit and unchanged settings.
 The native programs build there, and private A-to-B routing/partial-failure recovery
-passes after explicitly configuring the test's stereo DSP ports. Audible output,
-physical PipeWire integration, real-application routing and a usable Linux replacement
-remain unverified. Read the current handoff and playback report before another test.
+passes after explicitly configuring the test's stereo DSP ports. The owner heard
+the quiet first-pair direct-ALSA tone. An explicitly selected private PipeWire
+bridge also drove Studio's first pair with validated 96-kHz silent queue progress,
+then passed A-to-B routing and partial-failure recovery with settings preserved.
+Native laptop USB initialization passes. After reopening the streaming PC's
+BEACN App, the owner assigned the Linux test into Link In; Linux applied its
+private stereo route and published verified assignment 1 through cycle 40.
+Real desktop application
+routing, audible PipeWire integration and a usable Linux replacement remain
+unverified. Read the current handoff and playback report before another test.
 Windows Link stays closed during hardware tests.
 
 Goal: a Linux gaming PC connected through BEACN Studio while the Windows

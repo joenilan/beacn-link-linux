@@ -4,7 +4,26 @@ Updated 2026-10-14.
 This is an explicitly authorized physical feasibility test, separate from the
 [native private-core executor](native-executor.md) and
 [accepted assignment/publication checkpoint](native-assignment-publication.md).
-Ordinary desktop apply remains disabled. No audible acceptance is claimed.
+Ordinary desktop apply remains disabled. The owner confirmed audible native
+direct-ALSA first-pair tones; audible assignment-driven PipeWire remains unverified.
+
+## Current native audible and physical PipeWire checkpoint
+
+The owner heard the bounded 96-kHz first-pair tone. The original ending-state
+harness refusal is preserved, with all settings/routes/state/binding comparisons
+equal afterward. A later silent run recorded natural exit without cleanup
+signaling. Post-drain SETUP is accepted only for the retained child after complete
+authored-frame progress; focused tests reject incomplete progress and wrong PID.
+
+The explicitly authorized physical option in `tests_native/private_core.py`
+created a retained eight-channel raw ALSA adapter in the owned private core.
+Destination A's FL/FR monitor ports bridged only to Studio AUX0/AUX1. The native
+executor created the source-to-A stereo links, the retained server owned the
+96-kHz FLOAT_LE PCM, and four seconds of silent queue progress passed. Actual
+A-to-B and partial-failure rollback passed, followed by exact desktop/settings,
+state hashes, released binding and closed-PCM comparisons. No desktop routes,
+defaults, volumes or mutes were changed. See [HANDOFF](HANDOFF.md) for evidence
+hashes and the separate native USB publication results.
 
 ## Current owner plan: direct Debian laptop comparison over SSH
 
@@ -43,7 +62,7 @@ read was refused EBUSY with no interface claim/detach/reset/write.
 An explicit audible first-pair mode is prepared: three 350-ms 440-Hz tones at
 no more than -24 dBFS on channels 0/1, one-second silent lead and quiet tail,
 all remaining channels silent. It needs separate tone authorization and owner
-listening readiness. The readiness question is pending; no audible run started.
+listening readiness. At that earlier checkpoint no audible run had started.
 The exact Debian native build and private routing/recovery check also pass;
 see [HANDOFF](HANDOFF.md) for the separate private-core evidence and next steps.
 

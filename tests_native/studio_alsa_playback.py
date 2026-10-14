@@ -88,6 +88,18 @@ def clock(raw, pid, allow_draining=False):
     return int(pointer.group(1))
 
 
+def completed_pcm(raw, pid, frames):
+    """Recognize post-drain SETUP only after all authored frames progressed."""
+    if len(raw) > 16384:
+        return False
+    state = re.search(r"^state: (\w+)$", raw, re.M)
+    owner = re.search(r"^owner_pid\s+: (\d+)$", raw, re.M)
+    pointer = re.search(r"^hw_ptr\s+: (\d+)$", raw, re.M)
+    return (state is not None and state.group(1) == "SETUP"
+            and owner is not None and int(owner.group(1)) == pid
+            and pointer is not None and int(pointer.group(1)) >= frames)
+
+
 def native_card_endpoint(objects, card):
     """Pin the selected raw ALSA card without requiring a particular UCM layout."""
     candidates = [obj for obj in objects if obj.get("type") == "PipeWire:Interface:Device"
@@ -149,6 +161,7 @@ def main():
                "graph_rate_forced": False,
                "duration": DURATION, "pipewire_playback_stream": False,
                "native_executor_apply": False, "child_exited": True,
+               "natural_exit": False, "cleanup_signal_sent": False,
                "clock_checks": 0, "error": None}
     child = log = None
     baseline = None
@@ -220,12 +233,20 @@ def main():
                 playback.endpoint(current_objects, card, 1)
                 playback.require_rate_isolation(current_objects, pinned["device"]["id"])
             status = (alsa / "pcm0p/sub0/status").read_text()
+            journal["last_observed_status"] = status[:16384]
             if status.strip() == "closed" and child.poll() is not None:
                 break
             sufficient_progress = last_pointer is not None and last_pointer >= rate * (DURATION - 1)
             if status.strip() == "closed" and (elapsed < 1 or sufficient_progress):
                 time.sleep(0.1)
                 continue
+            if sufficient_progress and completed_pcm(status, child.pid, rate * DURATION):
+                # snd_pcm_drain can finish before aplay closes/exits. Do not
+                # cancel a completed child merely because RUNNING ended.
+                child.wait(timeout=min(1, max(.01, DURATION + 3 - elapsed)))
+                cancellation.check()
+                journal["completed_pcm_status"] = status
+                break
             pointer = clock(status, child.pid, allow_draining=sufficient_progress)
             params = (alsa / "pcm0p/sub0/hw_params").read_text()
             parameters(params, rate)
@@ -246,12 +267,14 @@ def main():
                 raise RuntimeError("direct ALSA queue pointer stalled for two seconds")
             time.sleep(0.2)
         if child.returncode or last_pointer is None or last_pointer < rate * (DURATION - 1):
-            raise RuntimeError("direct ALSA did not complete sufficient queue-progress-checked silence")
+            raise RuntimeError("direct ALSA did not complete sufficient queue-progress-checked playback")
+        journal["natural_exit"] = True
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
         journal["error"] = str(error)
     finally:
         if child is not None:
             if child.poll() is None:
+                journal["cleanup_signal_sent"] = True
                 child.terminate()
                 try:
                     child.wait(timeout=2)

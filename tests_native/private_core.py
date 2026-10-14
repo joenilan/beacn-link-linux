@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Explicitly authorized, disposable-core native executor test. Never a CI test."""
+"""Authorized private-core executor test, with opt-in native Studio silence. Never CI."""
 import argparse
 import hashlib
 import json
@@ -72,14 +72,43 @@ def main():
     parser.add_argument("--codec", required=True)
     parser.add_argument("--evidence-dir", required=True)
     parser.add_argument("--fault-tests", action="store_true", help="requires native-test-faults executable")
+    parser.add_argument("--authorize-studio-first-pair-silence", action="store_true",
+                        help="native-only physical ALSA bridge from owned destination A; never desktop apply")
+    parser.add_argument("--sysfs-device")
     args = parser.parse_args()
     if not args.authorize_isolated_routing or sys.platform != "linux":
         parser.error("requires Linux and explicit owner authorization for isolated routing")
+    if bool(args.sysfs_device) != args.authorize_studio_first_pair_silence:
+        parser.error("physical silence requires its authorization and exact selected sysfs device")
+    if args.authorize_studio_first_pair_silence and args.fault_tests:
+        parser.error("physical silence and extended synthetic fault matrix are separate tests")
+    physical = None
+    rate = 96000 if args.authorize_studio_first_pair_silence else 48000
+    if args.authorize_studio_first_pair_silence:
+        import studio_alsa_playback as alsa_test
+        alsa_test.require_native_environment()
+        owner = alsa_test.playback.owner
+        selected = Path(args.sysfs_device).resolve(strict=True)
+        binding = owner.connected_binding(selected)
+        cards = [int(p.name[4:]) for p in Path("/sys/class/sound").glob("card[0-9]*")
+                 if selected in (p / "device").resolve(strict=True).parents]
+        if len(cards) != 1:
+            parser.error("selected Studio does not uniquely identify a native ALSA card")
+        card = cards[0]
+        for direction in ("p", "c"):
+            if (Path("/proc/asound") / ("card" + str(card)) / ("pcm0" + direction) / "sub0/status").read_text().strip() != "closed":
+                parser.error("selected Studio PCM already in use")
+        device = Path("/dev/snd") / ("pcmC%dD0p" % card)
+        identity = device.stat()
+        physical = {"snapshot": owner.snapshot(), "binding": binding, "card": card,
+                    "pcm_identity": [identity.st_dev, identity.st_ino, identity.st_rdev]}
     root = Path(args.evidence_dir).resolve()
     repo = Path(__file__).resolve().parents[1]
     if root == repo or repo in root.parents:
         parser.error("evidence must stay outside the repository")
     root.mkdir(mode=0o700, parents=False, exist_ok=False)
+    if physical is not None:
+        owner.save(root / "physical-baseline.json", physical)
     token = uuid.uuid4().hex
     remote = "beacn-test-" + token[:8]
     desktop_env = dict(os.environ)
@@ -172,6 +201,10 @@ def main():
         client = {**conf, "context.properties": {"core.daemon": False, "support.dbus": False}, "context.modules": [{"name": "libpipewire-module-" + name} for name in ("protocol-native", "client-node", "adapter", "metadata")]}
         config = temp / "config"
         config.mkdir(mode=0o700)
+        if physical is not None:
+            conf["context.properties"]["default.clock.rate"] = rate
+            conf["context.properties"]["default.clock.allowed-rates"] = [rate]
+            conf["context.spa-libs"]["api.alsa.*"] = "alsa/libspa-alsa"
         (config / "server.conf").write_text(json.dumps(conf))
         (config / "client.conf").write_text(json.dumps(client))
         minimal = "context.properties = { support.dbus = false context.num-data-loops = 0 }\ncontext.modules = [ { name = libpipewire-module-protocol-native } ]\ncontext.objects = []\ncontext.exec = []\n"
@@ -189,7 +222,7 @@ def main():
         controller = start("controller", ["pw-cli", "-r", remote], private_env, subprocess.PIPE)
         names = ["beacn-test-" + token + "-" + suffix for suffix in ("A", "B", "source")]
         for name in names[:2]:
-            properties = {"factory.name": "support.null-audio-sink", "node.name": name, "media.class": "Audio/Sink", "node.virtual": True, "node.driver": True, "object.linger": False, "node.autoconnect": False, "audio.channels": 2, "audio.position": ["FL", "FR"], "audio.rate": 48000, "state.restore-props": False, "state.restore-target": False, "beacn.test.token": token, "adapter.auto-port-config": {"mode": "dsp", "monitor": False, "position": "preserve"}}
+            properties = {"factory.name": "support.null-audio-sink", "node.name": name, "media.class": "Audio/Sink", "node.virtual": True, "node.driver": True, "object.linger": False, "node.autoconnect": False, "audio.channels": 2, "audio.position": ["FL", "FR"], "audio.rate": rate, "state.restore-props": False, "state.restore-target": False, "beacn.test.token": token, "adapter.auto-port-config": {"mode": "dsp", "monitor": False, "position": "preserve"}}
             controller.stdin.write(("create-node adapter " + json.dumps(properties) + "\n").encode())
             controller.stdin.flush()
         destinations = wait(lambda oo: sum(obj.get("type") == inventory.NODE and owned(obj) for obj in oo) == 2)
@@ -198,7 +231,7 @@ def main():
         # private destinations, then require actual labelled stereo ports.
         port_config = {"direction": "Input", "mode": "dsp", "monitor": False, "control": False,
                        "format": {"mediaType": "audio", "mediaSubtype": "raw", "format": "F32P",
-                                  "rate": 48000, "channels": 2, "position": ["FL", "FR"]}}
+                                  "rate": rate, "channels": 2, "position": ["FL", "FR"]}}
         configured = []
         for name in names[:2]:
             node = next(obj for obj in destinations if obj.get("type") == inventory.NODE
@@ -208,7 +241,8 @@ def main():
             assert int(props(client).get("pipewire.sec.pid", props(client).get("application.process.id", 0))) == controller.pid
             assert props(node).get("object.serial") and props(node).get("media.class") == "Audio/Sink"
             configured.append({"id": node["id"], "serial": props(node)["object.serial"]})
-            controller.stdin.write(("set-param " + str(node["id"]) + " PortConfig " + json.dumps(port_config) + "\n").encode())
+            config_for_node = {**port_config, "monitor": physical is not None and name == names[0]}
+            controller.stdin.write(("set-param " + str(node["id"]) + " PortConfig " + json.dumps(config_for_node) + "\n").encode())
             controller.stdin.flush()
         wait(lambda oo: all(sorted(props(obj).get("audio.channel", "") for obj in oo
                                    if obj.get("type") == "PipeWire:Interface:Port"
@@ -216,12 +250,55 @@ def main():
                                    and props(obj).get("port.direction") == "in") == ["FL", "FR"]
                             for target in configured))
         journal["configured_stereo_destinations"] = configured
+        if physical is not None:
+            if owner.snapshot() != physical["snapshot"] or owner.connected_binding(selected) != physical["binding"]:
+                raise RuntimeError("physical baseline drift before owned ALSA bridge")
+            hardware_name = "beacn-test-" + token + "-hardware"
+            positions = ["AUX" + str(i) for i in range(8)]
+            hardware_props = {"factory.name": "api.alsa.pcm.sink", "api.alsa.path": "hw:%d,0" % card,
+                              "api.alsa.use-chmap": False, "node.name": hardware_name,
+                              "media.class": "Audio/Sink", "node.driver": True, "node.pause-on-idle": True,
+                              "node.autoconnect": False, "object.linger": False, "audio.rate": rate,
+                              "audio.allowed-rates": [rate], "audio.format": "F32LE", "audio.channels": 8,
+                              "audio.position": positions, "beacn.test.token": token}
+            controller.stdin.write(("create-node adapter " + json.dumps(hardware_props) + "\n").encode())
+            controller.stdin.flush()
+            oo = wait(lambda oo: sum(obj.get("type") == inventory.NODE and props(obj).get("node.name") == hardware_name and owned(obj) for obj in oo) == 1)
+            hardware = next(obj for obj in oo if obj.get("type") == inventory.NODE and props(obj).get("node.name") == hardware_name and owned(obj))
+            hardware_client = next(obj for obj in oo if obj.get("type") == "PipeWire:Interface:Client"
+                                   and obj["id"] == int(props(hardware)["client.id"]))
+            assert int(props(hardware_client).get("pipewire.sec.pid", props(hardware_client).get("application.process.id", 0))) == controller.pid
+            assert props(hardware).get("object.serial") and props(hardware).get("media.class") == "Audio/Sink"
+            hardware_config = {"direction": "Input", "mode": "dsp", "monitor": False, "control": False,
+                               "format": {"mediaType": "audio", "mediaSubtype": "raw", "format": "F32LE",
+                                          "rate": rate, "channels": 8, "position": positions}}
+            controller.stdin.write(("set-param " + str(hardware["id"]) + " PortConfig " + json.dumps(hardware_config) + "\n").encode())
+            controller.stdin.flush()
+            oo = wait(lambda oo: sorted(props(obj).get("audio.channel", "") for obj in oo if obj.get("type") == "PipeWire:Interface:Port" and props(obj).get("node.id") == hardware["id"] and props(obj).get("port.direction") == "in") == positions)
+            bridge_pairs = set()
+            for channel, target_channel in (("FL", "AUX0"), ("FR", "AUX1")):
+                output = next(obj for obj in oo if obj.get("type") == "PipeWire:Interface:Port" and props(obj).get("node.id") == configured[0]["id"] and props(obj).get("audio.channel") == channel and props(obj).get("port.direction") == "out")
+                target = next(obj for obj in oo if obj.get("type") == "PipeWire:Interface:Port" and props(obj).get("node.id") == hardware["id"] and props(obj).get("audio.channel") == target_channel and props(obj).get("port.direction") == "in")
+                bridge_pairs.add((output["id"], target["id"]))
+                link_props = {"object.linger": False, "beacn.test.token": token}
+                command = "create-link %d %d %d %d " % (configured[0]["id"], int(props(output)["port.id"]),
+                                                       hardware["id"], int(props(target)["port.id"]))
+                controller.stdin.write((command + json.dumps(link_props) + "\n").encode())
+                controller.stdin.flush()
+            oo = wait(lambda oo: {(props(obj).get("link.output.port"), props(obj).get("link.input.port"))
+                                   for obj in oo if obj.get("type") == "PipeWire:Interface:Link"
+                                   and props(obj).get("link.input.node") == hardware["id"]
+                                   and owned(obj)} == bridge_pairs)
+            journal["physical_hardware_node"] = {"id": hardware["id"], "serial": props(hardware)["object.serial"]}
+            journal["physical_bridge_links"] = [{"id": obj["id"], "serial": props(obj)["object.serial"]}
+                                                for obj in oo if obj.get("type") == "PipeWire:Interface:Link"
+                                                and props(obj).get("link.input.node") == hardware["id"] and owned(obj)]
         pcm = root / "synthetic-silence.raw"
-        pcm.write_bytes(b"\0" * (48000 * 2 * 2 * 60))
+        pcm.write_bytes(b"\0" * (rate * 2 * 2 * 60))
         with pcm.open("rb") as handle:
             properties = {"node.name": names[2], "beacn.test.token": token, "node.autoconnect": False, "node.dont-reconnect": True, "state.restore-props": False, "state.restore-target": False, "adapter.auto-port-config": {"mode": "dsp", "monitor": False, "position": "preserve"}}
-            playback = start("playback", ["pw-cat", "-p", "-a", "-R", remote, "--target", "0", "--rate", "48000", "--channels", "2", "--channel-map", "FL,FR", "--format", "s16", "-P", json.dumps(properties), "-"], private_env, handle)
-        objects = wait(lambda oo: sum(obj.get("type") == inventory.NODE and owned(obj) for obj in oo) == 3)
+            playback = start("playback", ["pw-cat", "-p", "-a", "-R", remote, "--target", "0", "--rate", str(rate), "--channels", "2", "--channel-map", "FL,FR", "--format", "s16", "-P", json.dumps(properties), "-"], private_env, handle)
+        objects = wait(lambda oo: sum(obj.get("type") == inventory.NODE and owned(obj) for obj in oo) == (4 if physical is not None else 3))
         a, b, source = [next(obj for obj in objects if obj.get("type") == inventory.NODE and props(obj).get("node.name") == name and owned(obj)) for name in names]
         assert not links(objects)
         observed = inventory.observe(objects, 1)
@@ -236,6 +313,28 @@ def main():
         frames = [subprocess.check_output([args.codec, "encode", str(i) + ":controlled-test"], text=True).strip() for i in (1, 2)]
         assert "Complete prefix=2" in native_command("route 1 " + frames[0])
         stage("native-A", a)
+        if physical is not None:
+            observations = []
+            end = time.monotonic() + 4
+            while time.monotonic() < end:
+                current = device.stat()
+                if [current.st_dev, current.st_ino, current.st_rdev] != physical["pcm_identity"]:
+                    raise RuntimeError("selected physical PCM identity changed")
+                if owner.snapshot() != physical["snapshot"]:
+                    raise RuntimeError("foreign desktop changed during owned physical route")
+                status_path = Path("/proc/asound") / ("card" + str(card)) / "pcm0p/sub0/status"
+                status = status_path.read_text()
+                pointer = alsa_test.clock(status, server.pid)
+                params = status_path.with_name("hw_params").read_text()
+                alsa_test.parameters(params, rate)
+                activation = alsa_test.playback.audio_activation(selected, physical["binding"])
+                observations.append({"pointer": pointer, "status": status, "hw_params": params, "activation": activation})
+                owner.save(root / ("physical-clock-%03d.json" % len(observations)), observations[-1])
+                time.sleep(.2)
+            owner.save(root / "physical-clock.json", observations)
+            if len(observations) < 2 or observations[-1]["pointer"] - observations[0]["pointer"] < rate * 3:
+                raise RuntimeError("owned PipeWire physical route did not progress sufficiently")
+            journal["physical_queue_progress_verified"] = True
         assert "Complete prefix=4" in native_command("route 2 " + frames[1])
         before_failure = stage("native-B", b)
         assert "Failed prefix=3" in native_command("route-fail-before 3 " + frames[0] + " 3", False)
@@ -340,6 +439,10 @@ def main():
         try:
             after = dump(desktop_env, "pipewire-0")
             journal["desktop_after"] = filtered(after)
+            if physical is not None:
+                journal["physical_binding_restored"] = owner.connected_binding(selected) == physical["binding"]
+                journal["physical_snapshot_restored"] = owner.snapshot() == physical["snapshot"]
+                journal["physical_pcms_closed"] = all((Path("/proc/asound") / ("card" + str(card)) / ("pcm0" + d) / "sub0/status").read_text().strip() == "closed" for d in ("p", "c"))
             journal["desktop_settings_unchanged"] = journal["desktop_after"] == journal["desktop_baseline"]
             journal["desktop_state_files_unchanged"] = state_hashes(desktop_env) == journal["desktop_state_hashes"]
             journal["desktop_has_no_owned_objects"] = not any(owned(obj) for obj in after)
@@ -362,6 +465,7 @@ def main():
         save()
     checks = ("routing_passed", "private_baseline_restored", "desktop_settings_unchanged", "desktop_state_files_unchanged", "desktop_has_no_owned_objects", "runtime_removed")
     if args.fault_tests: checks+=("fault_tests_passed",)
+    if physical is not None: checks += ("physical_queue_progress_verified", "physical_binding_restored", "physical_snapshot_restored", "physical_pcms_closed")
     print(json.dumps({key: journal.get(key) for key in checks} | {"error": journal["error"], "native_test_stats": journal.get("native_test_stats"), "client_churn_iterations": journal.get("client_churn_iterations"), "stages": journal["stages"], "diagnostics": journal.get("diagnostics"), "cleanup_errors": [journal[key] for key in ("private_cleanup_error", "desktop_cleanup_error") if key in journal]}))
     return 0 if all(journal.get(key) for key in checks) and journal["error"] is None else 1
 

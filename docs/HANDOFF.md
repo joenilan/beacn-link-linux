@@ -27,11 +27,103 @@ supports 48000/96000 Hz and implicit feedback. The first native 96-kHz silent
 PCM run and a Debian private-core executor check now pass, as recorded below.
 Full pre/post graph/settings, persistent files and USB binding are preserved.
 The owner reaffirmed authority for necessary login/relogin and reconnect/recovery
-steps. Audible testing still needs the owner ready to listen; a quiet first-pair
-test is prepared, with the readiness question pending. Native laptop vendor
-initialization/publication and physical PipeWire application remain unverified.
+steps. The owner heard the quiet native first-pair direct-ALSA test. Native USB
+initialization and a controlled silent physical PipeWire bridge now pass; the
+owner also saw brief publication after reopening BEACN App on the streaming PC.
 Keep ordinary apply and Actions disabled; preserve all VM evidence. Do not repeat
 failed controller/rate tests or the initial audit, or install/run REA.
+
+## Native audible output, physical PipeWire and publication checkpoint
+
+The owner-ready 96-kHz direct-ALSA first-pair tone was audible: the owner reported
+"i heard it". The original journal retains its terminal-state refusal despite
+18 advancing clock observations and child exit 0; do not relabel that journal a
+clean harness pass. Its SHA256 is
+`44aa2dfb6ec8849168b2d2e7bb77f496f785d28096f297dfc764eaf4d849151f`.
+Full graph/settings/routes, persistent-state hashes and released USB binding
+matched afterward. This is audible raw first-pair acceptance, not audible
+assignment-driven PipeWire acceptance.
+
+The completion guard now recognizes post-drain SETUP only with the retained
+child PID and all authored frames consumed, after sufficient prior progress.
+Natural exit and cleanup signaling are recorded separately. A fresh silent
+96-kHz run naturally exited 0 with no cleanup signal, 18 observations and an
+observed DRAINING tail. Its journal SHA256 is
+`c9014c044d0f5cc4d6592046b635106b6e8e9da0fbcd494da00887ac2d925f82`.
+The SETUP branch has focused owner/progress refusal tests; SETUP was not observed
+in that live validation. Original tone evidence remains unchanged.
+
+`tests_native/private_core.py --authorize-studio-first-pair-silence` additionally
+requires explicit isolated routing and the selected sysfs device. It refuses
+virtual hosts, ambiguous cards, occupied Studio PCMs and unreleased binding.
+The owned private core uses 96000 Hz and a retained raw eight-channel ALSA
+adapter, with process-verified controller ownership. Only destination A's FL/FR
+monitor ports bridge to AUX0/AUX1. Exact observed port pairs and retained proxies
+govern the bridge; no numeric-ID/owner-tag deletion authority is added.
+
+The native executor acknowledged the source-to-A stereo route. The selected
+FLOAT_LE/8-channel/96000 PCM was owned by the retained private server, with
+four seconds of validated queue progress. Actual A-to-B and partial-A/rollback-B
+also passed. All owned objects/processes/runtime were removed, Studio PCMs
+closed, and full desktop/state/binding comparisons passed. Journal SHA256:
+`8a58df68eb2f6a27e214f1e48bc30c0a3676bec7ef4c06ee362b90ed9b1ee376`.
+This is physical silent routing of an owned synthetic source. Ordinary desktop
+application apply remains disabled; no audible PipeWire acceptance is claimed.
+
+The final guarded harness rerun passed with 19 observations and 376,879 frames
+of progress, active A/B routes, partial failure and restored B with new serials.
+Its journal SHA256 is
+`f8e2fa8e90f8e9372d8e895d2477c29ead113186e3ceaaf3ec911e081bee6fcb`.
+The default synthetic mode also passed, journal SHA256
+`fea186591f22dfca960dfdcdeedb2f50325bf05289a092581a0bb0731703a56c`.
+An intervening progress-journal collision stopped a test cleanly; its evidence
+is retained. Individual observations now use exclusive sequence filenames,
+with one final aggregate. Missing physical authorization and combined physical/
+extended-fault options refuse before device/core execution. Final code source:
+`beacn-native-source-20261014T205710Z`; exact native programs built offline and
+focused checks passed. All private evidence is copied and hashed outside Git.
+
+Native laptop A0/A1/A2 initialization passed and restored the selected-device
+ACL/binding exactly. Initial 40-cycle publication and five-cycle diagnostics
+returned only rejected markers; the owner saw no name. The packet/list/polling
+source matches the successful VM source; later changes add handshake-only
+diagnostic access, not publication encoding changes. A limited diagnostic now
+reports only byte 28's nonzero boolean, matching the one-shot example. It was
+false both here and in earlier VM-visible evidence; its semantics remain unknown.
+
+An explicit `--single-publication-hold` runner mode requires one C-string hardware
+cycle without routing, then holds for 30 seconds without further USB requests.
+It preserves all existing device/inventory/cleanup guards and the 50-second
+supervisor bound. The first hold still showed no name. After the owner fully
+reopened BEACN App on the streaming PC, another hold received valid NoPayload
+and the owner saw the name briefly in Applications. Peer state changed alongside
+the result; the cause and continuous visibility are not established.
+
+The Debian USB/private-routing runner now explicitly configures DSP FL/FR ports
+after verifying each retained controller's client PID and virtual destination.
+The no-USB assignment probe passed actual native routes 1 then 2 and verified
+publication 0 -> 1 -> 2. Fourteen ALSA, fifteen playback and seventeen publication
+runner checks passed on the exact staged source. A native multi-cycle hold
+invocation refused before inventory/device access. Private artifacts and owner
+observations are preserved outside Git.
+
+The owner-ready native laptop assignment run then received assignment 1 at cycle
+3 for the exact owned name before its NUL. The native executor acknowledged two
+stereo creates (receipt prefix 2) and verified the actual route. Cycles 4–40
+published freshly verified assignment 1. One record reply, seven NoPayload replies
+and 32 rejected-marker observations completed across 81 fresh inventories; no
+marker semantics are inferred. The owner reported "its in link in". Exit 0,
+owned source preservation, private baseline restoration, all three processes
+stopped, selected USB ACL restoration and exact connected desktop/state/binding
+comparisons passed. Streaming-PC saved settings are outside these local comparisons.
+Journal SHA256:
+`ddc5cd50b191b73223d8d67b6555ff7228c9b60d37091074fc286c17553541fc`.
+The fresh-peer visibility hold journal SHA256 is
+`fb0ef38ee01b752428a0d4e44bab453767769b911cdec53b6486153b940c044b`.
+This establishes native laptop USB assignment -> private native routing -> verified
+USB publication, separate from the physical silent bridge and audible raw ALSA
+checks. Next: join the assignment path to the controlled physical Studio pair,
+then validate audible PipeWire output before ordinary application integration.
 
 ## Native Debian PCM and private executor passed (2026-10-14)
 
@@ -62,7 +154,7 @@ the earlier VM clock observation; a current native clock value is unverified.
 Explicit audible authorization now prepares three 350-ms 440-Hz tones capped
 at -24 dBFS on channels 0/1 only, with a one-second silent lead and quiet tail.
 All other channels stay silent. Tone mode requires its separate authorization
-flag and the owner ready to listen. No audible run has started.
+flag and the owner ready to listen. At that earlier checkpoint no audible run had started.
 
 The laptop has isolated Rust 1.88 and Debian build dependencies; the working VM
 was not reinstalled. Exact native programs build against libusb 1.0.28 and
