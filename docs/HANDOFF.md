@@ -22,7 +22,36 @@ mouse automation, driver/firmware changes, traffic/audio capture or REA executio
 is authorized by this clarification. Existing session execution authority and
 settings-preservation requirements still apply.
 
-## Measured clock mismatch, matched-rate failure and pending recovery (2026-10-14)
+## Matched-rate recovery verified; packet check staged (2026-10-14)
+
+After the owner's VMware disconnect/reconnect, read-only recovery confirms no
+aplay/bpftrace process, closed playback/capture PCMs, released interfaces, matching
+descriptors/attributes and responsive existing desktop services. Logical nodes,
+ports, links and defaults match the saved pre-attempt graph; all persistent-state
+files match exactly. USB generation changed as expected, so do not claim numeric
+identity equality. Nineteen recovered artifacts were copied/hashed. Recovery SHA256:
+`2d71482cc7bdb498dff7f0d06beb99c76a4dbdf2728b18358d45bbe887e9ac30`.
+
+Windows endpoint defaults/volumes/mutes/formats/states match. Full Windows audio
+has one session-list difference; registry has 16 changed machine-audio values,
+each a 16-byte binary value. They remain unclassified and preserved privately;
+no blanket restore or full host byte-equality claim. A fresh host baseline is saved
+for the next diagnostic.
+
+The explicit matched-clock observer is staged at
+`beacn-feedback-ready-20261014T164723Z/run.py`, using the 54-case validated source
+`beacn-link-physical-playback-20261014T164016Z/source`. Launcher SHA256:
+`c7921131760f98800c3b33858465cf3614871d53ccc04b78dc4f8be78c8f2b56`.
+It pins the prior measured-clock evidence and fresh released binding/settings;
+the baseline expires after ten minutes. Source/binding/settings drift refuses
+execution. No root or audio execution has started. Next owner-terminal sudo
+execution observes actual rates, requested packet geometry and errors at 96 kHz.
+Then collect/hash and compare; if owned cleanup blocks, stop playback and recover
+the selected device before more tests. Actions remain disabled, ordinary physical
+apply remains off. The pending-recovery statements below describe the earlier
+failed attempt and are superseded by this recovery checkpoint.
+
+## Measured clock mismatch and matched-rate failure (2026-10-14)
 
 The owner ran `beacn-feedback-ready-20261014T153914Z/run.py`. The corrected
 observer loaded seven probes, exited 0 without warnings/stderr and validated

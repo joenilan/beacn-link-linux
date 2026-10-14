@@ -22,6 +22,26 @@ recovery before a new justified hardware attempt. Do not repeat the failed
 controller/rate experiments or restart the initial audit. Keep ordinary native
 physical apply disabled and distinguish VM audio failure from Linux feasibility.
 
+## Matched-rate recovery and next packet check
+
+The owner's single VMware reconnect released the blocked aplay process. Both
+PCMs are closed; released interfaces/descriptors/attributes match. Fresh logical
+nodes/ports/links/defaults and persistent-state bytes match the pre-attempt baseline.
+USB generation changed, so old IDs are not reused as authority. Nineteen recovered
+artifacts were copied/hashed; recovery SHA256
+`2d71482cc7bdb498dff7f0d06beb99c76a4dbdf2728b18358d45bbe887e9ac30`.
+Windows endpoint settings/defaults match, while one session list and 16 machine-
+audio registry binary values differ. Preserve these unclassified differences;
+do not restore unrelated host state or claim complete host byte equality.
+
+The 54-case validated source has a staged, byte-verified matched-clock launcher
+`beacn-feedback-ready-20261014T164723Z/run.py`. It verifies the old clock report,
+fresh released binding/settings and source hashes; baseline expires at ten minutes.
+It has not started root/audio execution. Next observe configured/device rates,
+requested sizes and packet errors at 96 kHz, then compare settings/owned cleanup.
+The earlier pending-recovery statements below are historical. Ordinary physical
+apply remains disabled; no audible acceptance.
+
 ## Measured 96-kHz device clock and matched-rate failure
 
 The corrected seven-probe owner-terminal run completed without warnings or
