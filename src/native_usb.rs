@@ -229,6 +229,16 @@ pub fn open_handshake_with_startup(
 ) -> Result<Handshake<NativeUsb>, OpenError> {
     open_selected(sysfs, expected, authorized, startup, 500)
 }
+/// Explicit handshake-only initial-read diagnostic, retaining all device guards.
+/// A valid A2 is mandatory; no retries or publication/poll capability are added.
+pub fn open_handshake_initialization_diagnostic(
+    sysfs: &Path,
+    expected: &[u8],
+    authorized: bool,
+    startup: Startup,
+) -> Result<Handshake<NativeUsb>, OpenError> {
+    open_selected(sysfs, expected, authorized, startup, 5000)
+}
 fn open_selected(
     sysfs: &Path,
     expected: &[u8],
@@ -310,7 +320,12 @@ fn open_selected(
         ))
         .map_err(OpenError::Local)?;
     }
-    Handshake::prepare_with_startup(backend, startup).map_err(OpenError::Setup)
+    if initial_read_limit_ms == 5000 {
+        Handshake::prepare_initialization_diagnostic(backend, startup)
+    } else {
+        Handshake::prepare_with_startup(backend, startup)
+    }
+    .map_err(OpenError::Setup)
 }
 /// Explicit publication policy: one-shot normally, capped cycles only through
 /// Publication::bounded. The default opener remains handshake-only.

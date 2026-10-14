@@ -32,7 +32,8 @@ def ref(obj):
 def audio_node(obj):
     cls = inventory.properties(obj).get("media.class")
     return obj.get("type") == inventory.NODE and isinstance(cls, str) and (
-        cls.startswith("Audio/") or cls in ("Stream/Output/Audio", "Stream/Input/Audio"))
+        cls.startswith("Audio/") or cls in ("Stream/Output/Audio", "Stream/Input/Audio",
+                                             "Stream/Output/Audio/Internal", "Stream/Input/Audio/Internal"))
 
 
 def project_graph(objects, generation, bindings):

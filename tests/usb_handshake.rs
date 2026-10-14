@@ -269,6 +269,90 @@ fn full_session_uses_exact_handshake_and_restores_only_its_claim() {
     );
 }
 #[test]
+fn handshake_only_diagnostic_read_does_not_authorize_publication_or_retry() {
+    let shared = Rc::new(RefCell::new(State::default()));
+    let transport = Handshake::prepare_initialization_diagnostic(
+        Fake {
+            shared: shared.clone(),
+            current: baseline(),
+        },
+        Startup::ObservedWindows,
+    )
+    .unwrap();
+    let mut session = Session::new(transport, TIMEOUT).unwrap();
+    session
+        .initialize_with_read_timeout(DIAGNOSTIC_INITIALIZATION_TIMEOUT)
+        .unwrap();
+    let mut transport = session.into_transport();
+    // Valid one-record data frame; a successful handshake still cannot send it.
+    assert_eq!(
+        transport.write(3, &[7, 0, 0, 172, 4, 1, 103, 97, 109, 101, 0], TIMEOUT),
+        Err(TransportError::NoTransfer)
+    );
+    assert_eq!(
+        transport.read(0x83, &mut [0; 512], TIMEOUT),
+        Err(TransportError::NoTransfer)
+    );
+    assert!(transport.close().baseline_restored);
+    let calls = &shared.borrow().calls;
+    assert_eq!(calls.iter().filter(|c| c.starts_with("read:")).count(), 1);
+    assert!(calls.iter().any(|c| c == "read:512:5000"));
+    assert_eq!(calls.iter().filter(|c| c.starts_with("write:")).count(), 2);
+    assert!(calls
+        .iter()
+        .filter(|c| c.starts_with("write:"))
+        .all(|c| c.ends_with(":500")));
+}
+#[test]
+fn handshake_default_rejects_diagnostic_deadline_and_diagnostic_errors_never_retry() {
+    let (shared, transport) = setup(State::default());
+    let mut session = Session::new(transport.unwrap(), TIMEOUT).unwrap();
+    assert!(session
+        .initialize_with_read_timeout(DIAGNOSTIC_INITIALIZATION_TIMEOUT)
+        .is_err());
+    assert!(session.into_transport().close().baseline_restored);
+    assert!(!shared.borrow().calls.iter().any(|c| c.starts_with("read:")));
+    for state in [
+        State {
+            read_error: true,
+            ..Default::default()
+        },
+        State {
+            wrong_reply: true,
+            ..Default::default()
+        },
+        State {
+            read_length: Some(0),
+            ..Default::default()
+        },
+    ] {
+        let shared = Rc::new(RefCell::new(state));
+        let transport = Handshake::prepare_initialization_diagnostic(
+            Fake {
+                shared: shared.clone(),
+                current: baseline(),
+            },
+            Startup::ObservedWindows,
+        )
+        .unwrap();
+        let mut session = Session::new(transport, TIMEOUT).unwrap();
+        assert!(session
+            .initialize_with_read_timeout(DIAGNOSTIC_INITIALIZATION_TIMEOUT)
+            .is_err());
+        assert!(session.initialize().is_err());
+        assert!(session.into_transport().close().baseline_restored);
+        assert_eq!(
+            shared
+                .borrow()
+                .calls
+                .iter()
+                .filter(|c| c.starts_with("read:"))
+                .count(),
+            1
+        );
+    }
+}
+#[test]
 fn completion_does_not_authorize_publication_poll_or_a_second_handshake() {
     let (shared, transport) = setup(State::default());
     let mut session = Session::new(transport.unwrap(), TIMEOUT).unwrap();

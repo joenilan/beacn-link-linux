@@ -233,6 +233,7 @@ pub struct Handshake<B: Backend> {
     closed: bool,
     phase: Phase,
     publication: Option<Publication>,
+    initialization_timeout: Duration,
 }
 pub(crate) fn descriptor_profile(bytes: &[u8], configuration: u8) -> Result<(), Error> {
     let d = usb_descriptors::parse(bytes).map_err(|_| Error::Profile)?;
@@ -328,6 +329,7 @@ impl<B: Backend> Handshake<B> {
             closed: false,
             phase: Phase::A0,
             publication: None,
+            initialization_timeout: MAX_TIMEOUT,
         };
         let result = (|| {
             let observation = this.backend.observe().map_err(|code| Error::Backend {
@@ -385,6 +387,17 @@ impl<B: Backend> Handshake<B> {
             owner
         })
     }
+    /// Handshake-only diagnostic: permit one A2 read up to five seconds.
+    /// No publication/poll authority; writes and every other read remain capped.
+    pub fn prepare_initialization_diagnostic(
+        backend: B,
+        startup: Startup,
+    ) -> Result<Self, SetupFailure> {
+        Self::prepare_with_startup(backend, startup).map(|mut owner| {
+            owner.initialization_timeout = DIAGNOSTIC_INITIALIZATION_TIMEOUT;
+            owner
+        })
+    }
     #[cfg(all(feature = "native-usb", target_os = "linux"))]
     pub(crate) fn enable_publication(mut self, publication: Publication) -> Self {
         // Only the native opener calls this immediately after prepare.
@@ -435,7 +448,7 @@ impl<B: Backend> Handshake<B> {
         let maximum = if phase == Phase::A2 {
             self.publication
                 .as_ref()
-                .map_or(MAX_TIMEOUT, |p| p.initialization_timeout())
+                .map_or(self.initialization_timeout, |p| p.initialization_timeout())
         } else {
             MAX_TIMEOUT
         };

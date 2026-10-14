@@ -2,49 +2,24 @@
 
 Independent, unofficial Linux compatibility research; not affiliated with BEACN.
 
-Status: partial static evidence plus a dependency-free offline Rust protocol
-codec, CLI, provider-neutral routing planner, graph/inventory adapters and an
-optional native PipeWire executor restricted to disposable private cores, plus a
-transport-neutral protocol session controller validated with scripted transfers.
-An optional Linux libusb transport completed a real one-shot A0/A1/A2 handshake
-with Studio in the VM, released its interface claim and verified device cleanup.
-The owner returned Studio to Windows; defaults/formats/volumes/mutes/sessions and
-guest persistent files match the backups. Guest graph settings match after
-accounting for recreated objects; Windows device-registry differences are recorded.
-The first attempt had stopped before protocol exchange; its claim-observation fix
-was built and tested before the successful separate attempt. The transport is
-separate from the ordinary CLI. An explicit one-list/one-poll mode now builds and
-passes focused checks; its real owned Linux source/cleanup probe preserved the
-desktop exactly. A hardware list write and valid no-payload poll now pass, and
-the owner saw the Linux test name briefly in streaming-PC BEACN App v1.4.0.
-The earlier immediate poll was explicitly rejected; timing/retention remain
-unresolved. Assignment records, sustained visibility and audio routing remain
-unverified. Windows Link on the gaming PC stays closed during those tests.
-The native executor verified A-to-B routing, server rejection, interrupted
-acknowledgments and explicit rollback continuation, with unchanged desktop settings
-and persistent-state hashes after owned cleanup. The suite has 76 Rust integration
-tests and 33 Python tests, plus two native USB ABI/ownership unit tests. The latest
-publication batch validates 25 focused Rust tests and 13 runner tests on both
-platforms, native Linux builds/unit tests and the actual isolated source probe.
-The probe subsequently validated one owner-authorized physical Studio descriptor
-cache in the VM; the device was returned to Windows with logical settings matching
-and persistent-state/identity differences recorded. Hardware initialization is now
-verified; app-list transfer and brief owner-observed remote visibility now pass.
-Routing-assignment reception and audio interoperability remain unverified.
-The preceding native batch validated
-12 focused recovery tests and actual private-core faults. Linux builds the C adapter against PipeWire
-1.6.2. Normal desktop CLI apply remains disabled.
-An earlier read-only graph preparation preserved two
-already-correct foreign links and refused an incorrect destination serial.
-The Linux adapter
-also verified a real Firefox playback node in one populated snapshot, after an
-initial empty inventory. A private disposable PipeWire core subsequently verified
-one owned synthetic stereo stream moving from A to B, matching planner identities,
-and complete cleanup with an unchanged desktop baseline. The earlier shared-core
-attempt aborted before linking; both outcomes are recorded separately.
-Remote discovery, desktop routing policy and hardware interoperability remain
-unverified.
-No Link replacement is working yet.
+Status: offline Rust codec/CLI, planner, lifecycle and graph/inventory owners,
+an optional native PipeWire executor restricted to disposable private cores,
+and a guarded Linux libusb transport. Native private-core routing, acknowledgments,
+partial-failure recovery and owned cleanup are verified. Ordinary desktop apply
+remains disabled.
+
+The owner placed the Linux test application in the streaming PC's first Link In
+channel. Linux received assignment 1, applied its private stereo route and
+published freshly verified assignment 1 through forty hardware cycles. This
+establishes assignment/publication integration with virtual destinations.
+
+The physical playback probe now verifies all four Studio stereo split pairs and
+the complete internal hardware graph. The VM uses USB 2.0 EHCI. Native initialization
+passes, but silent physical PCM stalls even with the vendor claim held open.
+Owned cleanup and connected comparisons pass; reboot-wide state differences are
+recorded separately. Physical/audible output, real-application routing and a usable
+Linux replacement remain unverified. Read the current handoff and playback report
+before running another test. Windows Link stays closed during VM hardware tests.
 
 Goal: a Linux gaming PC connected through BEACN Studio while the Windows
 streaming PC retains BEACN App and Mix Create. First prove that one Linux
@@ -58,6 +33,8 @@ application can appear in Windows App and be routed from it.
 - [First physical descriptor observation and return comparison](docs/usb-descriptor-observation.md)
 - [Native USB handshake implementation and proposed test](docs/native-usb-handshake.md)
 - [Native USB publication, assignment polling and visibility test](docs/native-usb-publication.md)
+- [Verified native assignment/publication integration](docs/native-assignment-publication.md)
+- [Selected physical playback probe and remaining clock failure](docs/native-studio-playback.md)
 - [Offline codec and usage](docs/offline-codec.md)
 - [Offline routing planner](docs/offline-planner.md)
 - [Offline routing preparation](docs/offline-executor.md)

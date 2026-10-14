@@ -76,6 +76,19 @@ class GraphTests(unittest.TestCase):
         self.assertNotIn("\nreceipt\t", text)
         self.assertEqual(len(observed["links"]), 2)
 
+    def test_internal_audio_split_links_remain_foreign_without_application_binding(self):
+        source = objects()
+        source[2]["info"]["props"]["media.class"] = "Stream/Output/Audio/Internal"
+        source[3]["info"]["props"]["media.class"] = "Audio/Sink/Internal"
+        inv, observed = graph.project_graph(source, 7, {})
+        self.assertEqual(inv["applications"], [])
+        self.assertEqual(observed["streams"], [])
+        self.assertEqual(len(observed["links"]), 2)
+        self.assertTrue(all(link["owner"] is None for link in observed["links"]))
+        source.pop(6)
+        with self.assertRaises(adapter.SnapshotError):
+            graph.project_graph(source, 7, {})
+
     def test_explicit_destinations_refuse_missing_duplicate_and_unsupported_values(self):
         for values in [["1"], ["1:20"], ["0:20:200"], ["1:0:200"],
                        ["1:20:200", "1:30:300"], ["1:20:200", "2:20:200"]]:

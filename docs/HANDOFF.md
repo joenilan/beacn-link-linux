@@ -3,6 +3,26 @@ Updated 2026-10-13. Resume development; do not restart the investigation.
 
 ## Current hardware checkpoint (2026-10-13)
 
+**Physical playback probe implemented; audio clock blocked:** read
+[native-studio-playback.md](native-studio-playback.md) for the current test owners,
+flags, exact evidence and unresolved clock path. The complete physical split graph
+now projects through existing owners; all four stereo pairs and Link 1's actual
+links verify. The selected VM now has backed-up USB 2.0 EHCI/PCI-bridge configuration
+and Studio remains attached through `ehci-pci`. No mouse/UI automation was used.
+Native initialization succeeds with the explicit handshake-only initial-read
+diagnostic, including a thirty-second held claim. Neither immediate-release nor
+held initialization cures the physical PCM stall. The final silent run stopped
+after a three-second zero-progress hardware clock; owned PCM/native children
+exited, vendor cleanup passed, and final connected guest/host comparisons matched
+exactly. No audible run occurred. Reboot-wide logical settings match, but JSON
+ordering, one host session activity state and sixteen registry properties differ
+and remain preserved. Read the new doc before interpreting those comparisons.
+Exact source: beacn-link-physical-playback-20261014T032358Z/source; fifteen focused
+Python and thirty-five Rust gate/session checks pass on Windows and Linux. Latest
+guest free disk is about 18.4 GB. Do not redo visibility/drag tests; investigate
+USB audio clock/implicit feedback and VM isochronous delivery next. Ordinary
+desktop/native physical apply remains disabled; private executor guards are intact.
+
 **Native assignment integration implemented:** read
 [native-assignment-publication.md](native-assignment-publication.md) for current
 owners, explicit flags, checks and hashes. The new path applies normalized received
