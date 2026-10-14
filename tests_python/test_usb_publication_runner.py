@@ -27,6 +27,12 @@ def objects():
 
 
 class PublicationRunnerTests(unittest.TestCase):
+    def test_readonly_service_qualification_cannot_enter_hardware_mode(self):
+        argv=['test','run','--application-mpv','--catalog-service-check','unused','--evidence-dir','unused','--executor','unused']
+        with patch.object(sys,'argv',argv),patch.object(runner.subprocess,'Popen') as child,contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):runner.main()
+            child.assert_not_called()
+
     def test_source_exit_injection_cannot_enter_hardware_or_default_modes(self):
         for extra in ([], ['--application-mpv'], ['--application-mpv','--cycles','5'], ['--cycles','5','--private-routing']):
             argv=['test','run','--probe-source-exit','--evidence-dir','unused','--executor','unused',*extra]

@@ -1,7 +1,41 @@
 # Beacn LinX — continuation handoff
 Updated 2026-10-14. Resume development; do not restart the investigation.
 
-## Current checkpoint: real Linux application heard on all four pairs
+## Current checkpoint: native Rust read-only application/service works
+
+`beacn-linx inventory` and `beacn-linx service SECONDS` now use a distinct native
+read-only PipeWire catalog. No Python discovery helper or Cargo dependency is
+required by the app. It discovers actual application metadata, accepts explicit
+multi-app selections/ASCII wire aliases, revokes departed/stale/core-changed
+identities and invalidates old plans on selection edits. Selections are in memory;
+USB/publication, desktop apply, GUI/autostart and automatic reconnect are absent.
+See [rust-application-service.md](rust-application-service.md).
+
+The immutable C catalog mode binds only Node/Client queries and refuses every
+mutation call before endpoint access. Existing private-executor restrictions were
+preserved. The actual test-only C refusal check, eight Rust model tests (Windows
+and Linux), 28 focused Python runner checks and exact native offline builds pass.
+The live desktop query returned zero apps and matched settings/state exactly;
+populated discovery was qualified with real mpv processes on a private core.
+
+One retained native Rust service/core selected two apps, revoked a departed app,
+observed its reopen as a new unselected identity, accepted explicit reselection,
+unselected the first app and quit normally. EOF/deadline/input bounds and complete
+graph/desktop/state/config/process cleanup passed. The enclosing first mpv then
+routed all four private destinations. Existing actual native fault/recovery and
+32 repeated already-correct routes also passed. No USB or physical audio occurred.
+Live source `beacn-native-source-20261014T222104Z`; service journal
+`7c88fd7476200ed150983ca74a5ac34a2a21ac88a87018f87cd3548e1a4aa224`.
+102 private evidence/provenance files were copied/hashed before final provenance.
+
+The owner said they would switch Studio back for streaming. The later no-USB
+baseline found no Studio on the laptop; Windows Link/peer visibility was not
+rechecked. Do not attach, start hardware tests or assume that return grants new
+execution authority. Continue offline. Next: guarded multi-app publication/lifecycle
+integration, then Rust UI controls. Keep default apply and Actions disabled,
+preserve all artifacts and use local [skip ci] commits unless publication is asked.
+
+## Previous checkpoint: real Linux application heard on all four pairs
 
 The owner named the app **Beacn LinX** and selected Rust for the application.
 Rust already owns protocol/USB/planning/lifecycle/execution; Python remains

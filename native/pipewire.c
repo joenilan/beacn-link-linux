@@ -48,7 +48,8 @@ struct session {
   size_t count;
   uint64_t removed_stale_binds;
   struct created *created, *pending;
-  bool deleting, fatal, core_seen;
+  bool deleting, fatal, core_seen, catalog_only;
+  uint32_t peer_pid;
   uint32_t cookie;
   char name[129];
   int seq, done;
@@ -154,6 +155,9 @@ static void global(void *data, uint32_t id, uint32_t permissions,
   uint32_t v;
   const void *events;
   (void)permissions;
+  if (s->catalog_only && !spa_streq(type, PW_TYPE_INTERFACE_Node) &&
+      !spa_streq(type, PW_TYPE_INTERFACE_Client))
+    return;
   if (spa_streq(type, PW_TYPE_INTERFACE_Device)) {
     s->fatal = true;
     return;
@@ -234,6 +238,14 @@ static const struct pw_registry_events registry_events = {
     .global_remove = global_remove};
 static void core_info(void *data, const struct pw_core_info *info) {
   struct session *s = data;
+  if (s->catalog_only && !s->core_seen) {
+    if (!label(info->name)) {
+      s->fatal = true;
+      return;
+    }
+    s->cookie = info->cookie;
+    snprintf(s->name, sizeof(s->name), "%s", info->name);
+  }
   if (info->cookie != s->cookie || !spa_streq(info->name, s->name))
     s->fatal = true;
   s->core_seen = true;
@@ -366,13 +378,15 @@ void bcl_close(struct session *s) {
   }
   free(s);
 }
-struct session *bcl_open(int fd, const char *config, uint32_t cookie,
-                         const char *name, uint32_t server_pid) {
+static struct session *open_session(int fd, const char *config, uint32_t cookie,
+                                    const char *name, uint32_t server_pid,
+                                    bool catalog_only) {
   struct ucred peer;
   socklen_t len = sizeof(peer);
-  if (!label(name) ||
+  if ((!catalog_only && !label(name)) ||
       getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &peer, &len) < 0 ||
-      peer.uid != getuid() || peer.pid != (pid_t)server_pid) {
+      peer.uid != getuid() || peer.pid <= 0 ||
+      (!catalog_only && peer.pid != (pid_t)server_pid)) {
     close(fd);
     return NULL;
   }
@@ -396,6 +410,8 @@ struct session *bcl_open(int fd, const char *config, uint32_t cookie,
     return NULL;
   }
   s->cookie = cookie;
+  s->catalog_only = catalog_only;
+  s->peer_pid = peer.pid;
   snprintf(s->name, sizeof(s->name), "%s", name);
   s->done = -1;
   s->loop = pw_main_loop_new(NULL);
@@ -416,7 +432,8 @@ struct session *bcl_open(int fd, const char *config, uint32_t cookie,
   }
   s->core = pw_context_connect_fd(
       s->context, fd,
-      pw_properties_new(PW_KEY_APP_NAME, "beacn-private-executor", NULL), 0);
+      pw_properties_new(PW_KEY_APP_NAME,
+                        catalog_only ? "Beacn LinX catalog" : "beacn-private-executor", NULL), 0);
   if (!s->core) {
     bcl_close(s);
     return NULL;
@@ -436,6 +453,13 @@ struct session *bcl_open(int fd, const char *config, uint32_t cookie,
   }
   return s;
 }
+struct session *bcl_open(int fd, const char *config, uint32_t cookie,
+                         const char *name, uint32_t server_pid) {
+  return open_session(fd, config, cookie, name, server_pid, false);
+}
+struct session *bcl_open_catalog(int fd, const char *config) {
+  return open_session(fd, config, 0, "", 0, true);
+}
 static int append(char **buf, size_t *left, const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
@@ -452,8 +476,66 @@ static int append(char **buf, size_t *left, const char *fmt, ...) {
     if (append(&buf, &left, __VA_ARGS__) < 0)                                  \
       return -1;                                                               \
   } while (0)
+static int hex_text(char **buf, size_t *left, const char *text) {
+  if (!text)
+    text = "";
+  size_t len = strnlen(text, 513);
+  if (len > 512)
+    return -1;
+  for (size_t i = 0; i < len; i++)
+    if (append(buf, left, "%02x", (unsigned char)text[i]) < 0)
+      return -1;
+  return 0;
+}
+int bcl_catalog(struct session *s, char *buf, size_t left) {
+  if (!s->catalog_only || barrier(s) < 0 || barrier(s) < 0)
+    return -1;
+  ROW("catalog\t%" PRIu32 "\t%" PRIu32 "\t", s->cookie, s->peer_pid);
+  if (hex_text(&buf, &left, s->name) < 0)
+    return -1;
+  ROW("\n");
+  size_t rows = 0;
+  for (size_t i = 0; i < s->count; i++) {
+    struct object *o = s->objects[i];
+    if (!o->present || o->kind != NODE ||
+        !spa_streq(prop(o, PW_KEY_MEDIA_CLASS), "Stream/Output/Audio"))
+      continue;
+    if (++rows > 4096 || !o->info || !serial(o))
+      return -1;
+    uint64_t cid = num(prop(o, PW_KEY_CLIENT_ID));
+    if (cid > UINT32_MAX)
+      return -1;
+    struct object *c = find(s, (uint32_t)cid, CLIENT);
+    if (!c || !c->info || !serial(c))
+      return -1;
+    const char *pid = prop(o, PW_KEY_APP_PROCESS_ID);
+    if (!pid)
+      pid = prop(c, PW_KEY_APP_PROCESS_ID);
+    uint64_t p = num(pid);
+    if (!p || p > UINT32_MAX)
+      return -1;
+    const char *name = prop(o, PW_KEY_APP_NAME);
+    if (!name)
+      name = prop(c, PW_KEY_APP_NAME);
+    const char *binary = prop(o, PW_KEY_APP_PROCESS_BINARY);
+    if (!binary)
+      binary = prop(c, PW_KEY_APP_PROCESS_BINARY);
+    const char *state = o->state == PW_NODE_STATE_RUNNING ||
+                                o->state == PW_NODE_STATE_IDLE ||
+                                o->state == PW_NODE_STATE_SUSPENDED ? "live" : "stale";
+    ROW("app\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%s\t",
+        serial(c), p, serial(o), state);
+    if (hex_text(&buf, &left, name) < 0)
+      return -1;
+    ROW("\t");
+    if (hex_text(&buf, &left, binary) < 0)
+      return -1;
+    ROW("\n");
+  }
+  return 0;
+}
 int bcl_snapshot(struct session *s, char *buf, size_t left) {
-  if (barrier(s) < 0 || barrier(s) < 0) {
+  if (s->catalog_only || barrier(s) < 0 || barrier(s) < 0) {
     fprintf(stderr, "native snapshot: barrier failed\n");
     return -1;
   }
@@ -654,6 +736,9 @@ void bcl_test_stats(struct session *s, uint64_t *stats) {
 int bcl_perform(struct session *s, int deleting, const struct endpoint *out,
                 const struct endpoint *in, const char *owner,
                 const struct receipt *old, struct receipt *result) {
+  /* Catalog connections have no mutation capability, even through this FFI. */
+  if (s->catalog_only)
+    return 1;
 #ifdef BCL_TEST_FAULTS
   /* Consume even on a local refusal: a test fault cannot leak into recovery. */
   int fault = s->test_fault;
@@ -745,3 +830,10 @@ int bcl_perform(struct session *s, int deleting, const struct endpoint *out,
   } while (millis() < deadline);
   return -2;
 }
+#ifdef BCL_TEST_FAULTS
+int bcl_catalog_test_mutation_refused(struct session *s) {
+  if (!s->catalog_only)
+    return 0;
+  return bcl_perform(s, 0, NULL, NULL, NULL, NULL, NULL) == 1;
+}
+#endif

@@ -287,6 +287,7 @@ pub mod planner;
 /// Bounded text input for pure routing proposals; no OS access.
 pub mod snapshot;
 
+pub mod catalog;
 /// Pure inventory lifecycle tracking and plan generation checks.
 pub mod lifecycle;
 
@@ -316,5 +317,7 @@ mod native_audio;
 #[cfg(all(feature = "native-usb", target_os = "linux"))]
 pub mod native_usb;
 
+#[cfg(all(feature = "native-pipewire", target_os = "linux"))]
+pub mod native_catalog;
 #[cfg(all(feature = "native-pipewire", target_os = "linux"))]
 pub mod native_pipewire;

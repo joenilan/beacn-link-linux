@@ -8,6 +8,12 @@ and a guarded Linux libusb transport. Native private-core routing, acknowledgmen
 partial-failure recovery and owned cleanup are verified. Ordinary desktop apply
 remains disabled.
 
+The [Rust Beacn LinX application/service](docs/rust-application-service.md) now
+provides native read-only application discovery, explicit multi-app selections,
+identity/lifecycle tracking and a bounded foreground command loop. Same-core real
+application exit/reopen, selection revocation and exact cleanup pass. USB publication
+and desktop routing are not yet connected to this service; a GUI is next-stage work.
+
 The owner placed the Linux test application in the streaming PC's first Link In
 channel. Linux received assignment 1, applied its private stereo route and
 published freshly verified assignment 1 through forty hardware cycles. This

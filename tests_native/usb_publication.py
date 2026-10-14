@@ -210,6 +210,7 @@ def main():
     parser.add_argument("--authorize-isolated-routing", action="store_true")
     parser.add_argument("--application-mpv", action="store_true", help="ordinary retained mpv process on the private core; no desktop application takeover")
     parser.add_argument('--probe-source-exit', action='store_true', help='no-USB negative lifecycle test after two native routes')
+    parser.add_argument('--catalog-service-check', help='read-only Rust service binary; ordinary no-USB routing probe only')
     parser.add_argument("--authorize-studio-first-pair-silence", action="store_true",
                         help="native-only assignment-1 physical stage; pauses USB until owned audio cleanup")
     parser.add_argument("--authorize-studio-first-pair-tone", action="store_true")
@@ -238,6 +239,8 @@ def main():
     if args.single_publication_hold and (args.stage != "run" or args.cycles != 1 or args.private_routing or not args.windows_c_string_names):
         parser.error("single publication hold requires one C-string hardware cycle without routing")
     routing_probe = args.stage == "routing-probe"
+    if args.catalog_service_check and not (routing_probe and args.application_mpv and not args.probe_source_exit):
+        parser.error('Rust service qualification requires ordinary no-USB routing probe')
     if args.probe_source_exit and not (routing_probe and args.application_mpv and args.cycles == 5):
         parser.error('source exit injection requires the five-cycle ordinary no-USB routing probe')
     if args.application_mpv and (not args.private_routing or args.stage not in ('run', 'routing-probe') or args.single_publication_hold):
@@ -493,6 +496,9 @@ def main():
         text = base.inventory.to_tsv(inventory)
         projected = root / "inventory.tsv"
         projected.write_text(text, encoding="ascii")
+        if args.catalog_service_check:
+            import catalog_service
+            result['catalog_service']=catalog_service.verify(Path(args.catalog_service_check).resolve(strict=True),root/'catalog-service',runtime,remote,env,dump,playback.pid,media,app_props,rate)
         # Confirm the same owned source immediately before the single native child.
         _, objects = dump()
         if application is not None:application.validate(objects)
