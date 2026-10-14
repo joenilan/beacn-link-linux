@@ -16,20 +16,73 @@ The owner also requested remote desktop. Existing GNOME Remote Desktop 48.1
 remote login was configured after a private baseline, with credentials delivered
 through stdin and TLS key/certificate held by the service account. The service
 is active; Windows-to-laptop RDP negotiation and the pinned TLS certificate were
-verified. An interactive owner login remains unverified. An unused desktop-sharing
+verified, and the owner confirmed an interactive login. An unused desktop-sharing
 setup stalled on keyring access; its settings were restored to the saved baseline.
 After setup, the saved graph/settings and persistent-state hashes compare equal.
 No Chrome Remote Desktop, mouse automation or additional desktop was installed.
 
-The first laptop inventory contains no BEACN USB device or ALSA card, despite the
-owner reporting attachment. Resolve physical enumeration before a hardware test.
-Full audio graph/settings and persistent-state copies/hashes were saved privately.
-Next inspect the selected device and laptop-specific endpoint/access/ABI details,
-then prepare one bounded direct comparison with fresh pre/post snapshots. Do not
-assume the VM's split endpoints, physical-device isolation or binary ABI applies.
-No native laptop USB claim, playback or physical route application has occurred.
+The owner corrected an incorrectly connected cable. Studio now enumerates as
+33AE:4003 at 480 Mbps under snd-usb-audio. Its eight-channel FLOAT_LE ALSA PCM
+supports 48000/96000 Hz and implicit feedback. The first native 96-kHz silent
+PCM run and a Debian private-core executor check now pass, as recorded below.
+Full pre/post graph/settings, persistent files and USB binding are preserved.
+The owner reaffirmed authority for necessary login/relogin and reconnect/recovery
+steps. Audible testing still needs the owner ready to listen; a quiet first-pair
+test is prepared, with the readiness question pending. Native laptop vendor
+initialization/publication and physical PipeWire application remain unverified.
 Keep ordinary apply and Actions disabled; preserve all VM evidence. Do not repeat
 failed controller/rate tests or the initial audit, or install/run REA.
+
+## Native Debian PCM and private executor passed (2026-10-14)
+
+Native-only `--native-direct-card` pins the actual selected ALSA card/device
+identity without assuming UCM split nodes. It verifies nonvirtual execution,
+closed selected playback/capture PCMs, the same retained device inode, complete
+foreign graph/settings equality and released USB binding. It does not force a
+graph rate or change other devices; the original VM UCM/isolation mode remains.
+Raw-card comparison allows no negotiated-format exceptions.
+
+The 48-kHz run stalled at pointer zero but exited and restored the complete
+baseline. At 96 kHz the pointer advanced; the first harness refused the normal
+DRAINING transition. That observation is retained. The corrected harness accepts
+DRAINING only after sufficient validated progress, still checks exact child PID,
+and waits for natural exit within the existing bounds. A confirmed closed PCM
+can also settle while the same child exits; no exit-code-only acceptance.
+
+The corrected four-second 96-kHz silent run exited 0, made 18 clock observations
+and advanced 1,152 -> 380,336 frames. All desktop/settings/routes/state-file/USB
+comparisons passed, including complete persistent-state hashes. Journal SHA256:
+`6fb895b7eb9366b2aa32d02ee22bff6b5ecdec5c48b56ed766265ab49ac70b1c`.
+This establishes native direct-ALSA queue progress and clean completion; it does
+not establish audible output or independently observed USB delivery. The clock
+descriptor is read-only source 41; one bounded current-rate metadata request
+was refused EBUSY with no claim/detach/reset/write. The 96-kHz diagnostic uses
+the earlier VM clock observation; a current native clock value is unverified.
+
+Explicit audible authorization now prepares three 350-ms 440-Hz tones capped
+at -24 dBFS on channels 0/1 only, with a one-second silent lead and quiet tail.
+All other channels stay silent. Tone mode requires its separate authorization
+flag and the owner ready to listen. No audible run has started.
+
+The laptop has isolated Rust 1.88 and Debian build dependencies; the working VM
+was not reinstalled. Exact native programs build against libusb 1.0.28 and
+PipeWire 1.4.2. Cache-only descriptor validation passes without device access.
+Focused playback checks passed 27 cases with one initially skipped built-planner
+check, which then passed separately against the new CLI.
+
+Debian's private null sinks initially exposed one unlabelled convert-mode port;
+the strict executor refused this layout before routing. The harness now validates
+its retained controller's client PID and each owned destination, configures
+explicit stereo DSP PortConfig at 48000 Hz, and requires actual FL/FR ports.
+Prepared raw private metadata is retained for refusal diagnosis. Native snapshot
+refusals now identify missing client/process/port/direction metadata; no guard
+was weakened. The exact native A-to-B, partial-failure and rollback check passes,
+with actual active links, new rollback serials, private baseline restoration,
+owned cleanup and unchanged desktop/state files. Private journal SHA256:
+`cc15c535b568024b333ddc74d92f111f1ded5ae5a1584ad580a4e9d07a464d97`.
+143 private artifacts were copied/hashed outside Git. This is private-core
+routing, not Studio routing. The later VM recovery check could not connect over
+SSH; no VM recovery or current process-state claim is made.
 
 ## USB return evidence and initialized direct-ALSA coexistence (2026-10-14)
 

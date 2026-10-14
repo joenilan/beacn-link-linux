@@ -448,14 +448,18 @@ int bcl_snapshot(struct session *s, char *buf, size_t left) {
         if (cid > UINT32_MAX)
           return -1;
         struct object *c = find(s, (uint32_t)cid, CLIENT);
-        if (!c || !c->info || !serial(c))
+        if (!c || !c->info || !serial(c)) {
+          fprintf(stderr, "native snapshot: playback client metadata incomplete\n");
           return -1;
+        }
         const char *pid = prop(o, PW_KEY_APP_PROCESS_ID);
         if (!pid)
           pid = prop(c, PW_KEY_APP_PROCESS_ID);
         uint64_t p = num(pid);
-        if (!p || p > UINT32_MAX)
+        if (!p || p > UINT32_MAX) {
+          fprintf(stderr, "native snapshot: playback process identity incomplete\n");
           return -1;
+        }
         const char *state = o->state == PW_NODE_STATE_RUNNING ||
                                     o->state == PW_NODE_STATE_IDLE ||
                                     o->state == PW_NODE_STATE_SUSPENDED
@@ -476,13 +480,21 @@ int bcl_snapshot(struct session *s, char *buf, size_t left) {
                  *ch = prop(o, PW_KEY_AUDIO_CHANNEL),
                  *control = prop(o, PW_KEY_PORT_CONTROL);
       if (!o->info || !serial(o) || !serial(node) || !label(ch) ||
-          (control && !spa_streq(control, "false")))
+          (control && !spa_streq(control, "false"))) {
+        fprintf(stderr,
+                "native snapshot: audio port metadata incomplete "
+                "(info=%d serial=%d node-serial=%d channel=%d control=%d)\n",
+                o->info, serial(o) != 0, serial(node) != 0, label(ch),
+                control && !spa_streq(control, "false"));
         return -1;
+      }
       if (!dir ||
           (spa_streq(dir, "out")
                ? o->direction != PW_DIRECTION_OUTPUT
-               : !spa_streq(dir, "in") || o->direction != PW_DIRECTION_INPUT))
+               : !spa_streq(dir, "in") || o->direction != PW_DIRECTION_INPUT)) {
+        fprintf(stderr, "native snapshot: audio port direction inconsistent\n");
         return -1;
+      }
       ROW("port\t%" PRIu32 "\t%" PRIu64 "\t%" PRIu32 "\t%" PRIu64 "\t%s\t%s\n",
           o->id, serial(o), node->id, serial(node), dir,
           spa_streq(ch, "FL")   ? "FL"

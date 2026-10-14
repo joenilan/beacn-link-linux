@@ -3,14 +3,75 @@ import signal
 import subprocess
 import tempfile
 import time
+import math
+import struct
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests_native"))
 import studio_alsa_playback as alsa
 
 
 class StudioAlsaTests(unittest.TestCase):
+    def test_audible_authorization_is_separate_and_exact(self):
+        alsa.check_authorization(True, False, False)
+        alsa.check_authorization(False, True, True)
+        for args in ((False, False, False), (True, False, True), (False, True, False), (True, True, True)):
+            with self.subTest(args=args), self.assertRaises(ValueError):
+                alsa.check_authorization(*args)
+
+    def test_quiet_tones_are_finite_first_pair_only_with_silent_lead_and_tail(self):
+        raw = alsa.pcm(96000, audible=True)
+        self.assertEqual(len(raw), 96000 * 8 * 4 * 4)
+        self.assertFalse(any(raw[:96000 * 8 * 4]))
+        self.assertFalse(any(raw[(3 * 96000 + 33600) * 8 * 4:]))
+        heard = False
+        for second in (1, 2, 3):
+            for i in range(0, 33600, 137):
+                frame = struct.unpack_from("<8f", raw, (second * 96000 + i) * 8 * 4)
+                self.assertEqual(frame[0], frame[1])
+                self.assertTrue(all(v == 0 for v in frame[2:]))
+                self.assertLessEqual(abs(frame[0]), 10 ** (-24 / 20) + 1e-8)
+                heard = heard or frame[0] != 0
+        self.assertTrue(heard)
+
+    def test_native_mode_refuses_virtual_or_unknown_environments(self):
+        for code, output in ((0, "vmware"), (0, "none"), (1, ""), (2, "none")):
+            with self.subTest(code=code, output=output), patch.object(
+                    alsa.subprocess, "run", return_value=subprocess.CompletedProcess([], code, output, "")):
+                with self.assertRaises(RuntimeError):
+                    alsa.require_native_environment()
+        with patch.object(alsa.subprocess, "run", return_value=subprocess.CompletedProcess([], 1, "none\n", "")):
+            alsa.require_native_environment()
+
+    def test_native_card_accepts_raw_card_with_an_unrelated_physical_device(self):
+        def device(ident, serial, card, vid="0x33ae", pid="0x4003"):
+            return {"id": ident, "type": "PipeWire:Interface:Device", "info": {"props": {
+                "object.serial": serial, "device.vendor.id": vid, "device.product.id": pid,
+                "api.alsa.card": card}}}
+        selected = device(84, 123, "2")
+        builtin = device(68, 124, "0", "0x8086", "0x0000")
+        pinned = alsa.native_card_endpoint([builtin, selected], 2)
+        self.assertEqual(pinned["device"], {"id": 84, "serial": 123})
+        self.assertEqual(pinned["direct_alsa_card"], 2)
+        for objects, card in (([builtin], 2), ([selected], 0), ([selected, selected], 2)):
+            with self.subTest(card=card, objects=objects), self.assertRaises(RuntimeError):
+                alsa.native_card_endpoint(objects, card)
+        changed = device(84, 125, "2")
+        self.assertNotEqual(alsa.native_card_endpoint([changed], 2), pinned)
+
+    def test_native_card_comparison_allows_no_negotiated_format_exceptions(self):
+        before = {"desktop": {"Node": [{"id": 5, "serial": 10, "params": {"Format": []}}]},
+                  "state_files": {"default-nodes": "unchanged"}}
+        same = alsa.playback.compare_settings(before, before, {"direct_alsa_card": 2})
+        self.assertTrue(same["settings_routes_exact_equal"])
+        after = {"desktop": {"Node": [{"id": 5, "serial": 10, "params": {"Format": [{"channels": 2}]}}]},
+                 "state_files": before["state_files"]}
+        changed = alsa.playback.compare_settings(before, after, {"direct_alsa_card": 2})
+        self.assertFalse(changed["settings_routes_exact_equal"])
+        self.assertEqual(changed["negotiated_format_cache_changes"], [])
+
     @unittest.skipUnless(sys.platform == "linux", "POSIX signal delivery")
     def test_termination_signal_leaves_owned_child_cleanup_reachable(self):
         native = Path(__file__).resolve().parents[1] / "tests_native"
@@ -96,6 +157,16 @@ print('owned child exited')
                     good.replace("hw_ptr", "appl_ptr"), good + "x" * 16384):
             with self.subTest(raw=raw[:70]), self.assertRaises(RuntimeError):
                 alsa.clock(raw, 123)
+
+    def test_draining_is_accepted_only_after_the_caller_has_verified_progress(self):
+        draining = "state: DRAINING\nowner_pid   : 123\nhw_ptr      : 384000\n"
+        with self.assertRaises(RuntimeError):
+            alsa.clock(draining, 123)
+        self.assertEqual(alsa.clock(draining, 123, allow_draining=True), 384000)
+        for raw in (draining.replace("123", "456"), draining.replace("DRAINING", "SETUP"),
+                    draining.replace("DRAINING", "PREPARED")):
+            with self.subTest(raw=raw), self.assertRaises(RuntimeError):
+                alsa.clock(raw, 123, allow_draining=True)
 
 
 if __name__ == "__main__":

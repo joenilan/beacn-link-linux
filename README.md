@@ -17,9 +17,13 @@ The physical playback probe now verifies all four Studio stereo split pairs and
 the complete internal hardware graph. The VM uses USB 2.0 EHCI. Native initialization
 passes, but silent physical PCM stalls even with the vendor claim held open.
 Owned cleanup and connected comparisons pass; reboot-wide state differences are
-recorded separately. Physical/audible output, real-application routing and a usable
-Linux replacement remain unverified. Read the current handoff and playback report
-before running another test. Windows Link stays closed during VM hardware tests.
+recorded separately. A separate Debian 13 laptop now completes four seconds of
+96-kHz direct-ALSA silence with queue progress, natural exit and unchanged settings.
+The native programs build there, and private A-to-B routing/partial-failure recovery
+passes after explicitly configuring the test's stereo DSP ports. Audible output,
+physical PipeWire integration, real-application routing and a usable Linux replacement
+remain unverified. Read the current handoff and playback report before another test.
+Windows Link stays closed during hardware tests.
 
 Goal: a Linux gaming PC connected through BEACN Studio while the Windows
 streaming PC retains BEACN App and Mix Create. First prove that one Linux

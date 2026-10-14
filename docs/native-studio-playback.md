@@ -12,13 +12,40 @@ The owner volunteered a separate Debian 13 laptop after the VMware failures.
 The active agent remains on Windows with authenticated, privately pinned SSH
 access to the laptop. No gaming-PC migration/reboot or replacement agent session
 is required. Initial inventory reports kernel 6.12.111, PipeWire 1.4.2 and
-WirePlumber 0.5.8; no BEACN USB device/card is yet visible. The full graph,
-settings and persistent-state copies/hashes are preserved privately. Resolve
-enumeration and inspect the actual endpoint layout/access/ABI before preparing
-one bounded native test; do not import VM assumptions or force desktop rates.
+WirePlumber 0.5.8. After the owner corrected the cable connection, Studio is
+visible as 33AE:4003 at 480 Mbps with snd-usb-audio and an eight-channel FLOAT_LE
+PCM. The full graph/settings and persistent-state copies/hashes are preserved
+privately. Native direct ALSA uses its actual card without importing VM UCM
+assumptions or forcing desktop rates.
 GNOME remote login is configured for owner access and its RDP/TLS connection
-has been verified; an interactive login and laptop hardware playback remain
-unverified. Keep ordinary physical apply disabled and all VM evidence retained.
+and interactive owner login have been verified. Keep ordinary physical apply
+disabled and all VM evidence retained.
+
+## Native 96-kHz silent PCM completed cleanly
+
+The native-only direct-card diagnostic pins the selected card/device identity,
+requires closed selected PCMs and an unchanged foreign graph, and preserves
+other audio devices. The original VM UCM/isolation gate remains the default.
+The 48-kHz native run stalled at pointer zero but cleaned up without blocked
+processes or settings changes. The first 96-kHz observation advanced but exposed
+a harness refusal of normal DRAINING. DRAINING is now permitted only after
+sufficient validated queue progress, with exact child ownership and bounded
+natural completion; a closed PCM may settle while that child exits.
+
+The corrected four-second 96-kHz run exited 0 after 18 observations, with pointer
+1,152 -> 380,336 and exact desktop/settings/routes/saved-state/USB comparisons.
+Complete persistent-state hashes also match. Journal SHA256:
+`6fb895b7eb9366b2aa32d02ee22bff6b5ecdec5c48b56ed766265ab49ac70b1c`.
+No independently observed USB delivery or audible acceptance is claimed. The
+rate diagnostic uses the earlier physical clock observation; a current-rate
+read was refused EBUSY with no interface claim/detach/reset/write.
+
+An explicit audible first-pair mode is prepared: three 350-ms 440-Hz tones at
+no more than -24 dBFS on channels 0/1, one-second silent lead and quiet tail,
+all remaining channels silent. It needs separate tone authorization and owner
+listening readiness. The readiness question is pending; no audible run started.
+The exact Debian native build and private routing/recovery check also pass;
+see [HANDOFF](HANDOFF.md) for the separate private-core evidence and next steps.
 
 ## Latest VM result: accepted enqueue without OUT completion
 

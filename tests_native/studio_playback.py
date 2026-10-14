@@ -196,10 +196,11 @@ def compare_settings(before, after, pinned):
     clean = copy.deepcopy(after)
     before_nodes = {n["id"]: n for n in before["desktop"]["Node"]}
     format_cache = []
+    internal_output = pinned.get("internal_output")
     for node in clean["desktop"]["Node"]:
         prior = before_nodes.get(node["id"])
-        if (prior is not None and node["id"] == pinned["internal_output"]["id"]
-                and str(node["serial"]) == str(pinned["internal_output"]["serial"])):
+        if (internal_output is not None and prior is not None and node["id"] == internal_output["id"]
+                and str(node["serial"]) == str(internal_output["serial"])):
             expected = {"mediaType": "audio", "mediaSubtype": "raw", "format": "F32P",
                         "channels": 2, "position": pinned["pair"]}
             old = prior.get("params", {}).get("Format")

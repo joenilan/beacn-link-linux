@@ -192,7 +192,30 @@ def main():
             properties = {"factory.name": "support.null-audio-sink", "node.name": name, "media.class": "Audio/Sink", "node.virtual": True, "node.driver": True, "object.linger": False, "node.autoconnect": False, "audio.channels": 2, "audio.position": ["FL", "FR"], "audio.rate": 48000, "state.restore-props": False, "state.restore-target": False, "beacn.test.token": token, "adapter.auto-port-config": {"mode": "dsp", "monitor": False, "position": "preserve"}}
             controller.stdin.write(("create-node adapter " + json.dumps(properties) + "\n").encode())
             controller.stdin.flush()
-        wait(lambda oo: sum(obj.get("type") == inventory.NODE and owned(obj) for obj in oo) == 2)
+        destinations = wait(lambda oo: sum(obj.get("type") == inventory.NODE and owned(obj) for obj in oo) == 2)
+        # Some supported PipeWire versions leave null sinks in convert mode
+        # despite auto-port-config. Configure only our retained controller's
+        # private destinations, then require actual labelled stereo ports.
+        port_config = {"direction": "Input", "mode": "dsp", "monitor": False, "control": False,
+                       "format": {"mediaType": "audio", "mediaSubtype": "raw", "format": "F32P",
+                                  "rate": 48000, "channels": 2, "position": ["FL", "FR"]}}
+        configured = []
+        for name in names[:2]:
+            node = next(obj for obj in destinations if obj.get("type") == inventory.NODE
+                        and props(obj).get("node.name") == name and owned(obj))
+            client = next(obj for obj in destinations if obj.get("type") == "PipeWire:Interface:Client"
+                          and obj["id"] == int(props(node)["client.id"]))
+            assert int(props(client).get("pipewire.sec.pid", props(client).get("application.process.id", 0))) == controller.pid
+            assert props(node).get("object.serial") and props(node).get("media.class") == "Audio/Sink"
+            configured.append({"id": node["id"], "serial": props(node)["object.serial"]})
+            controller.stdin.write(("set-param " + str(node["id"]) + " PortConfig " + json.dumps(port_config) + "\n").encode())
+            controller.stdin.flush()
+        wait(lambda oo: all(sorted(props(obj).get("audio.channel", "") for obj in oo
+                                   if obj.get("type") == "PipeWire:Interface:Port"
+                                   and props(obj).get("node.id") == target["id"]
+                                   and props(obj).get("port.direction") == "in") == ["FL", "FR"]
+                            for target in configured))
+        journal["configured_stereo_destinations"] = configured
         pcm = root / "synthetic-silence.raw"
         pcm.write_bytes(b"\0" * (48000 * 2 * 2 * 60))
         with pcm.open("rb") as handle:
@@ -205,6 +228,9 @@ def main():
         app = next(app for app in observed["applications"] if any(stream["node_id"] == source["id"] for stream in app["streams"]))
         assert app["process_pid"] == playback.pid
         core = next(obj for obj in objects if obj.get("type") == "PipeWire:Interface:Core")
+        # Preserve the actual test layout when a native observation refuses it.
+        # Private-core metadata stays in the caller's evidence directory.
+        (root / "prepared-objects.json").write_text(json.dumps(objects, indent=2))
         native_env = {k: v for k, v in private_env.items() if not k.startswith("PIPEWIRE_CONFIG_")}
         executor = start("executor", [str(Path(args.executor).resolve()), str(temp), remote, str(core["info"]["cookie"]), str(server.pid), token, app["application_id"] + "=controlled-test", "1:" + str(a["id"]) + ":" + str(props(a)["object.serial"]), "2:" + str(b["id"]) + ":" + str(props(b)["object.serial"])], native_env, subprocess.PIPE)
         frames = [subprocess.check_output([args.codec, "encode", str(i) + ":controlled-test"], text=True).strip() for i in (1, 2)]
