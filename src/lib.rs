@@ -303,6 +303,8 @@ pub mod receipts;
 pub mod execution;
 
 pub mod route_publication;
+/// Offline fixed-roster application/control integration; no device access.
+pub mod publication_epoch;
 /// Guarded transport-neutral protocol exchanges; no USB or automatic routing.
 pub mod session;
 

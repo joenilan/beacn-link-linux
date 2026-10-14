@@ -14,6 +14,11 @@ identity/lifecycle tracking and a bounded foreground command loop. Same-core rea
 application exit/reopen, selection revocation and exact cleanup pass. USB publication
 and desktop routing are not yet connected to this service; a GUI is next-stage work.
 
+The [multi-app integration](docs/multi-app-publication.md) now connects selection,
+reply planning, native private routing and verified publication data. Two real mpv
+processes simultaneously routed separate pairs, moved and recovered safely on a
+disposable core. Multi-app USB/physical interoperability remains untested.
+
 The owner placed the Linux test application in the streaming PC's first Link In
 channel. Linux received assignment 1, applied its private stereo route and
 published freshly verified assignment 1 through forty hardware cycles. This
@@ -45,7 +50,7 @@ A subsequent [real-application test](docs/native-application-routing.md) routed
 unmodified mpv through each of Studio's four pairs. The owner heard every pair;
 concurrent control and exact laptop cleanup passed. A no-USB source-exit check
 stopped safely, and a fresh isolated session routed all four destinations.
-Whole-desktop discovery, multiple applications, the Rust application/service and
+The Rust service, shared-desktop routing, multi-app hardware control, UI and
 long-lived recovery still need integration.
 Read the current handoff and playback report before another test.
 Windows Link stays closed during hardware tests.

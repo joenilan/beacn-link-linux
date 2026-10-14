@@ -172,6 +172,7 @@ pub struct ApplicationService {
     selected: BTreeMap<ApplicationId, String>,
     tracker: InventoryTracker,
     revision: u64,
+    selection_revision: u64,
 }
 #[derive(Debug)]
 pub struct Update {
@@ -190,18 +191,27 @@ impl ApplicationService {
     pub fn revision(&self) -> u64 {
         self.revision
     }
+    /// Changes only when selected identity/streams/alias or core changes. This
+    /// preserves evidence of an intervening edit even if it is later reversed.
+    pub fn selection_revision(&self) -> u64 {
+        self.selection_revision
+    }
     fn projection(
         catalog: &Catalog,
         selected: &BTreeMap<ApplicationId, String>,
         version: u64,
     ) -> Result<Inventory, String> {
         let mut applications = Vec::new();
+        let mut aliases = BTreeSet::new();
         for (id, name) in selected {
             if name.is_empty()
                 || name.len() > 255
                 || !name.bytes().all(|b| (0x20..=0x7e).contains(&b))
             {
                 return Err("wire name requires 1..255 printable ASCII bytes".into());
+            }
+            if !aliases.insert(name) {
+                return Err("selected applications require distinct wire names".into());
             }
             let app = catalog
                 .applications
@@ -267,6 +277,11 @@ impl ApplicationService {
             .checked_add(1)
             .ok_or("service revision exhausted")?;
         let inventory = Self::projection(&catalog, &selected, revision)?;
+        let selection_changed = changed
+            || self
+                .tracker
+                .current()
+                .is_none_or(|old| old.applications != inventory.applications);
         let lifecycle = self
             .tracker
             .advance(&inventory)
@@ -274,6 +289,9 @@ impl ApplicationService {
         self.current = Some(catalog);
         self.selected = selected;
         self.revision = revision;
+        if selection_changed {
+            self.selection_revision = revision;
+        }
         Ok(Update {
             revoked,
             core_changed: changed,
@@ -295,6 +313,7 @@ impl ApplicationService {
             .map_err(|e| e.to_string())?;
         self.selected = selected;
         self.revision = revision;
+        self.selection_revision = revision;
         Ok(())
     }
     pub fn unselect(&mut self, id: &ApplicationId) -> Result<(), String> {
@@ -314,6 +333,7 @@ impl ApplicationService {
             .map_err(|e| e.to_string())?;
         self.selected = selected;
         self.revision = revision;
+        self.selection_revision = revision;
         Ok(())
     }
     pub fn inventory(&self) -> Option<&Inventory> {

@@ -11,7 +11,7 @@ import application_source
 import usb_handshake as owner
 
 
-def verify(binary, root, runtime, remote, env, dump, first_pid, media, properties, rate):
+def verify(binary, root, runtime, remote, env, dump, first_pid, media, properties, rate, multi_app=None, native_arguments=None):
     root.mkdir(mode=0o700, exist_ok=False)
     _, before = dump()
     baseline = owner.core.filtered(before)
@@ -67,6 +67,28 @@ def verify(binary, root, runtime, remote, env, dump, first_pid, media, propertie
         send('select '+first+'=Media Player');status(1,1)
         second=launch('second');status(2,1);second_id=find_app(second.pid)
         send('select '+second_id+'=Other Player');status(2,2)
+        if multi_app is not None:
+            _, route_before = dump()
+            owner.save(root/'multi-app-before.json', route_before)
+            command=[str(multi_app),'--authorize-isolated-routing',*native_arguments[:5],
+                     first+'=Media Player',second_id+'=Other Player',*native_arguments[5:]]
+            route=subprocess.run(command,env=clean_env,capture_output=True,text=True,timeout=20)
+            owner.save(root/'multi-app.json',{'exit':route.returncode,'stdout':route.stdout,'stderr':route.stderr,
+                       'binary_sha256':hashlib.sha256(Path(multi_app).read_bytes()).hexdigest()})
+            end=time.monotonic()+3
+            while True:
+                _, route_after=dump()
+                if owner.core.filtered(route_before)==owner.core.filtered(route_after) or time.monotonic()>=end:break
+                time.sleep(.05)
+            proof['multi_app_private_graph_restored']=owner.core.filtered(route_before)==owner.core.filtered(route_after)
+            proof['multi_app_routes_released']=owner.core.filtered(route_before)['Link']==owner.core.filtered(route_after)['Link']
+            owner.save(root/'multi-app-after.json', route_after)
+            proof['multi_app_native_verified']=route.returncode==0 and not route.stderr and all(marker in route.stdout for marker in [
+                'MULTI success apps=2 created=4 move_steps=8 restored=4',
+                'MULTI failure acknowledged_prefix=2 publication=refused rollback=exact',
+                'MULTI complete usb=absent physical_audio=absent'])
+            if not proof['multi_app_native_verified'] or not proof['multi_app_routes_released']:
+                raise RuntimeError('native multi-app qualification failed; inspect multi-app.json')
         stop(second);status(1,1)
         proof['departed_selection_revoked']=True
         reopened=launch('reopened');status(2,1);reopened_id=find_app(reopened.pid)
@@ -91,6 +113,11 @@ def verify(binary, root, runtime, remote, env, dump, first_pid, media, propertie
     except Exception as error:
         proof['error']=type(error).__name__+': '+str(error)
     finally:
+        if service is not None and service.poll() is None:
+            try:
+                send('quit');service.wait(timeout=3)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
         for child in reversed(processes):stop(child)
         if service is not None:
             for stream in (service.stdin,service.stdout):stream.close()
@@ -101,10 +128,19 @@ def verify(binary, root, runtime, remote, env, dump, first_pid, media, propertie
             if owner.core.filtered(after)==baseline or time.monotonic()>=end:break
             time.sleep(.05)
         proof['private_graph_restored']=owner.core.filtered(after)==baseline
+        owner.save(root/'service-baseline.json',baseline)
+        owner.save(root/'service-after.json',owner.core.filtered(after))
+        # Actual routing negotiates Format and initializes channel vectors on
+        # these retained disposable nodes. Preserve the exact intermediate
+        # comparison (including false); the enclosing owner must destroy every
+        # owned source/destination and require its original whole-core baseline.
+        proof['private_graph_teardown_deferred']=multi_app is not None
         proof['desktop_exact_equal']=owner.snapshot()==desktop
         proof['private_configs_removed']=set(Path('/tmp').glob('beacn-linx-catalog-*'))==configs
         proof['all_owned_processes_stopped']=all(p.poll() is not None for p in processes)
         owner.save(root/'journal.json',proof);owner.save(root/'service-output.json',output)
-    if proof['error'] or not all(proof.get(k) for k in ['two_app_selections_verified','departed_selection_revoked','reopened_not_automatically_selected','bounded_input_rejected','eof_stop','deadline_stop','private_graph_restored','desktop_exact_equal','private_configs_removed','all_owned_processes_stopped']):
+    required=['two_app_selections_verified','departed_selection_revoked','reopened_not_automatically_selected','bounded_input_rejected','eof_stop','deadline_stop','desktop_exact_equal','private_configs_removed','all_owned_processes_stopped']
+    required += ['private_graph_restored'] if multi_app is None else ['multi_app_native_verified','multi_app_routes_released']
+    if proof['error'] or not all(proof.get(k) for k in required):
         raise RuntimeError('Rust catalog/service qualification failed; inspect journal')
     return proof

@@ -1,7 +1,38 @@
 # Beacn LinX — continuation handoff
 Updated 2026-10-14. Resume development; do not restart the investigation.
 
-## Current checkpoint: native Rust read-only application/service works
+## Current checkpoint: native two-app private routing and publication data pass
+
+The owner is live streaming. Continue software work only; no USB/physical audio,
+Windows app/routing changes or desktop apply. See
+[multi-app-publication.md](multi-app-publication.md) for the implementation and limits.
+
+A fixed-roster Rust publication epoch now connects explicit application selections
+to session reply interpretation, guarded preparation and complete observed-route
+publication data. Selected lifecycle/alias/core changes halt it, even edits that
+are reversed before use. Routine polling invalidates pending plans; private epoch
+identity prevents cross-epoch replay. Short duplicate aliases are refused atomically.
+NoPayload/missing records/zero still do not imply unroute. Single-app USB gates and
+all existing native backend/receipt restrictions remain unchanged.
+
+Two actual mpv processes on one owned private core simultaneously routed to pairs
+1/4, moved to 2/3, verified both complete routes and restored their prior routes
+using concrete receipt recovery. A second retained executor stopped after two
+successful creates, refused publication and rolled back to an exact graph baseline.
+No USB or physical audio occurred. 43 Windows Rust tests, 42 Linux Rust tests and
+29 Linux Python checks pass. Source `beacn-native-source-20261014T224851Z`; native
+result SHA256 `966b77ff771bf577cb3ab768c985015865b48acbcd4345713c852bbbd8138994`.
+
+Intermediate adapter Format/channel-vector negotiation differs and stays recorded
+as false in the nested journal. After complete owned-node teardown, the original
+whole private core, full laptop settings/state and new config/process cleanup pass
+exactly. Earlier failed attempts/artifacts are retained. Multi-app hardware control
+and physical playback are untested; the foreground service remains read-only.
+Next: Rust app controls/status using the same owners, then selected lifecycle stop
+and receipt cleanup integration. Keep hardware testing paused while the owner is
+live; default desktop apply and Actions stay disabled. Local [skip ci] commits only.
+
+## Previous checkpoint: native Rust read-only application/service works
 
 `beacn-linx inventory` and `beacn-linx service SECONDS` now use a distinct native
 read-only PipeWire catalog. No Python discovery helper or Cargo dependency is

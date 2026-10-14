@@ -84,6 +84,20 @@ fn duplicate_names_and_frame_overflow_refuse_selection_atomically() {
     assert_eq!(service.selected().len(), 2);
 }
 #[test]
+fn short_duplicate_alias_is_refused_without_changing_selection_or_revision() {
+    let mut service = ApplicationService::default();
+    service.update(snapshot(1, &format!("{A}{B}"))).unwrap();
+    service.select(&id(), "Player").unwrap();
+    let revision = service.revision();
+    let selection_revision = service.selection_revision();
+    assert!(service
+        .select(&ApplicationId("pw-client:11:pid:124".into()), "Player")
+        .is_err());
+    assert_eq!(service.revision(), revision);
+    assert_eq!(service.selection_revision(), selection_revision);
+    assert_eq!(service.selected().len(), 1);
+}
+#[test]
 fn departure_revokes_once_and_reopened_name_needs_fresh_selection() {
     let mut service = ApplicationService::default();
     service.update(snapshot(1, A)).unwrap();
