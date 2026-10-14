@@ -260,6 +260,18 @@ def clock_sample(path):
     return raw, int(pointer.group(1))
 
 
+def usb_submission_counter(directory):
+    """Read the device-wide kernel submission statistic, not USB payloads/completions."""
+    try:
+        raw = owner.usb_cache.cached(Path(directory) / "urbnum", 64).decode("ascii").strip()
+    except FileNotFoundError:
+        return None
+    # This kernel statistic can wrap; an invalid/wrapped observation is unknown.
+    if not re.fullmatch(r"[0-9]{1,10}", raw) or int(raw) > (1 << 31) - 1:
+        raise ValueError("invalid cached USB submission counter")
+    return int(raw)
+
+
 def audio_activation(directory, baseline):
     """Cached sysfs only; audio alternates may activate, every identity stays pinned."""
     selected = Path(directory).resolve(strict=True)
@@ -285,9 +297,12 @@ def audio_activation(directory, baseline):
                       for name in ("bEndpointAddress", "bmAttributes", "wMaxPacketSize", "bInterval", "type", "direction")
                       if (ep / name).is_file()}
             endpoints.append({"interface": interface["number"], "values": values})
+    submissions = usb_submission_counter(selected)
     if owner.usb_cache.sample(selected) != first:
         raise RuntimeError("selected USB activation changed across observation")
     return {"interfaces": interfaces, "endpoints": endpoints,
+            "urb_submission_counter": submissions,
+            "urb_counter_scope": "selected_device_all_endpoints",
             "audio_alternates": {str(i["number"]): i["alternate"] for i in interfaces if i["number"] in (1, 2)},
             "both_audio_alternates_active": all(i["alternate"] == 1 for i in interfaces if i["number"] in (1, 2))}
 

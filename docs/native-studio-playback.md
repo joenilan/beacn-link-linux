@@ -22,7 +22,50 @@ recovery before a new justified hardware attempt. Do not repeat the failed
 controller/rate experiments or restart the initial audit. Keep ordinary native
 physical apply disabled and distinguish VM audio failure from Linux feasibility.
 
+## Latest VM-only request-submission diagnostic
+
+The shared `studio_playback.audio_activation` owner now records bounded cached
+`urbnum` metadata beside its pinned interfaces and endpoints. Existing PipeWire
+and direct ALSA runners include it in their clock observations. Linux
+[v7.0 sysfs](https://raw.githubusercontent.com/torvalds/linux/v7.0/drivers/usb/core/sysfs.c)
+exposes the device statistic; the
+[HCD submission/giveback implementation](https://raw.githubusercontent.com/torvalds/linux/v7.0/drivers/usb/core/hcd.c)
+increments it on submission and reverses immediate enqueue failures, without a
+normal completion decrement. Treat it as device-wide cumulative submissions,
+never outstanding requests, completed packets, feedback payloads or clock proof.
+Missing metadata stays unknown; malformed/wrapped values fail the observation.
+
+The retained failed-run ALSA stream metadata explicitly selected sync endpoint
+`0x82`, interface 2 alternate 1, and implicit feedback mode. This is configured
+driver state, not successful feedback delivery. No generic implicit-feedback
+override was enabled.
+
+Exact code source `beacn-link-physical-playback-20261014T140703Z/source` passes
+39 focused Python cases on Linux, reusing unchanged verified Rust inputs and CLI.
+Before a new authorized EHCI direct ALSA 48 kHz authored-silence diagnostic, ten
+idle samples held the counter at 115 with both PCMs closed and all four endpoints
+verified. Nine playback samples then recorded 146 to 1,564 submissions over
+2.053 seconds with both audio alternates 1; hardware pointer stayed zero.
+The two-second stall guard terminated only the owned child, which exited.
+Guest desktop/settings/routes, saved-file bytes and USB binding compare exactly;
+Windows audio and registry compare exactly within this new attempt. A final
+ten-sample idle observer holds at 1,569, both PCMs closed, four endpoints verified
+and exact unchanged guest baseline. Ordinary physical executor apply remains off.
+
+Seventeen attempt artifacts were downloaded and hashed outside Git. Journal:
+`bf07a5f30ecb73e90ebff48b81958471b0dbe14a2bbd6c51a1a13592aa235f84`;
+comparison:
+`c0d6438294a753d50922b419aaf036eb2f2f42a42dba81a1b32d07433122dcd3`.
+Final idle summary:
+`64e1ba0687a589de65c0263090d2f2ae25911be9b49219b0d95c29d2636f78ac`.
+Existing VMware logs contain no timestamp window matching this attempt, so they
+cannot establish transport status. Root cause and useful feedback/completion
+delivery remain unknown. Next inspect the implicit-feedback queue/clock code and
+available existing status metadata, without repeating controller/rate variants,
+capturing packets/audio or requiring owner UI interaction.
+
 ## Optional native preflight prepared before the owner clarification
+
 
 The gaming PC currently has no Linux installation. The owner needs the
 replacement demonstrated before migrating. Development and current testing stay
@@ -56,7 +99,8 @@ python3 tests_native/studio_native_preflight.py --evidence-dir "$HOME/beacn-nati
 
 Private prepared ZIP label: `beacn-native-preflight-20261014T1330Z.zip`.
 SHA256: `710d97e1deaeda047655ec67717e603beef2130d1d4bb1c88498ce4f240e3790`.
-Windows verifies its allowlist, integrity and exact current source hashes.
+Windows verified its allowlist, integrity and the source hashes at preparation.
+Later playback diagnostics changed; rebuild the optional bundle before reuse.
 Linux imports the unpacked bundle, saves a stable metadata baseline, verifies
 four endpoints and returns native-readiness false for VMware as intended.
 Two focused readiness/detection cases pass on both platforms. No native hardware
@@ -101,7 +145,7 @@ constrained to VID/PID and the selected cached host port. The machine-specific
 rule stays in the private VMX/backups, and is intentionally retained after the
 controller trial to avoid repeated handoffs. Its scope is VM power-on/restart;
 it is not a verified live detach/reconnect API. The recovered VM keeps Studio
-attached and Windows Link closed. No further hardware playback followed recovery.
+attached and Windows Link closed. The later submission diagnostic is recorded above.
 
 ## Evidence durability repair
 

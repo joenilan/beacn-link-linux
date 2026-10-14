@@ -22,6 +22,44 @@ mouse automation, driver/firmware changes, traffic/audio capture or REA executio
 is authorized by this clarification. Existing session execution authority and
 settings-preservation requirements still apply.
 
+## Latest VM-only submission/clock diagnostic (2026-10-14)
+
+The existing physical playback activation owner now records the bounded cached
+sysfs `urbnum` statistic with its identity-pinned alternate/endpoint observations.
+Both PipeWire and direct ALSA runners already use that owner, so each clock
+record includes the counter. It is device-wide cumulative submission metadata,
+not an outstanding-request count, completion count, feedback payload or proof of
+audio delivery. Missing counters remain unknown; malformed/wrapped values fail.
+Retained ALSA stream metadata explicitly reports sync endpoint `0x82`, interface
+2 alternate 1 and `Implicit Feedback Mode: Yes`; do not enable a generic driver
+override merely because the module's override parameter is false.
+
+All 39 focused playback/graph/ALSA/handshake cases pass on Linux. Exact validated
+code source: `beacn-link-physical-playback-20261014T140703Z/source`; unchanged Rust
+inputs reuse the prior verified CLI with provenance. Guest free disk is about
+18.2 GB; no heavy build or installation occurred.
+
+A new authorized, guarded direct ALSA EHCI 48 kHz authored-silence diagnostic
+collected nine clock samples. Both audio alternates were 1, submissions rose
+146 to 1,564 over 2.053 seconds, but hardware pointer stayed zero. The two-second
+stall guard stopped the owned child, which exited. Full guest settings/routes,
+saved files and USB binding compare exactly; Windows audio and registry compare
+exactly within this attempt. Seventeen private artifacts were downloaded and
+hashed. Journal SHA256:
+`bf07a5f30ecb73e90ebff48b81958471b0dbe14a2bbd6c51a1a13592aa235f84`;
+comparison SHA256:
+`c0d6438294a753d50922b419aaf036eb2f2f42a42dba81a1b32d07433122dcd3`.
+Read-only ten-sample observers before/after remain fully unchanged, with idle
+counters fixed at 115 and 1,569 respectively. No matching timestamp window was
+present in the existing VMware logs; that is a visibility gap, not error-free
+transport evidence. No packet/audio capture, driver change or audible test ran.
+
+Next inspect the implicit-feedback queue/clock path and available existing
+transport/status metadata to distinguish continued submissions from useful
+feedback/completions. Do not repeat controller/rate variants or claim the rising
+counter proves delivery. No owner watching, dragging or manual USB toggle is
+needed for this investigation; Studio remains attached and recovered.
+
 The optional prepared `tests_native/studio_native_preflight.py` is read-only: existing durable snapshot
 and cached USB/endpoint owners, one selected card, four actual pair mappings,
 normal device access and explicit native-versus-VM detection. It starts no audio

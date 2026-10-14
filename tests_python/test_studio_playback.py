@@ -45,6 +45,31 @@ def fixture():
 
 
 class StudioPlaybackTests(unittest.TestCase):
+    def test_submission_counter_is_optional_bounded_and_refuses_invalid_or_wrapped_values(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "urbnum"
+            self.assertIsNone(playback.usb_submission_counter(directory))
+            path.write_text("1234\n")
+            self.assertEqual(playback.usb_submission_counter(directory), 1234)
+            for raw in ("-1", "2147483648", "1 2", "x", "1" * 65):
+                path.write_text(raw)
+                with self.subTest(raw=raw[:20]), self.assertRaises(ValueError):
+                    playback.usb_submission_counter(directory)
+
+    def test_activation_records_device_wide_counter_without_treating_it_as_clock_progress(self):
+        interfaces = [{"number": n, "alternate": 0, "class": 255 if n == 3 else 1,
+                       "driver": None if n == 3 else "snd_usb_audio"} for n in range(4)]
+        raw = b"synthetic cached descriptor"
+        sample = ((1, 2), {}, interfaces, raw)
+        baseline = {"instance": [1, 2], "attributes": {}, "interfaces": interfaces,
+                    "descriptor_sha256": hashlib.sha256(raw).hexdigest()}
+        with tempfile.TemporaryDirectory() as directory, patch.object(playback.owner.usb_cache, "sample", return_value=sample):
+            (Path(directory) / "urbnum").write_text("42\n")
+            result = playback.audio_activation(directory, baseline)
+        self.assertEqual(result["urb_submission_counter"], 42)
+        self.assertEqual(result["urb_counter_scope"], "selected_device_all_endpoints")
+        self.assertNotIn("hardware_clock_progress", result)
+
     def test_unreachable_desktop_stops_comparison_once_without_claiming_cleanup(self):
         snapshot = Mock(side_effect=subprocess.TimeoutExpired(["pw-dump"], 5))
         get_binding = Mock(); sleep = Mock()
