@@ -1,5 +1,31 @@
 # BEACN Link Linux — continuation handoff
-Updated 2026-10-13. Resume development; do not restart the investigation.
+Updated 2026-10-14. Resume development; do not restart the investigation.
+
+## Current recovery checkpoint (2026-10-14)
+
+**Recover before further hardware work.** Read
+[native-studio-playback.md](native-studio-playback.md) first. New cached USB
+observations prove both playback and implicit-feedback audio alternates active
+during the 48 kHz stall. A maintainer-supported, temporary owned-stream 96 kHz
+experiment selected the requested ALSA rate but advanced only 298 samples before
+freezing. Its playback child exited; PipeWire subsequently stopped answering
+queries and is in kernel state D at `usb_kill_urb`, with audio alternates still 1.
+Saved guest files and per-attempt Windows comparisons match, but guest routing/
+binding recovery is **not verified**. The owner has been asked to disconnect
+Studio from the VM, wait five seconds and reconnect it; Windows Link stays closed.
+No mouse automation, capture, driver change or service restart was performed.
+Do not repeat playback until the explicit recovery comparison passes.
+
+Ignored `local/physical_rate_recovery.py` is prepared to compare the recovered
+desktop against the pre-rate-test full backups, including logical foreign
+resources/defaults and absence of the owned force-rate node. Existing private
+evidence is preserved. The runner now records USB activation, supports explicit
+48/96 kHz PCM, restricts temporary forced rates to the selected idle test graph,
+and fails comparison promptly if the desktop is unavailable. Twelve playback and
+nine graph Python cases pass on Windows/Linux; unchanged Rust inputs reuse the
+previous exact built CLI. New offline source:
+beacn-link-physical-playback-20261014T040623Z/source. Latest free disk: about 18.3 GB.
+This recovery checkpoint supersedes the earlier exact-cleanup status below.
 
 ## Current hardware checkpoint (2026-10-13)
 

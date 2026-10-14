@@ -4,6 +4,10 @@ from pathlib import Path
 import struct
 import sys
 import unittest
+from unittest.mock import patch, Mock
+import subprocess
+import hashlib
+import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests_native"))
 import studio_playback as playback
@@ -41,6 +45,91 @@ def fixture():
 
 
 class StudioPlaybackTests(unittest.TestCase):
+    def test_unreachable_desktop_stops_comparison_once_without_claiming_cleanup(self):
+        snapshot = Mock(side_effect=subprocess.TimeoutExpired(["pw-dump"], 5))
+        get_binding = Mock(); sleep = Mock()
+        result = playback.settled_comparison({}, get_binding, snapshot, sleep)
+        self.assertFalse(result["desktop_available"])
+        self.assertFalse(result["cleanup_verified"])
+        snapshot.assert_called_once(); get_binding.assert_not_called(); sleep.assert_not_called()
+
+    def test_connected_audio_may_settle_but_never_requires_saved_state_rewrite(self):
+        source = fixture(); pinned = playback.endpoint(source, 1, 1)
+        saved = {"desktop": playback.owner.core.filtered(source), "state_files": {}}
+        baseline = {"snapshot": saved, "binding": {"released": True}, "endpoint": pinned}
+        snapshot = Mock(return_value=saved)
+        get_binding = Mock(side_effect=[RuntimeError("still active"), baseline["binding"]])
+        sleep = Mock()
+        result = playback.settled_comparison(baseline, get_binding, snapshot, sleep)
+        self.assertTrue(result["desktop_exact_equal"])
+        self.assertTrue(result["state_files_exact_equal"])
+        self.assertTrue(result["connected_binding_equal"])
+        self.assertEqual(snapshot.call_count, 2); sleep.assert_called_once_with(0.5)
+
+    def test_force_rate_refuses_other_apps_devices_and_existing_rate_overrides(self):
+        source = fixture()
+        baseline = [o for o in source if o["id"] not in (7, 10, 11, 12, 30, 31)]
+        playback.require_rate_isolation(baseline, 40)
+        with self.assertRaises(RuntimeError):
+            playback.require_rate_isolation(source, 40)
+        source[2]["info"]["props"]["node.force-rate"] = 96000
+        playback.require_rate_isolation(source, 40, 10)
+        for change in ("device", "node-override", "metadata-override"):
+            changed = copy.deepcopy(baseline)
+            if change == "device": changed[1]["info"]["props"]["device.id"] = 41
+            if change == "node-override": changed[1]["info"]["props"]["node.force-rate"] = 96000
+            if change == "metadata-override": changed.append({"id": 90, "type": "PipeWire:Interface:Metadata",
+                "metadata": [{"key": "clock.force-rate", "value": "96000"}]})
+            with self.subTest(change=change), self.assertRaises(RuntimeError):
+                playback.require_rate_isolation(changed, 40)
+
+    def test_96k_is_explicit_finite_and_does_not_change_default_rate(self):
+        self.assertNotIn("node.force-rate", playback.stream_properties("test", {"serial": 200}))
+        self.assertEqual(playback.stream_properties("test", {"serial": 200}, 96000, True)["node.force-rate"], 96000)
+        raw = playback.pcm(True, 96000)
+        self.assertEqual(len(raw), 96000 * playback.DURATION * 4)
+        self.assertEqual(set(raw[:96000 * playback.LEAD * 4]), {0})
+        with self.assertRaises(ValueError):
+            playback.pcm(False, 192000)
+        source = fixture(); pin = playback.endpoint(source, 1, 1)
+        _, baseline = playback.graph.project_graph([o for o in source if o["id"] not in (7, 10, 11, 12, 30, 31)], 1, {})
+        with self.assertRaises(ValueError):
+            playback.verify(source, pin, 1, 1, "test", 2001, baseline, 96000, True)
+        source[2]["info"]["props"]["node.force-rate"] = 96000
+        self.assertEqual(len(playback.verify(source, pin, 1, 1, "test", 2001, baseline, 96000, True)["links"]), 2)
+
+    def test_activation_observes_both_audio_interfaces_without_requiring_capture_pcm(self):
+        interfaces = [{"number": n, "alternate": 0, "class": 255 if n == 3 else 1,
+                       "driver": None if n == 3 else "snd_usb_audio"} for n in range(4)]
+        raw = b"synthetic cached descriptor"
+        before = {"instance": [1, 2], "attributes": {"idVendor": 0x33ae},
+                  "interfaces": interfaces, "descriptor_sha256": hashlib.sha256(raw).hexdigest()}
+        active = copy.deepcopy(interfaces)
+        active[1]["alternate"] = active[2]["alternate"] = 1
+        with tempfile.TemporaryDirectory() as directory, patch.object(playback.owner.usb_cache, "sample",
+                return_value=((1, 2), before["attributes"], active, raw)):
+            result = playback.audio_activation(directory, before)
+        self.assertTrue(result["both_audio_alternates_active"])
+        self.assertEqual(result["audio_alternates"], {"1": 1, "2": 1})
+
+    def test_activation_rejects_replaced_device_driver_vendor_alternate_and_unstable_cache(self):
+        interfaces = [{"number": n, "alternate": 0, "class": 255 if n == 3 else 1,
+                       "driver": None if n == 3 else "snd_usb_audio"} for n in range(4)]
+        raw = b"synthetic cached descriptor"
+        before = {"instance": [1, 2], "attributes": {}, "interfaces": interfaces,
+                  "descriptor_sha256": hashlib.sha256(raw).hexdigest()}
+        for change in ("identity", "driver", "vendor", "descriptor", "unstable"):
+            active = copy.deepcopy(interfaces)
+            identity = (1, 3) if change == "identity" else (1, 2)
+            observed_raw = raw + b"changed" if change == "descriptor" else raw
+            if change == "driver": active[2]["driver"] = "foreign"
+            if change == "vendor": active[3]["alternate"] = 1
+            sample = (identity, {}, active, observed_raw)
+            samples = [sample, ((1, 4), {}, active, raw)] if change == "unstable" else [sample, sample]
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as directory, patch.object(
+                    playback.owner.usb_cache, "sample", side_effect=samples), self.assertRaises(RuntimeError):
+                playback.audio_activation(directory, before)
+
     def test_exact_pair_and_hardware_links_verified_without_ownership_claims(self):
         source = fixture()
         pin = playback.endpoint(source, 1, 1)

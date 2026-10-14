@@ -1,10 +1,66 @@
 # Selected Studio playback probe
 
-Updated 2026-10-13 (private evidence timestamps extend into 2026-10-14 UTC).
+Updated 2026-10-14.
 This is an explicitly authorized physical feasibility test, separate from the
 [native private-core executor](native-executor.md) and
 [accepted assignment/publication checkpoint](native-assignment-publication.md).
 Ordinary desktop apply remains disabled. No audible acceptance is claimed.
+
+## Current recovery state (2026-10-14)
+
+The new cached activation diagnostic verified audio interfaces 1 and 2 at
+alternate 1 throughout nine stalled 48 kHz observations. OUT 02 has attributes
+05; IN 82 has attributes 25 (implicit-feedback data), both with 416-byte maximum
+packets and interval 1. Vendor interface 3 remained at its released baseline.
+Thus a closed capture PCM does not imply that the feedback interface is inactive.
+Upstream Linux starts the sync endpoint from its
+[playback setup](https://github.com/torvalds/linux/blob/v7.0/sound/usb/pcm.c#L266)
+and can wait for incoming feedback before submitting playback transfers in
+[endpoint.c](https://github.com/torvalds/linux/blob/v7.0/sound/usb/endpoint.c#L1487).
+These source observations guide a hypothesis, not proof of the installed kernel's
+exact path or of missing USB packets; no traffic was captured.
+
+The UCM maintainer's
+[BEACN-specific 96 kHz workaround](https://github.com/beacn-on-linux/beacn-ucm-profiles/issues/1)
+provided a concrete rate experiment. The runner now accepts explicit
+`--rate 96000 --force-graph-rate`, applying
+[PipeWire's active-node rate property](https://raw.githubusercontent.com/PipeWire/pipewire/1.6.2/doc/dox/config/pipewire-props.7.md)
+only to its owned stream. Default rate remains 48 kHz; no persistent rate file or
+global metadata key is edited. PCM duration/frequency/ramp/peak bounds are retained
+at both supported rates, and actual ALSA rate must match an explicit forced rate.
+The rate mode refuses other application streams, other physical audio devices or
+existing rate overrides, and stops if they appear during the run.
+
+The 96 kHz hardware experiment did **not** pass: ALSA selected eight FLOAT_LE
+channels at 96 kHz, both audio interfaces activated, and the hardware pointer
+advanced to 298 then froze for three seconds. The owned playback process exited,
+but the post-test PipeWire query timed out. Subsequent read-only inspection found
+the PipeWire server in kernel state D, waiting in `usb_kill_urb`; audio interfaces
+1/2 remained at alternate 1, with ALSA PCM in SETUP. All four saved WirePlumber
+files still match exactly, and the connected Windows audio/registry comparison
+passes. Guest graph restoration remains **unverified**, not successful.
+
+The owner has been asked to disconnect/reconnect only Studio through VMware to
+clear this USB operation, with Windows Link closed. No audio-service restart or
+termination, driver change or further physical attempt was performed. After reconnect, run the
+prepared read-only recovery comparison: confirm released interfaces, absence of
+the owned rate-forcing node, reachable desktop, logical settings/channels/routes/
+defaults and saved-file equality. Preserve recreated IDs/format-cache differences
+instead of deleting foreign resources or rewriting current saved files.
+
+The comparison now stops after the first unavailable desktop query and explicitly
+reports cleanup unverified, rather than repeatedly querying a blocked server.
+New source at `beacn-link-physical-playback-20261014T040623Z/source` passes twelve
+playback and nine graph Python checks on Windows/Linux. Rust inputs match the
+previous built source byte for byte; its exact CLI binary is reused with recorded
+build provenance. No unchanged Rust matrix was repeated. Latest free guest disk
+is about 18.3 GB. The new guards/fail-fast comparison are offline-validated;
+no further hardware run has tested them while the server is blocked.
+
+Private failed rate-run source: beacn-link-physical-playback-20261014T035359Z/source.
+Journal: `582c8d20129d7d24af57bc23de7a5215ea672c38bd9199ffb7b6afa96ce7c146`.
+Failed comparison: `22ae30deacd6d4a6966136140ea9e520dfb6dc4fd6198140fd042fa641be90dd`.
+Recovery evidence must be appended separately; do not replace this failed result.
 
 ## Implementation and boundaries
 

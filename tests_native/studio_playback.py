@@ -109,15 +109,37 @@ def endpoint(objects, card, link):
             "internal_output": output_ref, "hardware": hardware_ref, "hardware_links": links}
 
 
-def stream_properties(token, target):
-    return {"application.name": "BEACN Linux VM Audio Test", "application.id": "beacn-test-" + token,
+def stream_properties(token, target, rate=RATE, force_rate=False):
+    if rate not in (48000, 96000):
+        raise ValueError("unsupported diagnostic rate")
+    result = {"application.name": "BEACN Linux VM Audio Test", "application.id": "beacn-test-" + token,
             "node.name": "beacn-audio-" + token, "node.autoconnect": True,
             "target.object": str(target["serial"]), "node.dont-fallback": True,
             "node.dont-reconnect": True, "node.dont-move": True, "stream.dont-remix": True,
             "state.restore-props": False, "state.restore-target": False, "object.linger": False}
+    if force_rate:
+        result["node.force-rate"] = rate
+    return result
 
 
-def verify(objects, pinned, card, link, token, pid, baseline):
+def require_rate_isolation(objects, selected_device, owned_node=None):
+    """A forced graph rate is permitted only on the idle selected-device test graph."""
+    for obj in objects:
+        props = inventory.properties(obj)
+        if obj.get("type") == inventory.NODE and obj["id"] != owned_node:
+            if props.get("media.class") in ("Stream/Output/Audio", "Stream/Input/Audio"):
+                raise RuntimeError("another application stream blocks the graph-rate diagnostic")
+            if graph.audio_node(obj) and props.get("device.id") is not None and number(props["device.id"]) != selected_device:
+                raise RuntimeError("another physical audio device blocks the graph-rate diagnostic")
+            if props.get("node.force-rate") is not None and number(props["node.force-rate"]) != 0:
+                raise RuntimeError("another node already forces a graph rate")
+        if obj.get("type") == "PipeWire:Interface:Metadata":
+            for entry in obj.get("metadata", []):
+                if entry.get("key") == "clock.force-rate" and number(entry.get("value")) != 0:
+                    raise RuntimeError("existing global rate override blocks the diagnostic")
+
+
+def verify(objects, pinned, card, link, token, pid, baseline, rate=RATE, force_rate=False):
     if endpoint(objects, card, link) != pinned:
         raise ValueError("selected physical identities or pair links changed")
     apps = inventory.observe(objects, 1)["applications"]
@@ -127,14 +149,16 @@ def verify(objects, pinned, card, link, token, pid, baseline):
     app = matches[0]
     projected, current = graph.project_graph(objects, 1, {app["application_id"]: "beacn-audio-test"})
     source = next(s["node"] for s in current["streams"] if s["application_id"] == app["application_id"])
+    if force_rate:
+        require_rate_isolation(objects, pinned["device"]["id"], source["id"])
     node = next(o for o in objects if o["id"] == source["id"])
     p = inventory.properties(node)
-    for key, expected in stream_properties(token, pinned["target"]).items():
+    for key, expected in stream_properties(token, pinned["target"], rate, force_rate).items():
         actual = p.get(key)
         if isinstance(expected, bool):
             if actual not in (expected, str(expected).lower()):
                 raise ValueError("owned stream safety property changed")
-        elif str(actual) != expected:
+        elif str(actual) != str(expected):
             raise ValueError("owned stream identity or target property changed")
     output = ports(objects, source, "out", ["FL", "FR"])
     selected = [l for l in current["links"] if l["output"] in output.values() or l["input"] in output.values()]
@@ -152,15 +176,18 @@ def verify(objects, pinned, card, link, token, pid, baseline):
     return {"source": source, "links": selected, "graph": current, "inventory": projected}
 
 
-def pcm(audible):
+def pcm(audible, rate=RATE):
     """Authored stereo PCM only: eight silent seconds then three quiet beeps."""
-    data = bytearray(DURATION * RATE * 4)
+    if rate not in (48000, 96000):
+        raise ValueError("unsupported diagnostic rate")
+    data = bytearray(DURATION * rate * 4)
     if audible:
         for second in (LEAD, LEAD + 1, LEAD + 2):
-            for i in range(RATE // 2):
-                envelope = min(1.0, i / 480, (RATE // 2 - 1 - i) / 480)
-                value = round(32767 * 10 ** (-24 / 20) * envelope * math.sin(2 * math.pi * 440 * i / RATE))
-                struct.pack_into("<hh", data, (second * RATE + i) * 4, value, value)
+            for i in range(rate // 2):
+                ramp = rate // 100
+                envelope = min(1.0, i / ramp, (rate // 2 - 1 - i) / ramp)
+                value = round(32767 * 10 ** (-24 / 20) * envelope * math.sin(2 * math.pi * 440 * i / rate))
+                struct.pack_into("<hh", data, (second * rate + i) * 4, value, value)
     return bytes(data)
 
 
@@ -184,6 +211,27 @@ def compare_settings(before, after, pinned):
             "settings_routes_exact_equal": before["desktop"] == clean["desktop"],
             "state_files_exact_equal": before["state_files"] == after["state_files"],
             "negotiated_format_cache_changes": format_cache, "after": after}
+
+
+def settled_comparison(baseline, get_binding, snapshot=None, sleep=None):
+    snapshot = snapshot or owner.snapshot
+    sleep = sleep or time.sleep
+    for _ in range(20):
+        try:
+            after = snapshot()
+        except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
+            # Unreachable is not an unsettled format cache; no repeated queries.
+            return {"error": str(error), "desktop_available": False, "cleanup_verified": False}
+        try:
+            after_binding = get_binding()
+            comparison = compare_settings(baseline["snapshot"], after, baseline["endpoint"])
+            comparison["connected_binding_equal"] = after_binding == baseline["binding"]
+            if all(comparison[k] for k in ("settings_routes_exact_equal", "state_files_exact_equal", "connected_binding_equal")):
+                return comparison
+        except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
+            comparison = {"error": str(error)}
+        sleep(0.5)
+    return comparison
 
 
 def planner_check(proof, codec, target, token, link):
@@ -210,6 +258,38 @@ def clock_sample(path):
     if len(raw) > 16384 or state is None or state.group(1) != "RUNNING" or pointer is None:
         raise RuntimeError("selected ALSA playback clock is not running")
     return raw, int(pointer.group(1))
+
+
+def audio_activation(directory, baseline):
+    """Cached sysfs only; audio alternates may activate, every identity stays pinned."""
+    selected = Path(directory).resolve(strict=True)
+    first = owner.usb_cache.sample(selected)
+    instance, attributes, interfaces, raw = first
+    if (list(instance) != baseline["instance"] or attributes != baseline["attributes"]
+            or hashlib.sha256(raw).hexdigest() != baseline["descriptor_sha256"]):
+        raise RuntimeError("selected USB identity changed during playback")
+    expected = {i["number"]: i for i in baseline["interfaces"]}
+    if len(interfaces) != len(expected) or {i["number"] for i in interfaces} != set(expected):
+        raise RuntimeError("selected USB interface set changed during playback")
+    endpoints = []
+    for interface in interfaces:
+        prior = expected[interface["number"]]
+        if any(interface[k] != prior[k] for k in ("class", "driver")):
+            raise RuntimeError("selected USB interface binding changed during playback")
+        allowed = (0, 1) if interface["number"] in (1, 2) else (prior["alternate"],)
+        if interface["alternate"] not in allowed:
+            raise RuntimeError("unexpected selected USB alternate during playback")
+        folder = selected / (selected.name + ":1." + str(interface["number"]))
+        for ep in sorted(folder.glob("ep_*")):
+            values = {name: owner.usb_cache.cached(ep / name, 64).decode("ascii").strip()
+                      for name in ("bEndpointAddress", "bmAttributes", "wMaxPacketSize", "bInterval", "type", "direction")
+                      if (ep / name).is_file()}
+            endpoints.append({"interface": interface["number"], "values": values})
+    if owner.usb_cache.sample(selected) != first:
+        raise RuntimeError("selected USB activation changed across observation")
+    return {"interfaces": interfaces, "endpoints": endpoints,
+            "audio_alternates": {str(i["number"]): i["alternate"] for i in interfaces if i["number"] in (1, 2)},
+            "both_audio_alternates_active": all(i["alternate"] == 1 for i in interfaces if i["number"] in (1, 2))}
 
 
 def binding(directory, held_pid=None, held_start=None):
@@ -253,6 +333,8 @@ def main():
     parser.add_argument("--sysfs-device", required=True)
     parser.add_argument("--evidence-dir", required=True)
     parser.add_argument("--codec", required=True, help="exact built existing link-protocol executable")
+    parser.add_argument("--rate", type=int, choices=(48000, 96000), default=RATE)
+    parser.add_argument("--force-graph-rate", action="store_true", help="explicit temporary rate on the owned node only")
     parser.add_argument("--held-vendor-pid", type=int, help="caller-owned initialized native helper, never stopped here")
     parser.add_argument("--held-vendor-start")
     args = parser.parse_args()
@@ -265,6 +347,7 @@ def main():
         parser.error("private evidence must be outside the source tree")
     root.mkdir(mode=0o700, parents=False, exist_ok=False)
     journal = {"audible": args.audible, "link": args.link, "native_executor_apply": False,
+               "rate": args.rate, "force_graph_rate": args.force_graph_rate,
                "error": None, "child_exited": True, "route_checks": 0}
     child = None
     log = None
@@ -280,6 +363,8 @@ def main():
             raise ValueError("selected USB device does not uniquely identify an ALSA card")
         card = cards[0]
         pinned = endpoint(objects, card, args.link)
+        if args.force_graph_rate:
+            require_rate_isolation(objects, pinned["device"]["id"])
         _, baseline_graph = graph.project_graph(objects, 1, {})
         if get_binding() != before_binding or owner.snapshot() != before:
             raise ValueError("baseline changed during preparation")
@@ -290,7 +375,7 @@ def main():
                        harness_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest())
         owner.save(root / "baseline.json", {"snapshot": before, "binding": before_binding, "endpoint": pinned})
         owner.save(root / "baseline-objects.json", objects)
-        raw = pcm(args.audible)
+        raw = pcm(args.audible, args.rate)
         (root / "authored-pcm.s16le").write_bytes(raw)
         journal["pcm_sha256"] = hashlib.sha256(raw).hexdigest()
         config = root / "client-config"
@@ -305,8 +390,8 @@ def main():
         env.update(PIPEWIRE_CONFIG_PREFIX=str(config), PIPEWIRE_CONFIG_NAME="client.conf")
         token = uuid.uuid4().hex
         command = [str(binary), "-v", "-p", "-a", "-R", "pipewire-0", "--target", str(pinned["target"]["serial"]),
-                   "--rate", str(RATE), "--channels", "2", "--channel-map", "FL,FR", "--format", "s16",
-                   "-P", json.dumps(stream_properties(token, pinned["target"])), str(root / "authored-pcm.s16le")]
+                   "--rate", str(args.rate), "--channels", "2", "--channel-map", "FL,FR", "--format", "s16",
+                   "-P", json.dumps(stream_properties(token, pinned["target"], args.rate, args.force_graph_rate)), str(root / "authored-pcm.s16le")]
         log = (root / "pw-cat.log").open("xb")
         owner.save(root / "run-started.json", {"time": time.time(), "token": token})
         child = subprocess.Popen(command, env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=log)
@@ -323,7 +408,7 @@ def main():
                 raise RuntimeError("owned playback log exceeded limit")
             objects = collect()
             try:
-                proof = verify(objects, pinned, card, args.link, token, child.pid, baseline_graph)
+                proof = verify(objects, pinned, card, args.link, token, child.pid, baseline_graph, args.rate, args.force_graph_rate)
             except LookupError:
                 if child.poll() == 0:
                     break
@@ -339,11 +424,20 @@ def main():
                     (root / "alsa-playback-status.txt").write_text(status.read_text())
                     alsa = Path("/proc/asound") / ("card" + str(card))
                     (root / "alsa-stream-during.txt").write_text((alsa / "stream0").read_text())
-                    (root / "alsa-playback-hw-params.txt").write_text((alsa / "pcm0p/sub0/hw_params").read_text())
+                    hardware_params = (alsa / "pcm0p/sub0/hw_params").read_text()
+                    (root / "alsa-playback-hw-params.txt").write_text(hardware_params)
+                    hardware_rate = re.search(r"^rate: (\d+) ", hardware_params, re.M)
+                    journal["hardware_rate"] = int(hardware_rate.group(1)) if hardware_rate else None
+                    if args.force_graph_rate and journal["hardware_rate"] != args.rate:
+                        raise RuntimeError("selected ALSA rate does not match the explicitly forced rate")
                     (root / "alsa-capture-hw-params.txt").write_text((alsa / "pcm0c/sub0/hw_params").read_text())
                 status = Path("/proc/asound") / ("card" + str(card)) / "pcm0p/sub0/status"
                 raw_status, pointer = clock_sample(status)
                 (root / ("alsa-status-%02d.txt" % journal["route_checks"])).write_text(raw_status)
+                activation = audio_activation(args.sysfs_device, before_binding)
+                owner.save(root / ("usb-activation-%02d.json" % journal["route_checks"]), activation)
+                journal["last_audio_alternates"] = activation["audio_alternates"]
+                journal["both_audio_alternates_active"] = activation["both_audio_alternates_active"]
                 if last_pointer is None:
                     journal["first_hw_pointer"] = pointer
                 if last_pointer is None or pointer > last_pointer:
@@ -378,17 +472,7 @@ def main():
         baseline_path = root / "baseline.json"
         if journal["child_exited"] and baseline_path.exists():
             baseline = json.loads(baseline_path.read_text())
-            for _ in range(20):
-                try:
-                    after = owner.snapshot()
-                    after_binding = get_binding()
-                    comparison = compare_settings(baseline["snapshot"], after, baseline["endpoint"])
-                    comparison["connected_binding_equal"] = after_binding == baseline["binding"]
-                    if all(comparison[k] for k in ("settings_routes_exact_equal", "state_files_exact_equal", "connected_binding_equal")):
-                        break
-                except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
-                    comparison = {"error": str(error)}
-                time.sleep(0.5)
+            comparison = settled_comparison(baseline, get_binding)
             owner.save(root / "comparison.json", comparison)
             journal["comparison"] = {k: v for k, v in comparison.items() if k != "after"}
         owner.save(root / "journal.json", journal)
