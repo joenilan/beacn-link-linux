@@ -22,7 +22,64 @@ mouse automation, driver/firmware changes, traffic/audio capture or REA executio
 is authorized by this clarification. Existing session execution authority and
 settings-preservation requirements still apply.
 
-## Aggregate completion observer prepared; administrator access needed (2026-10-14)
+## Live feedback error checkpoint and next clock/geometry test (2026-10-14)
+
+The owner ran the prepared Ubuntu terminal launcher. Compilation/load/attachment
+passed; five probes attached, the collector exited 0 and the normal-user ALSA
+child exited after its two-second pointer-stall guard. Observer `error: null`
+means collection completed, not that audio succeeded. Nine playback samples
+remain pointer 0 -> 0. Retain the original `live_probe_validated: false`: it was
+an intentionally conservative default awaiting aggregate review.
+
+Aggregate IN `0x82` observations: 1,437 noncancelled URB completions, all URB status
+0, plus 12 cleanup cancellations. Their 11,496 packets comprise 11,490 EOVERFLOW
+(-75) packets and six successful empty packets. Successful bytes total zero;
+sync-handler callbacks total 1,437. No OUT `0x02` completion was observed.
+This supports the feedback queue-wait explanation, while device/driver/VMware
+root cause remains unresolved. Two printed signedness warnings concern the loop
+comparison; observed totals consistently account for eight packets per callback.
+Keep these warnings and original output. The revised loop casts packet count to
+uint64 after retaining its 1..64 guard; negative counts become out-of-bound.
+
+All immediate and fresh recovery guest comparisons pass exactly. No aplay or
+bpftrace process remains; existing PipeWire/WirePlumber processes are responsive.
+Windows audio and registry match the fresh pre-run baseline exactly. Twenty-seven
+private result artifacts were copied and hashed. Summary SHA256:
+`ff043e7ed1ea811ded5332f445c5a6ed87cdee671a275d9e20f4e51f5c6dae70`;
+playback journal SHA256:
+`88a369d5b8795eee57933e05ed1f92794f91c1946d1a7c5dc1b14764eadde57c`.
+Old restart-wide unclassified state differences remain preserved separately.
+
+Upstream EHCI maps its babble bit to EOVERFLOW and does not update actual_length
+for that error; never interpret failed-packet zero lengths as received sizes.
+Cached UAC2 descriptors show one clock, ID 41, attributes 3, controls 0x05, shared
+by all four terminals. Frequency/validity controls are advertised read-only.
+Upstream clock setup can continue after a requested/device-rate mismatch on a
+read-only clock. These are reference-code/descriptor observations; the device's
+actual rate and equivalence to Ubuntu downstream behavior remain unmeasured.
+
+Next observer version adds bounded requested-length histograms, configured IN/
+OUT rates/packet sizes and aggregate return values from the driver's existing
+get_sample_rate_v2v3 clock-41 read. It issues no extra USB requests, reads no
+payload buffers and makes no rate/driver/firmware change. The actual kernel BTF
+contains the required endpoint fields and clock-reader function. Seven probe
+attachments are now required. `tools/usb_feedback_review.py` validates bounded
+JSON/maps, dimensions, counts, coverage flags and explicit unknowns; warnings in
+stdout are retained even when stderr is empty. No exit code alone proves audio.
+
+All 48 focused Linux cases pass on exact code source
+`beacn-link-physical-playback-20261014T152027Z/source`, including parser refusals and
+actual cancellation signals. Unchanged Rust inputs reuse the verified CLI.
+New kernel compilation/attachment and geometry/clock measurements are pending.
+Private next launcher: `beacn-feedback-ready-20261014T152029Z/run.py`, byte-verified;
+it first validates source hashes and the audio-free attachment gate, then runs
+the bounded silence diagnostic as the normal desktop owner if the gate passes.
+A fresh private Windows baseline is saved. The SSH sudo context is still denied
+after the owner's terminal authentication; use that terminal launcher again,
+without changing sudoers/SSH permissions. Keep Studio attached and collect/hash
+the new evidence plus fresh guest/host comparisons after execution.
+
+## Aggregate completion observer preparation (superseded by live checkpoint above)
 
 `tests_native/studio_feedback_stats.py` generates selected-device-only aggregate
 kernel observations for Studio OUT `0x02` / implicit-feedback IN `0x82`. It reads

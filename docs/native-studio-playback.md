@@ -22,7 +22,76 @@ recovery before a new justified hardware attempt. Do not repeat the failed
 controller/rate experiments or restart the initial audit. Keep ordinary native
 physical apply disabled and distinguish VM audio failure from Linux feasibility.
 
-## Aggregate completion observer and current access blocker
+## Live aggregate feedback evidence and next clock/geometry diagnostic
+
+The owner-terminal run compiled and attached five probes. Collection exited 0,
+but the normal-user silent ALSA child still stalled at pointer zero for two
+seconds, then exited through owned cleanup. Nine samples retain pointer 0 -> 0.
+The collector's `error: null` reports collection completion; the nested playback
+journal explicitly records failure. No audible or physical executor acceptance.
+
+| Observation | IN `0x82` | OUT `0x02` |
+| --- | ---: | ---: |
+| Noncancelled URB completions (URB status 0) | 1,437 | 0 |
+| Cleanup cancellations | 12 | 0 |
+| Packets with EOVERFLOW (-75) | 11,490 | 0 |
+| Successful packets, all empty | 6 | 0 |
+| Successful bytes | 0 | 0 |
+| Sync-handler calls | 1,437 | — |
+
+URB status 0 does not mean each isochronous packet succeeded. The
+[kernel error-code contract](https://docs.kernel.org/driver-api/usb/error-codes.html)
+describes per-packet errors and EOVERFLOW as data exceeding a packet/buffer limit.
+The [v7.0 EHCI implementation](https://github.com/torvalds/linux/blob/v7.0/drivers/usb/host/ehci-sched.c)
+maps its babble bit to this error and deliberately leaves actual_length unchanged
+on babble. Thus failed-packet zero lengths cannot reveal received packet size.
+The upstream implicit-feedback handler counts only successful nonempty packet
+lengths before preparing output. These observations support its queue remaining
+empty; the layer causing the reported babble remains unknown.
+
+Two signedness warnings were printed to stdout, although stderr is empty. The
+positive eight-packet counts consistently account for all observed callbacks;
+retain the warning rather than claiming clean compilation. The loop now casts
+packet count to uint64, with the same 1..64 guard. No unsupported-packet, invalid-
+length or window-limit counter was observed in the retained run.
+
+Immediate/fresh guest comparisons and Windows audio/registry comparisons all
+pass exactly within this run. Read-only recovery finds no aplay/bpftrace process
+and responsive existing desktop services. Twenty-seven result artifacts are
+retained/hash-verified outside Git. Summary SHA256:
+`ff043e7ed1ea811ded5332f445c5a6ed87cdee671a275d9e20f4e51f5c6dae70`;
+playback journal SHA256:
+`88a369d5b8795eee57933e05ed1f92794f91c1946d1a7c5dc1b14764eadde57c`.
+
+Cached descriptor review finds clock 41, attributes 3, controls 0x05, shared by
+all four terminals. The [UAC2 field definitions](https://raw.githubusercontent.com/torvalds/linux/v7.0/include/linux/usb/audio-v2.h)
+identify the frequency/validity controls as read-only. Upstream
+[clock setup](https://raw.githubusercontent.com/torvalds/linux/v7.0/sound/usb/clock.c)
+skips programming such a clock and can continue after a frequency mismatch. This
+makes actual device-reported frequency useful evidence; it has not yet been
+measured, and Ubuntu downstream equivalence has not been established.
+
+The next observer records aggregate requested lengths and bounded source/sink
+configuration (rate, current packet size, maximum packet size). It also observes
+the parsed return value of the driver's existing clock-41 read via entry/return
+probes. No extra control request, payload access or rate change is introduced.
+Read-only BTF/symbol discovery confirms those types/fields/functions exist.
+`tools/usb_feedback_review.py` checks bounded NDJSON/maps, duplicate keys, valid
+dimensions/counts, packet/callback accounting, metadata coverage and warnings;
+clock-read failure/missing observations stay unknown. The revised collector needs
+seven attached probes and complete geometry/clock observations before validating
+its live observation, independently of whether playback succeeds.
+
+All 48 focused Linux cases pass on exact source
+`beacn-link-physical-playback-20261014T152027Z/source`; unchanged Rust inputs reuse
+the verified CLI. Revised kernel compilation/attachment remains pending the
+staged owner-terminal launcher `beacn-feedback-ready-20261014T152029Z/run.py`.
+It validates source hashes and an audio-free attachment check before silence.
+A fresh private Windows baseline is saved; SSH sudo remains denied even after
+terminal authentication. This needs terminal execution, not another authorization
+or sudoers/SSH change. Afterward collect/hash results and compare all baselines.
+
+## Aggregate completion observer preparation (historical access checkpoint)
 
 `tests_native/studio_feedback_stats.py` prepares identity-pinned graph/USB/settings
 baselines and generates aggregate bpftrace probes for `snd_complete_urb` and

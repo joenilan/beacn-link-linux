@@ -12,6 +12,7 @@ import sys
 import time
 
 import studio_playback as playback
+import usb_feedback_review
 
 MAX_PACKETS = 64
 WINDOW_SECONDS = 30
@@ -41,7 +42,7 @@ kprobe:snd_usb_audio:snd_complete_urb
             else if ($status == -110) { $bucket = 4; }
             else if ($status == -2 || $status == -19 || $status == -104 || $status == -108) { $bucket = 5; }
             @completions[$second, $ep, $bucket] = count();
-            $packets = $u->number_of_packets;
+            $packets = (uint64)$u->number_of_packets;
             if ($bucket == 5) {
                 // The ALSA callback returns before considering cancelled packets.
             } else if ($packets < 1 || $packets > 64) {
@@ -52,6 +53,7 @@ kprobe:snd_usb_audio:snd_complete_urb
                     if ($i < $packets) {
                         $ps = $u->iso_frame_desc[$i].status;
                         $length = $u->iso_frame_desc[$i].actual_length;
+                        $requested = $u->iso_frame_desc[$i].length;
                         $pb = 6;
                         if ($ps == 0) { $pb = 0; }
                         else if ($ps == -18) { $pb = 1; }
@@ -60,6 +62,9 @@ kprobe:snd_usb_audio:snd_complete_urb
                         else if ($ps == -110) { $pb = 4; }
                         else if ($ps == -2 || $ps == -19 || $ps == -104 || $ps == -108) { $pb = 5; }
                         @packets[$second, $ep, $pb] = count();
+                        if ($requested > 0 && $requested <= 416 && $requested % 32 == 0) {
+                            @requested_lengths[$ep, $pb, $requested] = count();
+                        } else { @invalid_requests[$ep] = count(); }
                         if ($ps == 0) {
                             if ($length == 0) { @empty_packets[$second, $ep] = count(); }
                             else if ($length > 416) { @invalid_lengths[$second, $ep] = count(); }
@@ -77,10 +82,36 @@ kprobe:snd_usb_audio:snd_usb_handle_sync_urb
     $u = (struct urb *)arg2;
     if (SELECTED && $u->ep->desc.bEndpointAddress == 130) {
         @sync_callbacks[(nsecs - @start) / 1000000000] = count();
+        $sink = (struct snd_usb_endpoint *)arg0;
+        $sender = (struct snd_usb_endpoint *)arg1;
+        if ($sink->ep_num == 2 && $sender->ep_num == 130 &&
+            ($sender->cur_rate == 48000 || $sender->cur_rate == 96000) &&
+            ($sink->cur_rate == 48000 || $sink->cur_rate == 96000) &&
+            $sender->maxpacksize == 416 && $sink->maxpacksize == 416 &&
+            $sender->curpacksize > 0 && $sender->curpacksize <= 416 && $sender->curpacksize % 32 == 0 &&
+            $sink->curpacksize > 0 && $sink->curpacksize <= 416 && $sink->curpacksize % 32 == 0) {
+            @sync_configuration[$sender->cur_rate, $sender->curpacksize, $sender->maxpacksize,
+                                $sink->cur_rate, $sink->curpacksize, $sink->maxpacksize] = count();
+        } else { @invalid_configuration = count(); }
+    }
+}
+kprobe:snd_usb_audio:get_sample_rate_v2v3
+{
+    $u = (struct snd_usb_audio *)arg0;
+    if (SELECTED && arg3 == 41) { @clock_pending[tid] = 1; }
+}
+kretprobe:snd_usb_audio:get_sample_rate_v2v3
+{
+    if (@clock_pending[tid]) {
+        $rate = (int32)retval;
+        if ($rate == 48000 || $rate == 96000) { @device_clock_rates[$rate] = count(); }
+        else { @clock_unknown = count(); }
+        $removed = delete(@clock_pending, tid);
+        if (!$removed) { @clock_unknown = count(); }
     }
 }
 interval:s:30 { @window_limit = count(); exit(); }
-END { clear(@start); }
+END { clear(@start); clear(@clock_pending); }
 '''.replace("SELECTED", selected)
 
 
@@ -142,7 +173,7 @@ def main():
         dependencies = ("tests_native/studio_feedback_stats.py", "tests_native/studio_alsa_playback.py",
                         "tests_native/studio_playback.py", "tests_native/usb_handshake.py",
                         "tests_native/private_core.py", "tools/pipewire_inventory.py",
-                        "tools/pipewire_graph.py", "tools/usb_descriptor_probe.py")
+                        "tools/pipewire_graph.py", "tools/usb_descriptor_probe.py", "tools/usb_feedback_review.py")
         hashes = {n: hashlib.sha256((playback.REPO / n).read_bytes()).hexdigest() for n in dependencies}
         playback.owner.save(root / "source-hashes.json", hashes)
         if not args.compile_only and not args.authorize_feedback_status_silence:
@@ -197,6 +228,18 @@ def main():
             playback.owner.save(root / "playback-result.json", result)
         # A successful compiler/exit code alone never establishes complete probe coverage.
         summary["aggregate_review_required"] = not args.compile_only and child is not None and child.returncode == 0
+        if summary["aggregate_review_required"]:
+            with (root / "observer.stdout").open("rb") as handle:
+                raw = handle.read(usb_feedback_review.MAX_BYTES + 1)
+            reviewed = usb_feedback_review.review(raw)
+            playback.owner.save(root / "aggregate-review.json", reviewed)
+            summary["aggregate_review_required"] = (reviewed["needs_review"] or summary["stderr_present"] or
+                                                     not reviewed["has_request_geometry"] or
+                                                     not reviewed["has_sync_configuration"] or
+                                                     not reviewed["device_clock_rates"] or
+                                                     reviewed["attached_probes"] != 7)
+            summary["live_probe_validated"] = (not summary["aggregate_review_required"] and
+                                                reviewed["sync_callbacks"] > 0)
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
         summary["error"] = str(error)
     finally:
