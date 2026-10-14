@@ -64,8 +64,26 @@ delivery remain unknown. Next inspect the implicit-feedback queue/clock code and
 available existing status metadata, without repeating controller/rate variants,
 capturing packets/audio or requiring owner UI interaction.
 
-## Optional native preflight prepared before the owner clarification
+The follow-up upstream v7.0
+[endpoint reference](https://raw.githubusercontent.com/torvalds/linux/v7.0/sound/usb/endpoint.c)
+shows that implicit-feedback output waits for packet-layout entries. Incoming
+completions with zero aggregate successful bytes supply no entry, while the
+incoming callback can resubmit its request. This explains how repeated requests
+could coexist with no playback queue progress; it is a hypothesis about this
+device, not an observed completion status. The
+[PCM reference](https://raw.githubusercontent.com/torvalds/linux/v7.0/sound/usb/pcm.c)
+advances `hwptr_done` when copying playback data into requests, and its pointer
+callback returns that value. The ALSA pointer is consequently a driver queue
+progress signal here, not independent hardware-clock or delivery proof.
+Retained attempt status has `appl_ptr=24000`, `hw_ptr=0`, `delay=24000` and
+`avail=0`, so the application did supply data. Exact upstream sources and hashes
+are retained privately; equivalence to Ubuntu's installed downstream patches
+has not been verified. The existing kernel journal also has no timestamped
+records for the attempt window. Next assess aggregate feedback/completion-status
+observability without collecting payloads; another unchanged silence test would
+not settle these alternatives.
 
+## Optional native preflight prepared before the owner clarification
 
 The gaming PC currently has no Linux installation. The owner needs the
 replacement demonstrated before migrating. Development and current testing stay

@@ -60,6 +60,17 @@ feedback/completions. Do not repeat controller/rate variants or claim the rising
 counter proves delivery. No owner watching, dragging or manual USB toggle is
 needed for this investigation; Studio remains attached and recovered.
 
+Follow-up upstream v7.0 source review identifies a plausible implicit-feedback
+queue wait: empty/error-only incoming completions can produce no output layout
+while input requests continue to be resubmitted. This is a hypothesis, not a
+measured completion status or verified match to Ubuntu's downstream patches.
+Retained status confirms the app wrote 24,000 frames (`appl_ptr`), with pointer
+zero and delay 24,000. The upstream PCM pointer advances while preparing output
+requests; call it driver queue progress, not independent hardware delivery proof.
+Existing kernel journal has no timestamped records for the attempt window.
+Assess aggregate feedback/completion-status observability before more playback.
+See the linked playback document for exact reference sources and limitations.
+
 The optional prepared `tests_native/studio_native_preflight.py` is read-only: existing durable snapshot
 and cached USB/endpoint owners, one selected card, four actual pair mappings,
 normal device access and explicit native-versus-VM detection. It starts no audio
