@@ -44,129 +44,239 @@ impl Worker {
                     *state = model.snapshot();
                 }
             };
+            let persistent = matches!(&connection, Connection::Desktop);
+            let mut preferences = None;
+            let mut preference_error = None;
+            let mut automatic = false; // explicit private fixtures remain manual
+            if persistent {
+                match crate::preferences::Preferences::user_path()
+                    .ok_or_else(|| "No user configuration directory is available.".to_string())
+                    .and_then(crate::preferences::Preferences::load)
+                {
+                    Ok((store, enabled)) => {
+                        preferences = Some(store);
+                        automatic = enabled;
+                    }
+                    Err(error) => preference_error = Some(error),
+                }
+            }
+            let mut supervisor = crate::startup::Supervisor::new(automatic);
+            #[cfg(all(feature = "private-session-test", target_os = "linux"))]
+            let config = match &connection {
+                Connection::PrivateSession(config) => Some(config.clone()),
+                _ => None,
+            };
+            #[cfg(all(feature = "private-session-test", target_os = "linux"))]
+            let mut link = crate::private_session::Session::default();
             #[cfg(all(feature = "native-catalog", target_os = "linux"))]
-            let run = || -> Result<(), String> {
-                use beacn_link_protocol::native_catalog::NativeCatalog;
-                #[cfg(feature = "private-session-test")]
-                let config = match &connection {
-                    Connection::PrivateSession(config) => Some(config.clone()),
-                    _ => None,
-                };
-                #[cfg(feature = "private-session-test")]
-                let mut link = crate::private_session::Session::default();
-                let mut catalog = match connection {
-                    Connection::Desktop => NativeCatalog::desktop()?,
-                    Connection::Private { runtime, core } => {
-                        NativeCatalog::connect(&runtime, &core)?
-                    }
-                    #[cfg(feature = "private-session-test")]
-                    Connection::PrivateSession(config) => {
-                        NativeCatalog::connect(&config.runtime, &config.core)?
-                    }
-                };
-                let mut generation = 0u64;
-                let mut command = None;
-                let mut next_tick = std::time::Instant::now() + Duration::from_millis(500);
-                let result = (|| -> Result<(), String> {
-                    while !ending.load(Ordering::Acquire) {
-                        generation = generation.checked_add(1).ok_or("generation exhausted")?;
-                        model.observe(catalog.observe(generation)?)?;
-                        if ending.load(Ordering::Acquire) {
-                            break;
+            let mut catalog = None;
+            let mut generation = 0u64;
+            let mut command = None;
+            let mut retry_at = std::time::Instant::now();
+            let mut next_tick = std::time::Instant::now() + Duration::from_millis(500);
+            while !ending.load(Ordering::Acquire) {
+                #[cfg(all(feature = "native-catalog", target_os = "linux"))]
+                let observation = (|| {
+                    use beacn_link_protocol::native_catalog::NativeCatalog;
+                    if catalog.is_none() {
+                        if std::time::Instant::now() < retry_at {
+                            return Ok(());
                         }
-                        #[cfg(feature = "private-session-test")]
-                        let mut just_started = false;
-                        if let Some(command) = command.take() {
-                            match model.accept(command) {
-                                Ok(command) => {
-                                    #[cfg(feature = "private-session-test")]
-                                    let result = match command {
-                                        Command::Start => match &config {
-                                            Some(config) => crate::private_session::start(
-                                                &mut link,
-                                                model.service(),
-                                                config,
-                                            ),
-                                            None => Err(
-                                                "No routing backend is enabled in this build mode."
-                                                    .into(),
-                                            ),
-                                        },
-                                        Command::Stop => link.stop(
-                                            beacn_link_protocol::routing_control::StopReason::Owner,
-                                        ),
-                                        command => model.command(command),
+                        catalog = Some(match &connection {
+                            Connection::Desktop => NativeCatalog::desktop()?,
+                            Connection::Private { runtime, core } => {
+                                NativeCatalog::connect(runtime, core)?
+                            }
+                            #[cfg(feature = "private-session-test")]
+                            Connection::PrivateSession(config) => {
+                                NativeCatalog::connect(&config.runtime, &config.core)?
+                            }
+                        });
+                    }
+                    generation = generation.checked_add(1).ok_or("generation exhausted")?;
+                    model.observe(catalog.as_mut().unwrap().observe(generation)?)
+                })();
+                #[cfg(not(all(feature = "native-catalog", target_os = "linux")))]
+                let observation: Result<(), String> = {
+                    let _ = (&connection, &mut generation, &mut retry_at);
+                    Err("This build has no Linux application discovery.".into())
+                };
+                if let Err(error) = observation {
+                    #[cfg(all(feature = "private-session-test", target_os = "linux"))]
+                    {
+                        let _ = link.stop(
+                            beacn_link_protocol::routing_control::StopReason::OperationFailed(
+                                error.clone(),
+                            ),
+                        );
+                        model.session(link.status().clone(), config.is_some());
+                    }
+                    #[cfg(all(feature = "native-catalog", target_os = "linux"))]
+                    {
+                        catalog = None;
+                    }
+                    retry_at = std::time::Instant::now() + Duration::from_secs(2);
+                    model.disconnected(error);
+                }
+                if ending.load(Ordering::Acquire) {
+                    break;
+                }
+                #[cfg(all(feature = "private-session-test", target_os = "linux"))]
+                let mut just_started = false;
+                if let Some(request) = command.take() {
+                    match model.accept(request) {
+                        Ok(command) => {
+                            let result = match command {
+                                Command::AutoConnect(enabled) => {
+                                    let saved = if let Some(store) = preferences.as_mut() {
+                                        store.save(enabled)
+                                    } else if persistent {
+                                        Err(preference_error.clone().unwrap_or_else(|| {
+                                            "LinX preferences are unavailable.".into()
+                                        }))
+                                    } else {
+                                        Ok(())
                                     };
-                                    #[cfg(not(feature = "private-session-test"))]
-                                    let result = model.command(command);
-                                    #[cfg(feature = "private-session-test")]
-                                    if result.is_ok()
-                                        && link.status().phase
-                                            == beacn_link_protocol::link_session::Phase::Running
-                                        && link.status().completed_cycles == 0
-                                    {
-                                        just_started = true;
-                                        next_tick =
-                                            std::time::Instant::now() + Duration::from_millis(500);
-                                    }
-                                    if let Err(error) = result {
-                                        model.notice(error);
+                                    match saved {
+                                        Ok(()) => {
+                                            supervisor.set_automatic(enabled);
+                                            preference_error = None;
+                                            Ok(())
+                                        }
+                                        Err(error) => {
+                                            preference_error = Some(error.clone());
+                                            Err(error)
+                                        }
                                     }
                                 }
+                                Command::Stop => {
+                                    supervisor.pause();
+                                    #[cfg(all(
+                                        feature = "private-session-test",
+                                        target_os = "linux"
+                                    ))]
+                                    {
+                                        link.stop(
+                                            beacn_link_protocol::routing_control::StopReason::Owner,
+                                        )
+                                    }
+                                    #[cfg(not(all(
+                                        feature = "private-session-test",
+                                        target_os = "linux"
+                                    )))]
+                                    {
+                                        Ok(())
+                                    }
+                                }
+                                Command::Start => {
+                                    supervisor.manual_start();
+                                    #[cfg(all(
+                                        feature = "private-session-test",
+                                        target_os = "linux"
+                                    ))]
+                                    {
+                                        match &config {
+                                            Some(config) => {
+                                                let result = crate::private_session::start(
+                                                    &mut link,
+                                                    model.service(),
+                                                    config,
+                                                );
+                                                just_started = result.is_ok();
+                                                result
+                                            }
+                                            None => Err(
+                                                "Device connection is not enabled in this preview."
+                                                    .into(),
+                                            ),
+                                        }
+                                    }
+                                    #[cfg(not(all(
+                                        feature = "private-session-test",
+                                        target_os = "linux"
+                                    )))]
+                                    {
+                                        Err("Device connection is not enabled in this preview."
+                                            .into())
+                                    }
+                                }
+                                command => model.command(command),
+                            };
+                            if let Err(error) = result {
+                                model.notice(error);
+                            }
+                        }
+                        Err(error) => model.notice(error),
+                    }
+                }
+                #[cfg(all(feature = "private-session-test", target_os = "linux"))]
+                {
+                    if let Err(error) = link.check(model.service()) {
+                        model.notice(error);
+                    }
+                    if !just_started
+                        && std::time::Instant::now() >= next_tick
+                        && link.status().phase == beacn_link_protocol::link_session::Phase::Running
+                    {
+                        if let Err(error) = link.tick(model.service()) {
+                            model.notice(error);
+                        }
+                    }
+                    let view = model.snapshot();
+                    if supervisor.update(
+                        link.status(),
+                        config.is_some() && view.connected,
+                        !view.selected.is_empty(),
+                    ) {
+                        if let Some(config) = &config {
+                            match crate::private_session::start(&mut link, model.service(), config)
+                            {
+                                Ok(()) => just_started = true,
                                 Err(error) => model.notice(error),
                             }
                         }
-                        #[cfg(feature = "private-session-test")]
-                        {
-                            if let Err(error) = link.check(model.service()) {
-                                model.notice(error);
-                            }
-                            if !just_started
-                                && std::time::Instant::now() >= next_tick
-                                && link.status().phase
-                                    == beacn_link_protocol::link_session::Phase::Running
-                            {
-                                if let Err(error) = link.tick(model.service()) {
-                                    model.notice(error);
-                                }
-                            }
-                            model.session(link.status().clone(), config.is_some());
-                        }
-                        if std::time::Instant::now() >= next_tick {
-                            next_tick = std::time::Instant::now() + Duration::from_millis(500);
-                        }
-                        publish(&model);
-                        match rx.recv_timeout(
-                            next_tick.saturating_duration_since(std::time::Instant::now()),
-                        ) {
-                            Ok(next) => command = Some(next),
-                            Err(mpsc::RecvTimeoutError::Timeout) => {}
-                            Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                        }
                     }
-                    Ok(())
-                })();
-                #[cfg(feature = "private-session-test")]
-                {
-                    if let Err(error) =
-                        link.stop(beacn_link_protocol::routing_control::StopReason::Shutdown)
-                    {
-                        model.notice(error);
-                    }
+                    // Refresh displayed state after an automatic start; its attempt is latched.
+                    supervisor.update(
+                        link.status(),
+                        config.is_some() && view.connected,
+                        !view.selected.is_empty(),
+                    );
                     model.session(link.status().clone(), config.is_some());
-                    publish(&model);
+                    if just_started {
+                        next_tick = std::time::Instant::now() + Duration::from_millis(500);
+                    }
                 }
-                result
-            };
-            #[cfg(not(all(feature = "native-catalog", target_os = "linux")))]
-            let run = || -> Result<(), String> {
-                let _ = (&connection, &rx, &ending);
-                Err("This build has no Linux application discovery. Use the native-catalog build on Linux.".into())
-            };
-            if let Err(error) = run() {
-                model.disconnected(error);
+                #[cfg(not(all(feature = "private-session-test", target_os = "linux")))]
+                {
+                    supervisor.update(&model.snapshot().link, false, false);
+                }
+                model.startup(&supervisor, preference_error.clone());
+                if std::time::Instant::now() >= next_tick {
+                    next_tick = std::time::Instant::now() + Duration::from_millis(500);
+                }
                 publish(&model);
+                match rx
+                    .recv_timeout(next_tick.saturating_duration_since(std::time::Instant::now()))
+                {
+                    Ok(next) => command = Some(next),
+                    Err(mpsc::RecvTimeoutError::Timeout) => {}
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                }
             }
+            #[cfg(all(feature = "private-session-test", target_os = "linux"))]
+            {
+                if let Err(error) =
+                    link.stop(beacn_link_protocol::routing_control::StopReason::Shutdown)
+                {
+                    model.notice(error);
+                }
+                model.session(link.status().clone(), config.is_some());
+            }
+            // Drop native discovery before publishing the final joined state.
+            #[cfg(all(feature = "native-catalog", target_os = "linux"))]
+            drop(catalog);
+            publish(&model);
         });
         Self {
             tx,

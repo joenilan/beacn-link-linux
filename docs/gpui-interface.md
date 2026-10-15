@@ -29,7 +29,7 @@ matched the saved baseline after installation.
 ## Compact, expanding layout
 
 Default client size is 720 by 520 pixels. The header has the lynx session icon,
-LinX name, actual session text, Start/Stop and an expandable information panel.
+LinX name, actual session text, Connect/Pause and an expandable information panel.
 Four channel cards share a row when there is space and become two rows in narrow
 windows. Selecting a card reveals its assignment explanation. Application details
 expand individually for process/stream identity and published-name editing.
@@ -45,13 +45,67 @@ empty panels. There are no simulated audio meters or enabled volume controls.
 Kit buttons/inputs supply focus, keyboard editing and interaction behavior. All
 name/selection commands still pass through the existing conservative wire-name
 validation. Queued commands pin their displayed core/streams; a core change also
-clears UI drafts. In-memory selections and no automatic reconnect remain the
-current policy. No persistence/autostart/installer or close-to-tray is added.
+clears UI drafts. Selections remain in memory and are revoked on discovery loss;
+they are never rebound to a same-named replacement. See startup behavior below.
 
-The normal executable remains read-only discovery with Start disabled. It cannot
+The normal executable remains read-only discovery with Connect disabled. It cannot
 construct a device or desktop routing backend. The explicit private-session test
 feature uses only guarded disposable cores and the synthetic peer, just as before.
 See [rust-link-session.md](rust-link-session.md) for route/transport ownership.
+
+## Startup and waiting
+
+The main interface has a GPUI Kit **Connect automatically** switch. Normal launch
+defaults it on and waits for an available, enabled backend and live selections;
+an absent device is not a reason to close/reopen the app. The current production
+preview has no physical backend, so remains waiting with routing disabled. It
+does not claim that catalog discovery means Studio is connected. The private
+qualification mode defaults to manual and never reads/writes user preferences.
+
+`app-core::startup::Supervisor` owns automatic/manual intent only. Available
+backend factories and the existing session/receipt owners still validate every
+start. Pause releases the current session and holds automatic starts, including
+across disappearance/reappearance. Connect or turning automatic off/on re-arms
+it. Turning automatic off alone leaves an already running session active. Failed
+starts and bounded test completion never loop automatically; cleanup needing
+review blocks all starts. The existing fixed-roster session rules remain intact.
+
+Normal mode saves only the toggle in `$XDG_CONFIG_HOME/linx/preferences`, or
+`$HOME/.config/linx/preferences`. Merely launching does not create a file. Writes
+use a private temporary file and atomic replacement; unexpected formats,
+symlinks, oversized files or detected external edits are preserved/refused.
+Read failure defaults automatic connection off and is shown in the UI. No BEACN,
+PipeWire, Windows or routing settings are persisted by this preference owner.
+Launch at login, installation, background close-to-tray and cross-launch app
+selection persistence are separate future work; no login entry is installed.
+
+The worker retries lost/unavailable read-only catalog connections every two
+seconds, drops old handles/configs, and re-observes before accepting a command.
+Generation remains monotonic across reconnects. Stop and preference changes work
+without a catalog; queued app/start intents still pin their exact observed core
+and binding. It never restores selections by app name after a reconnect.
+
+Existing static research establishes initialization and the asynchronous 500 ms
+Windows loop, but does not fully trace its discovery/reconnect policy. These
+startup semantics are an independent product choice, not an assertion of binary
+equivalence. See [protocol-session.md](protocol-session.md#focused-startupworker-continuation-2026-10-12).
+
+Startup qualification adds eight focused preference/lifecycle checks, native
+private-core automatic routing/pause/re-arm/quit checks, and an actual read-only
+worker probe which waits with no server, observes the server, detects its exit,
+then observes a new core without restarting the worker. Original desktop state,
+owned configs and processes compare cleanly. Physical Studio hotplug/session
+recovery remains unqualified in this frontend and is deferred while streaming.
+
+Startup-qualified source `beacn-native-source-20261015T015044Z`; complete native
+GUI/session result `beacn-gui-20261015T015125Z` SHA256
+`24843f723497d8d4d57367386de44fb1e3eb694bd345410238ac9124fff48ff4`.
+It verifies the automatically started session's actual pair-1 assignment, not just
+its Running phase. Separate actual catalog recovery is retained as
+`beacn-startup-20261015T014842Z`; normal read-only production close/icon journal
+`beacn-gui-desktop-20261015T014949Z` SHA256
+`405212fe747a82aa08de21607277ecb66ebf85cc799a90ebe503728d570a1699`.
+The final production build uses the same qualified code; later changes are docs.
 
 ## Status and responsiveness
 

@@ -20,6 +20,7 @@ pub struct Probe {
     pause: Instant,
 }
 pub enum Action {
+    Setup(String),
     Click(String),
     Name(String, String),
     ScrollAndSave(String),
@@ -53,7 +54,7 @@ impl Probe {
             return None;
         }
         let action = match self.stage {
-            0 if snapshot.connected => Action::Click(format!("details-{}", first.0)),
+            0 if snapshot.connected => Action::Setup(format!("details-{}", first.0)),
             1 => Action::Name(first.0.clone(), "Media Player".into()),
             2 if snapshot.selected.len() == 1 => Action::Click(format!("details-{}", second.0)),
             3 => Action::Name(second.0.clone(), "Other Player".into()),
@@ -119,6 +120,42 @@ impl Probe {
                 Action::Click("session".into())
             }
             32 if snapshot.link.phase == Phase::Running && snapshot.link.completed_cycles >= 1 => {
+                Action::Click("session".into())
+            }
+            33 if snapshot.link.phase == Phase::Stopped => Action::Click("auto-connect".into()),
+            34 if snapshot.auto_connect
+                && snapshot.link.phase == Phase::Running
+                && snapshot.link.completed_cycles >= 2 =>
+            {
+                assert_eq!(snapshot.routing.assignments.len(), 1);
+                assert_eq!(snapshot.routing.assignments.values().next(), Some(&1));
+                Action::Capture("automatic.ppm")
+            }
+            35 => Action::Click("session".into()),
+            36 if snapshot.startup == beacn_linx_core::startup::State::Paused
+                && snapshot.link.phase == Phase::Stopped
+                && self.pause.elapsed() > Duration::from_millis(1100) =>
+            {
+                assert!(snapshot.auto_connect);
+                assert!(
+                    snapshot
+                        .link
+                        .transport_cleanup
+                        .as_ref()
+                        .is_some_and(Result::is_ok)
+                );
+                assert!(snapshot.routing.cleanup.as_ref().is_some_and(Result::is_ok));
+                Action::Capture("paused.ppm")
+            }
+            37 => Action::Click("auto-connect".into()),
+            38 if !snapshot.auto_connect && snapshot.link.phase == Phase::Stopped => {
+                Action::Click("auto-connect".into())
+            }
+            39 if snapshot.auto_connect
+                && snapshot.link.phase == Phase::Running
+                && snapshot.link.completed_cycles >= 2 =>
+            {
+                assert_eq!(snapshot.routing.assignments.len(), 1);
                 Action::Finish(self.config.root.clone())
             }
             _ => return None,
@@ -130,7 +167,7 @@ impl Probe {
 }
 impl Probe {
     pub fn on_quit(&self, snapshot: &Snapshot) {
-        if self.stage != 33 {
+        if self.stage != 40 {
             return;
         }
         assert_eq!(snapshot.link.phase, Phase::Stopped);
@@ -159,11 +196,21 @@ impl Probe {
             .unwrap();
         writeln!(file,"widgets_selected=2 renamed=true removed=true worker_stopped=true session_started_stopped_restarted=true lifecycle_release_verified=true owned_configs_remaining=0 failed=false").unwrap();
         std::fs::write(self.config.root.join("quit-proof.txt"),"quit_while_running=true route_release=verified transport_release=verified configs_removed=true").unwrap();
+        std::fs::write(
+            self.config.root.join("startup-proof.txt"),
+            "automatic_start=true pause_held=true rearmed_start=true quit_while_automatic=true\n",
+        )
+        .unwrap();
     }
 }
 
 pub fn execute(action: Action, window: &mut Window, cx: &mut App) {
     match action {
+        Action::Setup(id) => {
+            // Keep both simultaneously expanded name editors visible during setup.
+            window.resize(size(px(720.), px(640.)));
+            window.click(SharedString::from(id), cx);
+        }
         Action::Click(id) => window.click(SharedString::from(id), cx),
         Action::Name(id, name) => {
             window.click(SharedString::from(format!("name-{id}")), cx);
@@ -191,6 +238,7 @@ pub fn execute(action: Action, window: &mut Window, cx: &mut App) {
                     .try_find(SharedString::from(format!("select-{second}")))
                     .is_none()
             );
+            window.resize(size(px(720.), px(520.)));
         }
         Action::Unchanged(first) => {
             window.click(SharedString::from(format!("details-{first}")), cx);

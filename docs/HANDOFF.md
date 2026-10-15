@@ -1,6 +1,51 @@
 # Beacn LinX — continuation handoff
 Updated 2026-10-14. Resume development; do not restart the investigation.
 
+## Current checkpoint: automatic waiting and pause
+
+The owner requested Windows-style launch-and-wait behavior before physical GUI
+testing. The GPUI window now has **Connect automatically**, plus Connect/Pause.
+Normal launch defaults automatic on; its toggle is the only saved LinX setting
+and is written only on change. The current production preview still has no
+physical/desktop apply factory: it waits honestly, with Connect disabled. Private
+test mode remains manual by default and never uses user preferences. No login
+autostart entry, installer or background close-to-tray was added.
+
+`app-core::startup::Supervisor` owns intent, not mutation authority. Existing
+session/receipt owners still validate and release every route/transport. Pause
+holds across reconnection; explicit Connect or automatic off/on re-arms it.
+Failed starts, bounded completion and cleanup requiring review never cause an
+automatic restart loop. Turning automatic off leaves a running session active.
+Lost read-only catalog discovery now retries every two seconds instead of killing
+the worker. It revokes old selections and re-observes; no same-name rebinding.
+Unsupported/changed/symlinked preference files are preserved, with visible errors.
+
+Eight new preference/lifecycle checks and the eight prior shared-model/egui checks
+pass. Native GPUI automatic start, verified assignment, pause held over ticks,
+re-arm and quit while automatic all pass on the disposable core. A separate real
+worker waits with no server, observes its startup, detects its exit and reconnects
+to a new core without reopening the app. Production read-only GUI close and actual
+gray icon pass; desktop/settings/state/config comparisons match and owned processes
+exit. The first GUI sequence failed because two expanded editors no longer fit
+its setup viewport; the final probe uses a larger setup view, then still checks
+720x520, narrow and short-window scroll. Raw failed evidence remains private.
+
+Full Windows hotplug/reconnect policy remains untraced; see protocol-session.md.
+No more reverse engineering is needed to implement this independent UI policy.
+Next: finish the Rust physical session/playback integration, then validate Studio
+attach/detach and continuous operation after the owner finishes streaming. Do not
+confuse native catalog recovery with hardware hotplug acceptance. No physical test,
+Windows change, USB handoff, REA or owner mouse automation was performed here.
+See [gpui-interface.md](gpui-interface.md#startup-and-waiting) for exact semantics.
+
+Startup-qualified source `beacn-native-source-20261015T015044Z`, native result
+`beacn-gui-20261015T015125Z` SHA256
+`24843f723497d8d4d57367386de44fb1e3eb694bd345410238ac9124fff48ff4`.
+Discovery recovery journal `beacn-startup-20261015T014842Z` is retained privately;
+its worker/core source matches the final startup-qualified tree. Production
+read-only journal `beacn-gui-desktop-20261015T014949Z` SHA256
+`405212fe747a82aa08de21607277ecb66ebf85cc799a90ebe503728d570a1699`.
+
 ## Current checkpoint: LinX GPUI Kit frontend works
 
 The owner chose GPUI Kit (used in their other apps), compact/expanding layout and

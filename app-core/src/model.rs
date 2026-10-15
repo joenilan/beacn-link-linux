@@ -17,6 +17,9 @@ pub struct Snapshot {
     pub routing: Status,
     pub link: beacn_link_protocol::link_session::Status,
     pub private_session: bool,
+    pub auto_connect: bool,
+    pub startup: crate::startup::State,
+    pub preference_error: Option<String>,
 }
 #[derive(Clone, Debug)]
 pub enum Command {
@@ -25,6 +28,7 @@ pub enum Command {
     Refresh,
     Start,
     Stop,
+    AutoConnect(bool),
 }
 #[derive(Clone)]
 pub struct Request {
@@ -36,10 +40,10 @@ pub struct Request {
 }
 impl Request {
     pub fn from_view(command: Command, snapshot: &Snapshot) -> Result<Self, String> {
-        if !snapshot.connected && !matches!(command, Command::Stop) {
+        if !snapshot.connected && !matches!(command, Command::Stop | Command::AutoConnect(_)) {
             return Err("Application discovery is disconnected.".into());
         }
-        if matches!(command, Command::Stop) {
+        if matches!(command, Command::Stop | Command::AutoConnect(_)) {
             return Ok(Self {
                 command,
                 core: String::new(),
@@ -60,7 +64,7 @@ impl Request {
                     .ok_or("Application is no longer available.")?
                     .clone(),
             ),
-            Command::Refresh | Command::Start | Command::Stop => None,
+            Command::Refresh | Command::Start | Command::Stop | Command::AutoConnect(_) => None,
         };
         let selected = if matches!(command, Command::Start) {
             Some(snapshot.selected.clone())
@@ -99,6 +103,11 @@ pub struct Model {
     snapshot: Snapshot,
 }
 impl Model {
+    pub fn startup(&mut self, supervisor: &crate::startup::Supervisor, error: Option<String>) {
+        self.snapshot.auto_connect = supervisor.automatic;
+        self.snapshot.startup = supervisor.state;
+        self.snapshot.preference_error = error;
+    }
     pub fn service(&self) -> &ApplicationService {
         &self.service
     }
@@ -140,6 +149,7 @@ impl Model {
     pub fn observe(&mut self, catalog: Catalog) -> Result<(), String> {
         let update = self.service.update(catalog)?;
         self.snapshot.connected = true;
+        self.snapshot.busy = false;
         self.snapshot.discovery_error = false;
         if update.core_changed {
             self.snapshot.message =
@@ -161,7 +171,7 @@ impl Model {
             Command::Select(id, alias) => self.service.select(&id, &alias),
             Command::Unselect(id) => self.service.unselect(&id),
             Command::Refresh => Ok(()),
-            Command::Start | Command::Stop => {
+            Command::Start | Command::Stop | Command::AutoConnect(_) => {
                 Err("Session commands require the routing owner.".into())
             }
         };
@@ -176,7 +186,7 @@ impl Model {
         result
     }
     pub fn accept(&mut self, request: Request) -> Result<Command, String> {
-        if matches!(request.command, Command::Stop) {
+        if matches!(request.command, Command::Stop | Command::AutoConnect(_)) {
             return Ok(request.command);
         }
         let current = self.service.current();
@@ -206,13 +216,16 @@ impl Model {
         self.command(command)
     }
     /// Preserve the last catalog for display but revoke every in-memory selection
-    /// on loss of observation. No auto reconnect or same-name rebinding.
+    /// on loss of observation. Reconnection never rebinds old selections by name.
     pub fn disconnected(&mut self, error: String) {
         self.service = ApplicationService::default();
         self.snapshot.connected = false;
         self.snapshot.discovery_error = true;
         self.snapshot.selected.clear();
-        self.snapshot.message = Some(format!("Application discovery stopped: {error}"));
+        self.snapshot.message = Some(format!(
+            "Application discovery unavailable; retrying: {error}"
+        ));
+        self.snapshot.busy = false;
     }
 }
 pub fn label(text: &str) -> String {

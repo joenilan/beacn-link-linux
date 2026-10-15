@@ -6,7 +6,10 @@ The primary [LinX interface](docs/gpui-interface.md) now uses GPUI Kit: a compac
 window, responsive channel cards, expandable application details and a shared
 lynx status icon/tray. Real widgets and private-session routing/cleanup pass native
 Linux checks. The normal GUI keeps USB/device connection and desktop apply disabled.
-The earlier egui preview remains available for comparison.
+The earlier egui preview remains available for comparison. The primary UI also has
+a saved Connect automatically toggle, waiting/paused states and read-only discovery
+recovery. Automatic session tests use owned private cores; physical GUI connection
+and launch-at-login installation remain future work.
 
 Status: offline Rust codec/CLI, planner, lifecycle and graph/inventory owners,
 an optional native PipeWire executor restricted to disposable private cores,

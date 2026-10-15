@@ -52,7 +52,11 @@ binding. If either changes before the fresh worker observation, the old action i
 refused. The existing owner revokes stale/departed/core-changed selections; same-name
 reopens stay unselected. UI alias drafts also reset on a core change. A discovery
 failure revokes selections, leaves the last list disabled, explains the error and
-stops the worker. It does not automatically reconnect or retry a native failure.
+previously stopped the worker. The shared worker now retries read-only discovery
+every two seconds, with stale selections still revoked. The primary GPUI frontend
+adds automatic session intent and a saved toggle; see
+[startup behavior](gpui-interface.md#startup-and-waiting). This historical egui
+view does not expose the new toggle.
 
 Normal window close stops/joins the worker and releases its owned catalog config.
 An in-flight native observation may add its existing barrier deadlines to close

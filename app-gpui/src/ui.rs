@@ -10,6 +10,7 @@ use gpui_kit::{
         Disableable, IconName, Sizable, Theme, ThemeMode,
         button::{Button, ButtonVariants},
         input::{Input, InputEvent, InputState},
+        switch::Switch,
     },
     *,
 };
@@ -157,6 +158,9 @@ impl Interface {
             || next.busy != self.snapshot.busy
             || next.message != self.snapshot.message
             || next.link.phase != self.snapshot.link.phase;
+        changed |= next.auto_connect != self.snapshot.auto_connect
+            || next.startup != self.snapshot.startup
+            || next.preference_error != self.snapshot.preference_error;
         if self.snapshot.catalog.as_ref().map(|c| &c.core) != next.catalog.as_ref().map(|c| &c.core)
         {
             self.names.clear();
@@ -579,18 +583,19 @@ impl Render for Interface {
                             .flex()
                             .flex_col()
                             .child(div().font_weight(FontWeight::SEMIBOLD).child("LinX"))
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(color(status))
-                                    .child(status.label()),
-                            ),
+                            .child(div().text_xs().text_color(color(status)).child(
+                                if running || status == Status::Error {
+                                    status.label()
+                                } else {
+                                    self.snapshot.startup.label()
+                                },
+                            )),
                     )
                     .child(
                         Button::new("session")
                             .primary()
                             .small()
-                            .label(if running { "Stop link" } else { "Start link" })
+                            .label(if running { "Pause link" } else { "Connect" })
                             .disabled(!running && !start)
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.send(
@@ -613,6 +618,17 @@ impl Render for Interface {
                                 cx.notify();
                             })),
                     ),
+            )
+            .child(
+                div().flex_shrink_0().px_4().pt_2().child(
+                    Switch::new("auto-connect")
+                        .small()
+                        .label("Connect automatically")
+                        .checked(self.snapshot.auto_connect)
+                        .on_change(cx.listener(|this, enabled, _, cx| {
+                            this.send(Command::AutoConnect(*enabled), cx);
+                        })),
+                ),
             )
             .child(div().flex_shrink_0().px_4().pt_3().pb_2().child(channels));
         if let Some(pair) = self.channel {
@@ -641,7 +657,19 @@ impl Render for Interface {
             body=body.child(div().mx_4().mb_2().p_3().rounded_lg().border_1().border_color(rgb(LINE)).bg(rgb(PANEL)).flex().flex_col().gap_1()
                 .child(div().font_weight(FontWeight::MEDIUM).child("About this preview"))
                 .child(div().text_xs().text_color(rgb(MUTED)).child("LinX 0.1.0 / Independent Linux companion for BEACN Studio"))
-                .child(div().text_xs().text_color(rgb(MUTED)).child("Selections are kept until you close the app. Device connection and desktop routing are still disabled.")));
+                .child(div().text_xs().text_color(rgb(MUTED)).child("Auto-connect waits while LinX is open. Pause holds until you connect again or re-enable auto-connect. This does not launch LinX at login."))
+                .child(div().text_xs().text_color(rgb(MUTED)).child("Selections are kept until you close the app. Device connection and desktop routing are still disabled in this preview.")));
+        }
+        if let Some(error) = &self.snapshot.preference_error {
+            body = body.child(
+                div()
+                    .flex_shrink_0()
+                    .px_4()
+                    .pb_2()
+                    .text_xs()
+                    .text_color(rgb(0xf86871))
+                    .child(model::label(error)),
+            );
         }
         body = body
             .child(
