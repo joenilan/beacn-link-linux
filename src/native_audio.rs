@@ -53,7 +53,11 @@ fn field<'a>(data: &'a str, name: &str) -> Result<&'a str, Failure> {
     Ok(value)
 }
 fn pcm(status: &str, params: &str, pid: u32) -> Result<u64, Failure> {
-    if field(status, "state")? != "RUNNING"
+    pcm_state(status, params, pid, false).map(|(_, pointer)| pointer)
+}
+fn pcm_state(status: &str, params: &str, pid: u32, starting: bool) -> Result<(bool, u64), Failure> {
+    let state = field(status, "state")?;
+    if (state != "RUNNING" && !(starting && state == "PREPARED"))
         || field(status, "owner_pid")?.parse::<u32>().map_err(|_| ())? != pid
     {
         return Err(());
@@ -63,7 +67,10 @@ fn pcm(status: &str, params: &str, pid: u32) -> Result<u64, Failure> {
             return Err(());
         }
     }
-    field(status, "hw_ptr")?.parse().map_err(|_| ())
+    Ok((
+        state == "RUNNING",
+        field(status, "hw_ptr")?.parse().map_err(|_| ())?,
+    ))
 }
 
 pub(crate) struct PinnedPlayback {
@@ -135,17 +142,41 @@ impl PinnedPlayback {
         })
     }
     pub(crate) fn validate(&mut self) -> Result<(), Failure> {
+        let last = self.observe(false)?.ok_or(())?;
+        self.advance_clock(last)
+    }
+    /// One creation-time PREPARED -> RUNNING transition, with full identity,
+    /// format and held-device proof even while pending. Never used by refresh.
+    #[cfg(feature = "native-playback")]
+    pub(crate) fn startup_probe(&mut self) -> Result<bool, Failure> {
+        if self.last.is_some() || self.checks != 0 {
+            return Err(());
+        }
+        match self.observe(true)? {
+            Some(last) => {
+                self.advance_clock(last)?;
+                Ok(true)
+            }
+            None => Ok(false),
+        }
+    }
+    fn observe(&self, starting: bool) -> Result<Option<u64>, Failure> {
         if generation(self.pid)? != self.start
             || identity(&self.device)? != self.stamp
             || text(&self.capture)?.trim() != "closed"
         {
             return Err(());
         }
-        let first = pcm(
-            &text(&self.pcm.join("status"))?,
-            &text(&self.pcm.join("hw_params"))?,
-            self.pid,
-        )?;
+        let sample = || {
+            let status = text(&self.pcm.join("status"))?;
+            let params = text(&self.pcm.join("hw_params"))?;
+            if starting {
+                pcm_state(&status, &params, self.pid, true)
+            } else {
+                pcm(&status, &params, self.pid).map(|pointer| (true, pointer))
+            }
+        };
+        let first = sample()?;
         let mut found = false;
         for (count, entry) in fs::read_dir(format!("/proc/{}/fd", self.pid))
             .map_err(|_| ())?
@@ -157,18 +188,19 @@ impl PinnedPlayback {
             let entry = entry.map_err(|_| ())?;
             found |= identity(&entry.path()).is_ok_and(|stamp| stamp == self.stamp);
         }
-        let last = pcm(
-            &text(&self.pcm.join("status"))?,
-            &text(&self.pcm.join("hw_params"))?,
-            self.pid,
-        )?;
+        let last = sample()?;
         if !found
-            || last < first
+            || last.1 < first.1
+            || (first.0 && !last.0)
             || generation(self.pid)? != self.start
             || identity(&self.device)? != self.stamp
+            || text(&self.capture)?.trim() != "closed"
         {
             return Err(());
         }
+        Ok(last.0.then_some(last.1))
+    }
+    fn advance_clock(&mut self, last: u64) -> Result<(), Failure> {
         let now = Instant::now();
         if let Some((pointer, advanced)) = self.last {
             if last < pointer
@@ -213,6 +245,47 @@ impl PinnedPlayback {
                 .map_or(0, |((last, _), first)| last.saturating_sub(first)),
         )
     }
+    /// Best-effort metadata at a rejected proof, never authority to accept it.
+    /// A second observation can differ; preserve the original failed decision.
+    #[cfg(feature = "native-playback")]
+    pub(crate) fn diagnostic(&self) -> String {
+        let status = text(&self.pcm.join("status"));
+        let params = text(&self.pcm.join("hw_params"));
+        let value = |data: &Result<String, Failure>, key| {
+            data.as_ref()
+                .ok()
+                .and_then(|s| field(s, key).ok())
+                .map(|s| s.chars().take(80).collect::<String>())
+                .unwrap_or_else(|| "unavailable".into())
+        };
+        let state = if status.as_deref().is_ok_and(|s| s.trim() == "closed") {
+            "closed".into()
+        } else {
+            value(&status, "state")
+        };
+        let mut fd_count = 0;
+        let mut held = false;
+        let fd_read = if let Ok(entries) = fs::read_dir(format!("/proc/{}/fd", self.pid)) {
+            for entry in entries.take(257) {
+                fd_count += 1;
+                if let Ok(entry) = entry {
+                    held |= identity(&entry.path()).is_ok_and(|stamp| stamp == self.stamp);
+                }
+            }
+            true
+        } else {
+            false
+        };
+        format!(
+            "metadata recheck: state={state:?} owner={:?} expected_owner={} format={:?} channels={:?} rate={:?} server_generation={} pcm_identity={} capture_closed={} fd_read={} fd_count={} pcm_fd_held={}",
+            value(&status, "owner_pid"), self.pid, value(&params, "format"),
+            value(&params, "channels"), value(&params, "rate"),
+            generation(self.pid).is_ok_and(|start| start == self.start),
+            identity(&self.device).is_ok_and(|stamp| stamp == self.stamp),
+            text(&self.capture).is_ok_and(|s| s.trim() == "closed"),
+            fd_read, fd_count, held,
+        )
+    }
 }
 
 #[cfg(test)]
@@ -254,7 +327,52 @@ mod tests {
             first: None,
             checks: 0,
         };
+        #[cfg(feature = "native-playback")]
+        {
+            let prepared = format!("state: PREPARED\nowner_pid : {pid}\nhw_ptr : 0\n");
+            fs::write(&status, &prepared).unwrap();
+            assert_eq!(proof.startup_probe(), Ok(false));
+            assert_eq!(proof.stats(), (0, 0));
+            assert!(proof.validate().is_err(), "PREPARED is not running proof");
+            fs::write(
+                &status,
+                prepared.replace(&pid.to_string(), &(pid + 1).to_string()),
+            )
+            .unwrap();
+            assert!(proof.startup_probe().is_err(), "wrong owner is not pending");
+            fs::write(&status, &prepared).unwrap();
+            fs::write(&params, "format: S16_LE\nchannels: 8\nrate: 96000\n").unwrap();
+            assert!(
+                proof.startup_probe().is_err(),
+                "wrong format is not pending"
+            );
+            fs::write(&params, "format: FLOAT_LE\nchannels: 8\nrate: 96000\n").unwrap();
+            fs::write(&capture, "state: RUNNING\n").unwrap();
+            assert!(proof.startup_probe().is_err(), "capture must remain closed");
+            fs::write(&capture, "closed\n").unwrap();
+            proof.start += 1;
+            assert!(proof.startup_probe().is_err());
+            proof.start -= 1;
+            fs::write(
+                &status,
+                format!("state: RUNNING\nowner_pid : {pid}\nhw_ptr : 96000\n"),
+            )
+            .unwrap();
+            assert_eq!(proof.startup_probe(), Ok(true));
+            assert!(
+                proof.startup_probe().is_err(),
+                "startup cannot be reentered"
+            );
+        }
         assert!(proof.validate().is_ok());
+        #[cfg(feature = "native-playback")]
+        {
+            let diagnostic = proof.diagnostic();
+            assert!(diagnostic.contains("state=\"RUNNING\""));
+            assert!(diagnostic.contains("format=\"FLOAT_LE\""));
+            assert!(diagnostic.contains("pcm_fd_held=true"));
+            assert!(diagnostic.contains("server_generation=true"));
+        }
         proof.start += 1;
         assert!(proof.validate().is_err());
         proof.start -= 1;
@@ -287,6 +405,20 @@ mod tests {
         proof.last = None;
         drop(held);
         assert!(proof.validate().is_err());
+        #[cfg(feature = "native-playback")]
+        {
+            proof.last = None;
+            proof.checks = 0;
+            fs::write(
+                &status,
+                format!("state: PREPARED\nowner_pid : {pid}\nhw_ptr : 0\n"),
+            )
+            .unwrap();
+            assert!(
+                proof.startup_probe().is_err(),
+                "pending still needs the PCM FD"
+            );
+        }
         for path in [status, params, capture] {
             fs::remove_file(path).unwrap();
         }
@@ -297,6 +429,14 @@ mod tests {
         let status = "state: RUNNING\nowner_pid : 42\nhw_ptr : 96000\n";
         let params = "format: FLOAT_LE\nchannels: 8\nrate: 96000 (96000/1)\n";
         assert_eq!(pcm(status, params, 42), Ok(96000));
+        for state in ["PREPARED", "OPEN", "SETUP", "XRUN", "DRAINING"] {
+            let value = status.replace("RUNNING", state);
+            assert!(pcm(&value, params, 42).is_err());
+            assert_eq!(
+                pcm_state(&value, params, 42, true).is_ok(),
+                state == "PREPARED"
+            );
+        }
         for invalid in [
             status.replace("42", "43"),
             status.replace("RUNNING", "DRAINING"),

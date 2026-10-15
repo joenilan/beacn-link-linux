@@ -109,11 +109,23 @@ impl Output {
     fn running(&mut self) -> Result<(), String> {
         self.binding()?;
         if let Target::Studio { proof, .. } = &mut self.0 {
-            proof
-                .validate()
-                .map_err(|_| "Studio PCM owner/format/clock proof failed")?;
+            if proof.validate().is_err() {
+                return Err(format!(
+                    "Studio PCM owner/format/clock proof failed; {}",
+                    proof.diagnostic()
+                ));
+            }
         }
         Ok(())
+    }
+    fn startup_ready(&mut self) -> Result<bool, String> {
+        self.binding()?;
+        match &mut self.0 {
+            Target::Synthetic => Ok(true),
+            Target::Studio { proof, .. } => proof
+                .startup_probe()
+                .map_err(|_| format!("Studio PCM startup proof failed; {}", proof.diagnostic())),
+        }
     }
     fn wait_closed(&self) -> Result<(), String> {
         let deadline = Instant::now() + Duration::from_secs(2);
@@ -359,6 +371,12 @@ impl NativePlayback {
             // graph. Nothing is adopted by an owner tag or discovered name.
             verify_sink_release(&observed.graph, &baseline, &receipt)?;
             owner.receipt = Some(receipt);
+            wait_for_startup(Duration::from_secs(2), || {
+                let observed = owner.backend.as_mut().unwrap().observe(generation)?;
+                proof.verify_observation(&observed)?;
+                owner.check_graph()?;
+                owner.output.startup_ready()
+            })?;
             owner.check()?;
             Ok::<_, String>(())
         })();
@@ -390,6 +408,10 @@ impl NativePlayback {
         result
     }
     fn check_current(&mut self) -> Result<(), String> {
+        self.check_graph()?;
+        self.output.running()
+    }
+    fn check_graph(&mut self) -> Result<(), String> {
         let token = CString::new(self.config.owner.as_str()).map_err(|e| e.to_string())?;
         let backend = self.backend.as_mut().ok_or("playback is stopped")?;
         if unsafe {
@@ -404,7 +426,7 @@ impl NativePlayback {
         {
             return Err("native playback endpoints/receipts changed".into());
         }
-        self.output.running()
+        Ok(())
     }
     pub fn refresh(&mut self, proof: &VerifiedRoutePublication) -> Result<(), String> {
         if let Some(error) = &self.halted {
@@ -461,5 +483,53 @@ impl NativePlayback {
     }
     pub fn graph(&mut self) -> Result<Observation, String> {
         self.inspector.observe(self.generation)
+    }
+}
+
+/// Wait only for a positively verified creation-time pending state. A failed
+/// identity/format/graph observation exits immediately, without a retry.
+fn wait_for_startup(
+    timeout: Duration,
+    mut probe: impl FnMut() -> Result<bool, String>,
+) -> Result<(), String> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if Instant::now() >= deadline {
+            return Err("Studio PCM did not reach RUNNING within the startup deadline".into());
+        }
+        let ready = probe()?;
+        let now = Instant::now();
+        if now >= deadline {
+            return Err("Studio PCM startup observation exceeded its deadline".into());
+        }
+        if ready {
+            return Ok(());
+        }
+        std::thread::sleep((deadline - now).min(Duration::from_millis(20)));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn startup_wait_advances_only_verified_pending_and_never_retries_an_error() {
+        let mut probes = 0;
+        wait_for_startup(Duration::from_secs(1), || {
+            probes += 1;
+            Ok(probes == 3)
+        })
+        .unwrap();
+        assert_eq!(probes, 3);
+        let mut failed_probes = 0;
+        assert_eq!(
+            wait_for_startup(Duration::from_secs(1), || {
+                failed_probes += 1;
+                Err("changed owner".into())
+            }),
+            Err("changed owner".into())
+        );
+        assert_eq!(failed_probes, 1);
+        assert!(wait_for_startup(Duration::from_millis(15), || Ok(false)).is_err());
     }
 }

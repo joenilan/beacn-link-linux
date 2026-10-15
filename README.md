@@ -20,8 +20,10 @@ first-pair output and clean release on an owned test core; standalone playback
 and ordinary desktop routing remain unfinished.
 An optional [native Rust/C playback owner](docs/native-playback-owner.md) now
 passes all four virtual mappings, native failure/release checks and GUI
-Pause/reconnect/Quit. Its first physical Studio test is prepared but unrun;
-ordinary desktop integration and an installed standalone app remain unfinished.
+Pause/reconnect/Quit. Its [first physical Studio pair](docs/native-playback-startup.md)
+also passes with owner-heard mpv output and exact immediate/late laptop settings
+comparisons. Physical Pause/reconnect, ordinary desktop integration and an
+installed standalone app remain unfinished.
 The earlier egui preview remains available for comparison. The primary UI also has
 a saved Connect automatically toggle, waiting/paused states and read-only discovery
 recovery. Automatic session tests use owned private cores; physical GUI connection

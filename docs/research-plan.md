@@ -7,6 +7,30 @@ Whole-desktop automation, multiple apps, persistent service/UI and long-lived
 reconnect remain next; earlier milestone descriptions below retain their scope.
 
 Goal: keep BEACN App/Mix Create on Windows and replace Link on the Linux gaming PC.
+
+## Windows follow-on requested 2026-10-15
+
+After Linux round one is stable, the owner wants a Windows edition of LinX with
+the same minimal feature direction and Console UI. Reuse the protocol codec,
+planner/lifecycle contracts, UI model and interface where practical; implement
+separate Windows audio/USB owners rather than treating PipeWire as portable.
+[GPUI Kit's installation guide](https://gpui-kit.com/docs/installation/) includes
+Windows, but our pinned native UI tree has not been built or qualified there.
+
+[WASAPI](https://learn.microsoft.com/en-us/windows/win32/coreaudio/wasapi) provides
+audio-session/endpoint mechanisms, including
+[session volume/mute](https://learn.microsoft.com/en-us/windows/win32/api/audioclient/nn-audioclient-isimpleaudiovolume).
+That supports investigating explicit local mixer controls; it does not prove a
+working Windows LinX backend, per-app endpoint assignment or remote BEACN faders.
+The previously traced undocumented routing ABI still needs its own validation.
+Windows qualification must separately cover assignment/publication, actual
+playback, ownership, Pause/reconnect/failure and exact saved-setting comparisons.
+Existing BEACN Link must release its device before a separately authorized test.
+No Windows audio mutation, capture, backend implementation or test occurred in
+this planning step. Remote personal/audience controls remain unknown on both OSes.
+
+## Linux interoperability phases
+
 Existing beacn-on-linux work reportedly exposes four stereo Link pairs; that
 prior research is context, not a locally verified replacement for discovery.
 

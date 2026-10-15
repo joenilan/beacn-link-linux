@@ -1,6 +1,36 @@
 # LinX continuation handoff
 Updated 2026-10-15 UTC. Resume development; do not restart the investigation.
 
+## Latest checkpoint: native first-pair playback heard and released cleanly
+
+Read [native-playback-startup.md](native-playback-startup.md). Owner returned,
+explicitly started attended runs and confirmed **Heard tones; mpv stayed in Link In**.
+First assigned native attempt failed before sound; metadata diagnostic established
+PREPARED with exact owner/FD/FLOAT_LE/8ch/96k identity. Initial link acknowledgment
+was earlier than RUNNING. Startup now waits up to two seconds only for verified
+PREPARED, with fresh route/graph proof; ordinary RUNNING/clock checks stay strict.
+No invalid/unknown state is retried or adopted. Failure/cleanup still latch.
+
+Exact source `beacn-native-source-20261015T120640Z`; native Studio image SHA256
+`eac7adf632f6e771332a6928083ec00e6dfa3d2f5af74ed59b0680a37fc690a7`.
+Accepted run `beacn-native-studio-gui-20261015T120932Z`, result SHA256
+`33c287df7e5899086716a0224d1f36b05d1d99a7a8d90f920e3d0d4743b31156`:
+40 cycles, assignment 1 at cycle 5, actual native ACTIVE/COMPLETE, 132 PCM checks,
+independent 69 metadata clock observations and owner-heard sound. Adapter/routes/
+USB/processes released, both PCMs closed, immediate and late laptop settings/state
+and connected binding exactly equal. No Python playback bridge or payload capture.
+The first failure had an unequal desktop/state comparison; preserve that evidence
+and its limits rather than claiming every run restored exactly. Later baselines
+matched. Six native-playback and five native-usb-only library checks pass; exact
+native private GUI Pause/resume/Quit and full outer comparisons also pass.
+
+Next: physical Pause/reconnect/failure, ordinary desktop integration and approved
+Console UI. Keep features minimal and add only realistic, separately proven
+capabilities. Owner also requested a future Windows edition; share UI/protocol
+but implement/qualify Windows audio/USB adapters after Linux round one is stable.
+No new Windows backend or remote mix controls exist. Studio stays on the laptop;
+no test is running. Laptop free disk is about 10 GB; preserve all source/artifacts.
+
 ## Design checkpoint: actual visual references and three new directions
 
 Owner rejected study 01 for retaining the existing cards/list layout. Its source
@@ -20,10 +50,10 @@ narrow Light/Dark and interaction checks pass. Screenshots,
 reference image caches and manifests stay private outside Git. No Rust/gate,
 device/audio I/O, laptop settings or test-artifact changes occurred.
 Owner wants direct clickable localhost review links, not only file paths.
-The next hardware step below remains prepared but unrun. Keep Rust/GPUI Kit and
-existing snapshot/owner logic. The earlier study remains linked for provenance.
+The latest physical first-pair acceptance is above. Keep Rust/GPUI Kit and existing
+snapshot/owner logic. The earlier study remains linked for provenance.
 
-## Current checkpoint: native playback owner and GUI pass unattended
+## Earlier checkpoint: native playback owner and GUI pass unattended
 
 Owner asked to finish everything possible while asleep. Optional Rust/C playback
 now owns an eight-channel sink/two monitor links in-process, with fresh verified

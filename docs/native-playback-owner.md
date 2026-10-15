@@ -1,8 +1,10 @@
 # Native playback owner
 
-Updated 2026-10-15 UTC. Implemented and qualified with virtual endpoints;
-**physical Studio acceptance is pending**. The owner was asleep. No USB I/O or
-Studio PCM open occurred in these unattended checks.
+Updated 2026-10-15 UTC. Virtual endpoints pass the unattended checks below. A
+subsequent attended [startup correction and physical first-pair check](native-playback-startup.md)
+now pass with owner-heard mpv output and exact immediate/late laptop comparisons.
+Physical pairs 2–4, Pause/reconnect and ordinary desktop integration remain pending.
+The earlier unattended evidence below involved no USB I/O or Studio PCM open.
 
 ## Ownership and integration
 
@@ -103,13 +105,13 @@ All mutations still require fresh pre/post snapshots and owned cleanup.
 
 ## Next acceptance boundary
 
-The first native-owner physical check is built and prepared, but unrun. When the
-owner is awake, keep Windows Link closed and BEACN App visible on the streaming
-PC. Finish preflight, explain Applications/all four Link In boxes and first-pair
-listening, then wait for fresh **start now**. Start immediately after that reply.
-Physical pause/failure/reconnect, extended operation, ordinary desktop routing,
-multi-app hardware and installation remain unaccepted. Streaming-PC saved settings
-have not been compared. Do not leave a test running overnight.
+The first native-owner physical check now passes as recorded in
+[native-playback-startup.md](native-playback-startup.md). Further watched checks
+still need preflight, exact Applications/all Link In instructions and a fresh
+**start now**, followed by immediate execution. Physical pause/failure/reconnect,
+extended operation, ordinary desktop routing, multi-app hardware and installation
+remain unaccepted. Streaming-PC saved settings have not been compared. Do not
+leave a test running overnight.
 
 The laptop fell below 25 GB free during builds; owner notified. Cached targets were
 reused and no source, lockfile, user data, running artifact or earlier evidence was
