@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>LinX — visual directions</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="directions.css">
+  <script defer src="directions.js"></script>
+</head>
+<body>
+  <svg class="symbols" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <!-- Existing LinX mark from app-core/src/icon.rs. -->
+    <symbol id="lynx" viewBox="0 0 64 64"><path fill="currentColor" fill-rule="evenodd" d="M8 0 17 14 24 18 32 16 40 18 47 14 56 0 56 24 60 32 59 38 64 42 57 44 60 49 49 50 44 57 32 64 20 57 15 50 4 49 7 44 0 42 5 38 4 32 8 24Z M15 32 27 35 25 39 18 37Z M49 32 37 35 39 39 46 37Z M28 46 36 46 32 50Z"/></symbol>
+    <symbol id="speaker" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4ZM15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></symbol>
+    <symbol id="mute" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4ZM16 9l6 6m0-6-6 6"/></symbol>
+    <symbol id="pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+    <symbol id="play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7Z"/></symbol>
+    <symbol id="expand" viewBox="0 0 24 24"><path d="M14 4h6v6m0-6-8 8M10 20H4v-6m0 6 8-8"/></symbol>
+    <symbol id="sliders" viewBox="0 0 24 24"><path d="M5 3v4m0 4v10M12 3v10m0 4v4M19 3v2m0 4v12M2 7h6m1 10h6m1-12h6"/></symbol>
+    <symbol id="arrow" viewBox="0 0 24 24"><path d="M4 12h15m-6-6 6 6-6 6"/></symbol>
+    <symbol id="check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+  </svg>
+
+  <main class="design-board">
+    <header class="board-header"><div><span class="overline">LINX / VISUAL STUDY 02</span><h1>Find its own sound.</h1><p>Three layouts. Three visual identities. One small audio utility.</p></div><a href="#research">See the visual research <span aria-hidden="true">↓</span></a></header>
+    <div class="direction-picker" role="group" aria-label="Design direction">
+      <button data-direction="console" aria-pressed="true"><span>01</span><strong>Console</strong><small>Default · vertical faders</small></button>
+      <button data-direction="matrix" aria-pressed="false"><span>02</span><strong>Signal map</strong><small>Routing matrix</small></button>
+      <button data-direction="mini" aria-pressed="false"><span>03</span><strong>Mini</strong><small>Compact desktop utility</small></button>
+    </div>
+    <div class="appearance-tools"><span>APP APPEARANCE</span><div class="theme-buttons" role="group" aria-label="App theme"><button data-theme="light" aria-pressed="false">Light</button><button data-theme="dark" aria-pressed="true">Dark</button></div><label>Accent <select id="accent"><option value="mint">Mint</option><option value="blue">Blue</option><option value="violet">Violet</option><option value="amber">Amber</option><option value="rose">Rose</option></select></label></div>
+    <div class="review-bar"><p id="direction-description">A compact mixing surface: channels own their faders, meters and applications.</p><label>Demo state <select id="demo-state"><option value="connected">Connected</option><option value="waiting">Waiting</option><option value="connecting">Connecting</option><option value="paused">Paused</option><option value="attention">Needs attention</option><option value="private">Private test</option></select></label></div>
+    <div class="preview-stage" id="preview-stage" data-direction="console"><section class="instrument" id="instrument" data-state="connected" aria-label="LinX design concept"></section></div>
+    <div class="concept-caption"><span>INTERACTIVE CONCEPT</span><p>Fictional apps, routes and static meters. Gain/mute is proposed Linux send control; no audio or device is accessed. Remote personal/audience faders are not implemented.</p></div>
+
+    <section id="research" class="research" aria-labelledby="research-title">
+      <header><span class="overline">THE REFERENCES</span><h2 id="research-title">Actual interfaces, specific decisions.</h2><p>Official published images inspected for this revision. These are visual references, not apps installed or tested here.</p></header>
+      <div class="reference-grid">
+        <article><a class="reference-image" href="../local/references/beacn.jpg" aria-label="Enlarge BEACN App reference"><img src="../local/references/beacn.jpg" alt="Official BEACN App image with paired vertical faders, color strips and applications beneath each channel" loading="lazy"></a><div class="reference-copy"><span class="reference-number">01 / CHANNEL OWNERSHIP</span><h3>BEACN App</h3><p>Paired faders, thin channel colors, meters and app wells all live in the same strip. Our first study lost that relationship.</p><p><strong>Borrow:</strong> apps beneath their fader; consistent channel positions. <strong>Leave:</strong> the many controls for unimplemented hardware/mixes.</p><a href="https://www.beacn.com/en-us/pages/beacn-app-mix-control-your-beacn-ecosystem" target="_blank" rel="noreferrer">Official source ↗</a></div></article>
+        <article><a class="reference-image" href="../local/references/wave-windows.webp" aria-label="Enlarge Wave Link reference"><img src="../local/references/wave-windows.webp" alt="Official Wave Link 3 Windows screenshot with sources down the left and output mixes across the top" loading="lazy"></a><div class="reference-copy"><span class="reference-number">02 / SIGNAL RELATIONSHIPS</span><h3>Elgato Wave Link 3</h3><p>Sources form rows, mixes form columns, and send controls occupy intersections. Routing is the main view rather than a secondary list.</p><p><strong>Borrow:</strong> a readable source-to-destination map. <strong>Adapt:</strong> LinX assignments are observed, so its cells select a source and do not claim to reroute it.</p><a href="https://www.elgato.com/uk/en/explorer/products/wave/wave-link-30-redefining-creator-audio-control/" target="_blank" rel="noreferrer">Official source ↗</a></div></article>
+        <article><a class="reference-image" href="../local/references/sonar-mixer.png" aria-label="Enlarge Sonar reference"><img src="../local/references/sonar-mixer.png" alt="Official Sonar mixer promotional screenshot with tall category faders, meters and applications underneath" loading="lazy"></a><div class="reference-copy"><span class="reference-number">03 / GLANCEABLE CATEGORIES</span><h3>SteelSeries Sonar</h3><p>Game, chat and media have clear identities. Tall faders and application labels make the channel relationship easy to recognize.</p><p><strong>Borrow:</strong> channel identity and a compact mute affordance. <strong>Leave:</strong> the large suite sidebar and effects navigation.</p><a href="https://steelseries.com/lp/sonar-for-streamers" target="_blank" rel="noreferrer">Official source ↗</a></div></article>
+        <article><a class="reference-image" href="../local/references/uad.png" aria-label="Enlarge UAD Console reference"><img src="../local/references/uad.png" alt="Official UAD Console promotional image showing calibrated faders, thin meters, channel labels and a monitor controller" loading="lazy"></a><div class="reference-copy"><span class="reference-number">04 / INSTRUMENT PRECISION</span><h3>Universal Audio Console</h3><p>Fader caps, calibrated scales, narrow meters and aligned readouts make this feel like an audio instrument rather than a settings screen.</p><p><strong>Borrow:</strong> precise fader geometry and numeric alignment. <strong>Leave:</strong> plugin racks, analog imitation and recording-console density.</p><a href="https://www.uaudio.com/products/uad-console-app" target="_blank" rel="noreferrer">Official source ↗</a></div></article>
+      </div>
+      <div class="recommendation"><span class="overline">CHOSEN DIRECTION</span><p><strong>Console is the default.</strong> Mini keeps its controls close when space matters; Signal map remains a layout alternative. All three share Light/Dark themes and five accent palettes. The lynx and connection indicator always retain their actual status colors.</p></div>
+    </section>
+    <footer class="board-footer"><span>LinX · independent Linux audio compatibility project</span><a href="../index.html">Previous study ↗</a></footer>
+    <span id="announcement" class="sr-only" aria-live="polite"></span>
+  </main>
+</body>
+</html>

@@ -1,5 +1,10 @@
 # LinX interface study 01
 
+Superseded for visual direction by [study 02](directions/index.html) and its
+[image-based research](directions/README.md). The owner rejected this first pass
+for repeating the existing layout. Its initial research was a text-source review,
+not a comprehensive visual comparison; retain it as implementation-plan history.
+
 Open [index.html](index.html) directly in a browser. There is no build step,
 server, dependency download or installation. This is a reviewable design proposal
 for the existing Rust/GPUI Kit app, not a change of application framework.

@@ -1,20 +1,27 @@
 # LinX continuation handoff
 Updated 2026-10-15 UTC. Resume development; do not restart the investigation.
 
-## Design checkpoint: compact overview and expandable mixer concept
+## Design checkpoint: actual visual references and three new directions
 
-Owner requested design research/mockup while waiting for the next attended test.
-Open [the interactive study](../design/linx-concept/index.html); its
-[research and capability plan](../design/linx-concept/README.md) separates proposed
-Linux app gain/mute from unverified streaming-PC monitor/audience control.
-The study uses existing lynx geometry/status colors and proposes a compact
-overview plus an expanded mixer. All apps, assignments, levels and state changes
-are fictional, labeled and local to the page. It performs no network/storage,
-device/audio I/O or process execution and changes no production UI/backend gate.
-Both views/six states rendered at four widths (48 layouts), with interactive
-volume/mute/filter/settings checks and private screenshots outside Git.
-The next hardware step below remains prepared but unrun; no new physical test
-was started for design work. Keep Rust/GPUI Kit and existing snapshot/owner logic.
+Owner rejected study 01 for retaining the existing cards/list layout. Its source
+review was primarily textual; it was not a full visual comparison. Study 02 now
+inspects actual published BEACN 1.4, Wave Link 3 Windows/macOS, Sonar and UAD images.
+Open [the comparison](../design/linx-concept/directions/index.html) and
+[visual findings/provenance](../design/linx-concept/directions/README.md).
+Console uses vertical strips/fader caps/meters/app wells; Signal map uses a matrix
+and source inspector; Mini is a compact utility. Owner liked all three mockups and
+chose **01 Console as the default**, with Light/Dark and accent choices. All three
+now share those themes and Mint/Blue/Violet/Amber/Rose palettes. Icon/status colors
+remain independent. This is approval of visual direction, not hardware acceptance.
+All gains, assignments, levels and session states are demo fixtures. Linux send
+gain remains distinct from unverified remote personal/audience mix controls.
+72 browser layout/state combinations, thirty theme/palette/layout combinations,
+narrow Light/Dark and interaction checks pass. Screenshots,
+reference image caches and manifests stay private outside Git. No Rust/gate,
+device/audio I/O, laptop settings or test-artifact changes occurred.
+Owner wants direct clickable localhost review links, not only file paths.
+The next hardware step below remains prepared but unrun. Keep Rust/GPUI Kit and
+existing snapshot/owner logic. The earlier study remains linked for provenance.
 
 ## Current checkpoint: native playback owner and GUI pass unattended
 

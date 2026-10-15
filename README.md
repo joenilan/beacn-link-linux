@@ -2,11 +2,14 @@
 
 Independent, unofficial Linux compatibility research; not affiliated with BEACN.
 
-A [reviewable interface study](design/linx-concept/index.html) proposes a compact
-overview and expandable mixer for the existing Rust/GPUI Kit app. Its
-[research and plan](design/linx-concept/README.md) distinguish future Linux volume
-controls from unverified remote BEACN mixer control. The study is an offline
-visual mockup with fictional data; it changes no audio or production routing.
+A [visual design comparison](design/linx-concept/directions/index.html) now uses
+the owner-selected Console default, with a routing matrix and compact utility
+alternative. All three support Light/Dark and five accent palettes.
+Its [image-based research](design/linx-concept/directions/README.md) compares
+published BEACN, Wave Link, Sonar and UAD interfaces. The proposals target the
+existing Rust/GPUI Kit app; all controls/data are fictional and change no audio
+or production routing. Future Linux gain and remote BEACN mix controls remain
+separate capabilities.
 
 The primary [LinX interface](docs/gpui-interface.md) now uses GPUI Kit: a compact
 window, responsive channel cards, expandable application details and a shared

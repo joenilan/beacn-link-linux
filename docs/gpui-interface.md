@@ -28,11 +28,14 @@ matched the saved baseline after installation.
 
 ## Compact, expanding layout
 
-An [interactive design study](../design/linx-concept/index.html) and
-[capability/implementation plan](../design/linx-concept/README.md) now propose a
-more refined overview and expandable mixer. This is a separate offline concept;
-it has not replaced the qualified native interface described below. Its demo
-volume controls and meters are not implemented production capabilities.
+The [current visual comparison](../design/linx-concept/directions/index.html)
+and [image-based research](../design/linx-concept/directions/README.md) show
+the owner-selected Console default, a routing matrix and a compact utility, with
+shared Light/Dark and five accent palettes. The owner rejected
+the earlier cards/list study for repeating the current layout. These are separate
+offline concepts; they have not replaced the qualified native interface below.
+Their gain controls/meters are not implemented production capabilities. The
+[capability plan](../design/linx-concept/README.md) retains local/remote boundaries.
 
 Default client size is 720 by 520 pixels. The header has the lynx session icon,
 LinX name, actual session text, Connect/Pause and an expandable information panel.
