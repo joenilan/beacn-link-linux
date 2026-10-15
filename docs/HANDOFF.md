@@ -1,6 +1,11 @@
 # LinX continuation handoff
 Updated 2026-10-15 UTC. Resume development; do not restart the investigation.
 
+Agent-specific access and operational instructions are intentionally local and
+untracked (`AGENTS.md` and `local/AGENT-HANDOFF.md` in the owner's checkout).
+Public contributors should start with [CONTRIBUTING.md](../CONTRIBUTING.md).
+No credentials or machine-specific connection files belong in this repository.
+
 ## Latest checkpoint: single-action assignment and media waiting
 
 The owner reported that listening worked, then identified redundant Select/Assign
