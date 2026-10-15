@@ -158,6 +158,9 @@ impl Model {
         self.snapshot.revision = self.service.revision();
     }
     pub fn observe(&mut self, catalog: Catalog) -> Result<(), String> {
+        // Metadata only, emitted solely on a revoked selection. Retain both
+        // identities so a stream restart is distinguishable from a UI Remove.
+        let previous = self.service.current().cloned();
         let update = self.service.update(catalog)?;
         self.snapshot.connected = true;
         self.snapshot.busy = false;
@@ -166,6 +169,20 @@ impl Model {
             self.snapshot.message =
                 Some("Audio session changed. Select your applications again.".into());
         } else if !update.revoked.is_empty() {
+            for id in &update.revoked {
+                eprintln!(
+                    "LinX selection revoked: id={:?} before={:?} after={:?}",
+                    id,
+                    previous
+                        .as_ref()
+                        .and_then(|c| c.applications.get(id))
+                        .map(|a| &a.streams),
+                    self.service
+                        .current()
+                        .and_then(|c| c.applications.get(id))
+                        .map(|a| &a.streams)
+                );
+            }
             self.snapshot.message = Some(format!(
                 "{} selection(s) removed because an application stopped or changed.",
                 update.revoked.len()
@@ -175,6 +192,7 @@ impl Model {
         Ok(())
     }
     pub fn command(&mut self, command: Command) -> Result<(), String> {
+        eprintln!("LinX selection command: {command:?}");
         if !self.snapshot.connected {
             return Err("Application discovery is disconnected.".into());
         }

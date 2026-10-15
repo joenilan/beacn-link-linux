@@ -866,7 +866,7 @@ pub fn execute(action: Action, window: &mut Window, cx: &mut App) {
         }
     }
 }
-fn capture(window: &Window, path: &std::path::Path) {
+pub(crate) fn capture(window: &Window, path: &std::path::Path) {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
     use std::ffi::{c_char, c_int, c_uint, c_ulong, c_void};
     #[link(name = "X11")]

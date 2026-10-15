@@ -3,9 +3,32 @@ use std::path::PathBuf;
 
 fn main() {
     let mut args: Vec<_> = std::env::args().skip(1).collect();
+    #[cfg(all(feature = "native-control", target_os = "linux"))]
+    if let Some(index) = args.iter().position(|a| a == "--control-socket") {
+        if index + 1 >= args.len() {
+            eprintln!("--control-socket requires a private Unix socket path");
+            std::process::exit(2);
+        }
+        let path = PathBuf::from(args.remove(index + 1));
+        args.remove(index);
+        if let Err(error) = beacn_linx_gpui::control::configure(path) {
+            eprintln!("Native control: {error}");
+            std::process::exit(2);
+        }
+    }
+    #[cfg(all(feature = "ui-qualification", target_os = "linux"))]
+    if let Some(index) = args.iter().position(|a| a == "--capture-frame") {
+        if index + 1 >= args.len() {
+            eprintln!("--capture-frame requires an exclusive output file");
+            std::process::exit(2);
+        }
+        let path = PathBuf::from(args.remove(index + 1));
+        args.remove(index);
+        beacn_linx_gpui::diagnostics::configure(path);
+    }
     if args == ["--help"] {
         println!(
-            "LinX\nDefault: read-only application discovery.\n--studio: native Studio session (studio-enabled build); select one stereo app, Connect, assign it to first Link In on the streaming PC. Pause/Quit releases owned output.\nOptional: --private-runtime PATH --core NAME\nOptional: --software-renderer (Linux; installed Mesa CPU Vulkan, this process only)"
+            "LinX\nDefault: read-only application discovery.\n--studio: native Studio session (studio-enabled build); select one stereo app, Connect, assign it to Link In 1–4 on the streaming PC. Pause/Quit releases owned output.\nOptional: --private-runtime PATH --core NAME\nOptional: --software-renderer (Linux; installed Mesa CPU Vulkan, this process only)\nDeveloper builds: --control-socket PATH (private local component control; off by default)"
         );
         return;
     }

@@ -10,9 +10,9 @@ remain stable. This naming decision is not a trademark-clearance result.
 The actual main executable now has an opt-in `studio` build and `--studio` entry
 for direct use on the Debian desktop. Its native managed desktop owner has no
 test countdown: select one existing stereo application, Connect, assign it to
-first Link In on the streaming PC, then Pause/Quit to release. Discovery uses
+Link In 1–4 on the streaming PC, then Pause/Quit to release. Discovery uses
 current native identities; no Python playback/session controller or qualification
-widget sequence is involved. The 23 focused native checks and real main build pass;
+widget sequence is involved. Focused native checks and the real main build pass;
 direct owner hardware acceptance of this entry remains pending. Normal no-argument
 startup is still read-only. The visual port is not yet 1:1 or owner-approved.
 
@@ -50,20 +50,27 @@ Default client size is 788 by 568 pixels. The header has the lynx session icon,
 LinX name, Console label, actual session text, Connect/Pause and Appearance toggle.
 Four contiguous channel strips contain the actual Link In names, palette bars,
 disabled fader/mute geometry, unlit meter rails and live assignment wells. The dB
-readout is a dash, never a fictional measured value. Below 600 pixels they reflow
+readout is a dash, never a fictional measured value. Below 700 pixels they reflow
 to two columns. The Applications drawer expands real discovery/search/selection;
 individual details expose process/stream identity and published-name editing.
 Selected aliases appear in the primary row, with the original app name retained
 in its status line. Search matches app names, executable names and selected aliases.
 
-The application list fills remaining space and scrolls. At short window heights,
-the whole view also scrolls so expanded panels cannot hide the remaining controls. Expanding sections and
-resizing use the current layout; normal controls do not forcibly resize the user's
-window. Future controls can be added to these sections without reserving large
-empty panels. The inactive fader area shortens when either drawer is open. Light/
+The application list scrolls, as does the whole view at short window heights.
+Opening a drawer expands a compact window within the display bounds; closing it
+restores its prior size unless the owner resized it. Four equal non-wrapping strips
+remain on one row at the default width. Their 174px fader geometry stays fixed
+while drawers are open. Future controls can be added without reserving large
+empty panels. Light/
 Dark and Mint/Blue/Violet/Amber/Rose are actual native buttons; appearance currently
 stays in memory. Session/status icon colors remain independent of the palette.
 There are no simulated audio meters or enabled volume controls.
+
+The optional [native component control interface](native-control.md) can drive
+the real app and collect its own diagnostics without taking the owner's mouse.
+It is off by default and requires an explicit private local socket argument.
+The actual desktop geometry is now captured and measured; owner visual approval
+and live acceptance of this newest session implementation remain pending.
 
 ### Native Console qualification, 2026-10-15
 

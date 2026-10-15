@@ -14,6 +14,8 @@ struct desktop_target {
   struct dt_entry entries[DT_ENTRIES], prior;
   size_t count;
   uint32_t pid;
+  unsigned pair;
+  char owner[129];
   struct receipt source_ports[2];
   bool active, conflict, stopping, expected_present;
   char expected_type[33], expected[129];
@@ -26,6 +28,7 @@ struct desktop_target {
 #endif
 };
 int bcl_desktop_unbridge(struct session *);
+int bcl_desktop_bridge_check(struct session *);
 static struct desktop_target *desktop_new(void) {
   return calloc(1, sizeof(struct desktop_target));
 }
@@ -113,6 +116,32 @@ uint32_t bcl_desktop_daemon_pid(struct session *s) {
 }
 static bool dt_ref(struct object *o, struct receipt r) {
   return o && o->info && o->present && serial(o) == r.serial && o->id == r.id;
+}
+static int dt_pair_index(unsigned pair, unsigned side) {
+  if (pair < 1 || pair > 4 || side > 1) return -1;
+  return (int)((pair - 1) * 2 + side);
+}
+/* Retire only a confirmed, detached creation record. Caller must have removed
+ * listeners, destroyed the proxy, synchronized, and checked the old serial is
+ * absent. Match the record pointer so a reused numeric ID cannot select another
+ * creation, and preserve any record that may still be pending/current. */
+static bool dt_retire_created(struct session *s, struct created *c,
+                              struct receipt old) {
+  if (!s || !s->desktop || !c || s->pending || c->proxy ||
+      c->id != old.id || c->serial != old.serial)
+    return false;
+  if (s->desktop->adapter_proxy == c) return false;
+  for (int i=0;i<2;i++)
+    if (s->desktop->bridge[i] == c) return false;
+  struct object *o=find(s,old.id,LINK);
+  if (o && serial(o)==old.serial) return false;
+  struct created **slot=&s->created;
+  while (*slot && *slot != c) slot=&(*slot)->next;
+  if (*slot != c) return false;
+  *slot=c->next;
+  c->next=NULL;
+  free(c);
+  return true;
 }
 static bool dt_ports(struct session *s, struct receipt node, int direction, struct object **result) {
   result[0] = result[1] = NULL;
@@ -313,7 +342,7 @@ static bool dt_bridge_graph(struct session *s) {
   struct desktop_target *d=s->desktop;
   struct object *hardware=find(s,d->hardware.id,NODE), *inputs[8];
   struct object *adapter=find(s,d->adapter.node.id,NODE);
-  if (!dt_ref(hardware,d->hardware) || !dt_route(s,d->sink) ||
+  if (d->pair < 1 || d->pair > 4 || !dt_ref(hardware,d->hardware) || !dt_route(s,d->sink) ||
       !dt_ref(adapter,d->adapter.node) || !d->adapter_proxy ||
       !d->adapter_proxy->proxy || d->adapter_proxy->removed || d->adapter_proxy->error ||
       !playback_ports(s,&d->adapter.node,inputs)) return false;
@@ -331,6 +360,11 @@ static bool dt_bridge_graph(struct session *s) {
     if (!c || !c->proxy || c->removed || c->error || !l->info || l->state!=PW_LINK_STATE_ACTIVE ||
         l->out_node!=d->sink.id || l->out_port!=c->out_port || l->in_port!=c->in_port)
       return false;
+    bool expected_pair_port=false;
+    for (int j=0;j<2;j++)
+      if (d->bridge[j]==c && l->in_port==d->adapter.ports[dt_pair_index(d->pair,(unsigned)j)].id)
+        expected_pair_port=true;
+    if (!expected_pair_port) return false;
     count++;
   }
   return count==2;
@@ -354,9 +388,9 @@ int bcl_desktop_find_studio(struct session *s, uint32_t card, struct receipt *re
   result->id=selected->id;result->serial=serial(selected);return 0;
 }
 int bcl_desktop_bridge(struct session *s, const struct receipt *hardware,
-                        uint32_t card, const char *owner, struct receipt *links,
+                        uint32_t card, int pair, const char *owner, struct receipt *links,
                         struct receipt *adapter_result) {
-  if (!s || !s->desktop || !hardware || !links || !label(owner) || card>255 ||
+  if (!s || !s->desktop || !hardware || !links || !label(owner) || card>255 || pair<1 || pair>4 ||
       s->desktop->hardware.serial || bcl_desktop_check(s)<0) return -1;
   struct desktop_target *d=s->desktop;
   struct object *node=find(s,hardware->id,NODE);
@@ -387,6 +421,8 @@ int bcl_desktop_bridge(struct session *s, const struct receipt *hardware,
   }
   if (input_count!=8 || !out[0] || !out[1] || !adapter_result) return -1;
   d->hardware=*hardware;
+  d->pair=(unsigned)pair;
+  snprintf(d->owner,sizeof(d->owner),"%s",owner);
   struct object *inputs[8];
   int created=playback_adapter_create(s,d->sink.id,owner,card,0,true,&d->adapter,inputs);
   for (struct created *c=s->created;c;c=c->next)
@@ -397,9 +433,58 @@ int bcl_desktop_bridge(struct session *s, const struct receipt *hardware,
   for (int i=0;i<2;i++) {
     struct pw_properties *p=pw_properties_new(PW_KEY_OBJECT_LINGER,"false",PW_KEY_LINK_PASSIVE,"false",OWNER,owner,NULL);
     if (!p) return -1;
-    d->bridge[i]=playback_created(s,"link-factory",PW_TYPE_INTERFACE_Link,PW_VERSION_LINK,p,owner,false,out[i],inputs[i]);
+    d->bridge[i]=playback_created(s,"link-factory",PW_TYPE_INTERFACE_Link,PW_VERSION_LINK,p,owner,false,out[i],inputs[dt_pair_index(d->pair,(unsigned)i)]);
     pw_properties_free(p);
     if (!d->bridge[i] || playback_ack(s,d->bridge[i],false,&links[i])<0) return -1;
+  }
+  return dt_bridge_graph(s)?0:-1;
+}
+int bcl_desktop_switch_pair(struct session *s, int pair, struct receipt *links) {
+  if (!s || !s->desktop || !links || pair<1 || pair>4 || s->pending ||
+      bcl_desktop_bridge_check(s)<0)
+    return -1;
+  struct desktop_target *d=s->desktop;
+  if ((unsigned)pair==d->pair) {
+    for (int i=0;i<2;i++) links[i]=(struct receipt){d->bridge[i]->id,d->bridge[i]->serial};
+    return 0;
+  }
+
+  /* Remove only the two exact retained link proxies, then require both serials
+   * to disappear before creating the replacement pair. */
+  struct receipt old[2];
+  struct created *old_created[2];
+  for (int i=0;i<2;i++) {
+    struct created *c=d->bridge[i];
+    if (!c || !c->proxy || c->removed || c->error || !c->bound || !c->info)
+      return -1;
+    old[i]=(struct receipt){c->id,c->serial};
+    old_created[i]=c;
+    spa_hook_remove(&c->listener);spa_hook_remove(&c->info_listener);
+    pw_proxy_destroy(c->proxy);c->proxy=NULL;
+  }
+  if (barrier(s)<0 || barrier(s)<0) return -1;
+  for (int i=0;i<2;i++) {
+    struct object *o=find(s,old[i].id,LINK);
+    if (o && serial(o)==old[i].serial) return -1;
+    d->bridge[i]=NULL;
+  }
+  for (int i=0;i<2;i++)
+    if (!dt_retire_created(s,old_created[i],old[i])) return -1;
+
+  struct object *out[2]={NULL,NULL}, *inputs[8];
+  if (!dt_ports(s,d->sink,PW_DIRECTION_OUTPUT,out) ||
+      !playback_ports(s,&d->adapter.node,inputs)) return -1;
+  for (int i=0;i<8;i++)
+    if (!dt_ref(inputs[i],d->adapter.ports[i])) return -1;
+  d->pair=(unsigned)pair;
+  for (int i=0;i<2;i++) {
+    struct pw_properties *p=pw_properties_new(PW_KEY_OBJECT_LINGER,"false",PW_KEY_LINK_PASSIVE,"false",OWNER,d->owner,NULL);
+    if (!p) return -1;
+    struct created *c=playback_created(s,"link-factory",PW_TYPE_INTERFACE_Link,
+        PW_VERSION_LINK,p,d->owner,false,out[i],inputs[dt_pair_index(d->pair,(unsigned)i)]);
+    pw_properties_free(p);
+    d->bridge[i]=c;
+    if (!c || playback_ack(s,c,false,&links[i])<0) return -1;
   }
   return dt_bridge_graph(s)?0:-1;
 }
@@ -468,6 +553,77 @@ int bcl_desktop_test_core_identity(void) {
     core_info(&s,&info);if (!s.fatal) return -1;
   }
   return 7;
+}
+static int bcl_desktop_test_ledger_retirement(void) {
+  struct desktop_target desktop={0};
+  struct session s={.desktop=&desktop};
+  struct created before={.id=30,.serial=999}, after={.id=31,.serial=131};
+  struct object observed={0};
+  struct created *target=calloc(1,sizeof(*target));
+  if (!target) return -1;
+  target->id=30;target->serial=110;target->next=&after;
+  before.next=target;s.created=&before;
+  struct receipt old={30,110};
+  int checks=0;
+
+  s.pending=target;
+  if (dt_retire_created(&s,target,old)) { target=NULL;goto fail; }
+  if (s.created!=&before || before.next!=target) goto fail;
+  checks++;s.pending=NULL;
+
+  target->proxy=(struct pw_proxy *)target;
+  if (dt_retire_created(&s,target,old)) { target=NULL;goto fail; }
+  if (s.created!=&before || before.next!=target) goto fail;
+  checks++;target->proxy=NULL;
+
+  desktop.bridge[0]=target;
+  if (dt_retire_created(&s,target,old)) { target=NULL;goto fail; }
+  if (s.created!=&before || before.next!=target) goto fail;
+  checks++;desktop.bridge[0]=NULL;
+
+  observed.id=30;observed.kind=LINK;observed.present=true;
+  observed.props=pw_properties_new(PW_KEY_OBJECT_SERIAL,"110",NULL);
+  if (!observed.props) goto fail;
+  s.objects[0]=&observed;s.count=1;
+  if (dt_retire_created(&s,target,old)) {
+    target=NULL;
+    pw_properties_free(observed.props);goto fail;
+  }
+  if (s.created!=&before || before.next!=target) {
+    pw_properties_free(observed.props);goto fail;
+  }
+  checks++;
+  pw_properties_set(observed.props,PW_KEY_OBJECT_SERIAL,"111");
+  if (!dt_retire_created(&s,target,old)) {
+    pw_properties_free(observed.props);goto fail;
+  }
+  target=NULL;
+  if (s.created!=&before || before.next!=&after || after.next ||
+      before.id!=old.id || before.serial==old.serial) {
+    pw_properties_free(observed.props);goto fail_freed;
+  }
+  checks++;
+  pw_properties_free(observed.props);
+  return checks;
+
+fail:
+  free(target);
+  return -1;
+fail_freed:
+  return -1;
+}
+int bcl_desktop_test_pair_mapping(void) {
+  if (bcl_desktop_test_ledger_retirement()!=5) return -1;
+  int checks=0;
+  for (unsigned pair=1;pair<=4;pair++) {
+    for (unsigned side=0;side<2;side++) {
+      if (dt_pair_index(pair,side)!=(int)((pair-1)*2+side)) return -1;
+      checks++;
+    }
+  }
+  if (dt_pair_index(0,0)!=-1 || dt_pair_index(5,0)!=-1 ||
+      dt_pair_index(1,2)!=-1) return -1;
+  return checks+3;
 }
 int bcl_desktop_test_metadata_guards(void) {
   int checks = 0;

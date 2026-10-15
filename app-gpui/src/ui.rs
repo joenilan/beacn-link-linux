@@ -19,6 +19,9 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     time::Duration,
 };
+#[cfg(all(feature = "native-control", target_os = "linux"))]
+#[path = "control_ui.rs"]
+mod control_ui;
 
 fn color(status: Status) -> Rgba {
     let [r, g, b, _] = status.color();
@@ -34,8 +37,22 @@ fn icon_path(status: Status) -> &'static str {
     }
 }
 struct Assets;
+fn tracked(text: &'static str, size: f32, spacing: f32) -> Div {
+    div()
+        .flex()
+        .items_center()
+        .text_size(px(size))
+        .children(text.chars().enumerate().map(move |(index, ch)| {
+            div()
+                .when(index != 0, |e| e.ml(px(spacing)))
+                .child(ch.to_string())
+        }))
+}
 impl AssetSource for Assets {
     fn load(&self, path: &str) -> anyhow::Result<Option<Cow<'static, [u8]>>> {
+        if let Some(svg) = crate::appearance::tool_svg(path) {
+            return Ok(Some(Cow::Owned(svg.into_bytes())));
+        }
         for status in [
             Status::Disconnected,
             Status::Connecting,
@@ -64,10 +81,13 @@ pub struct Interface {
     settings: bool,
     catalog_open: bool,
     studio_app: bool,
+    expanded_window: Option<(Size<Pixels>, Size<Pixels>)>,
     appearance: crate::appearance::Appearance,
     tray_available: Option<bool>,
     feedback: Option<String>,
     _poll: Task<()>,
+    #[cfg(all(feature = "native-control", target_os = "linux"))]
+    control: crate::control::Control,
     #[cfg(all(feature = "ui-qualification", target_os = "linux"))]
     probe: Option<crate::qualification::Probe>,
     #[cfg(all(feature = "status-tray", target_os = "linux"))]
@@ -87,6 +107,8 @@ impl Interface {
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Find an application"));
         cx.subscribe_in(&search, window, |_, _, _: &InputEvent, _, cx| cx.notify())
             .detach();
+        #[cfg(all(feature = "native-control", target_os = "linux"))]
+        let controlled_window = window.window_handle();
         let poll = cx.spawn(async move |weak, cx| {
             loop {
                 cx.background_executor()
@@ -95,8 +117,32 @@ impl Interface {
                 if weak.update(cx, |this, cx| this.refresh(cx)).is_err() {
                     break;
                 }
+                if crate::shutdown::requested() {
+                    cx.update(|cx| {
+                        let _ = weak.update(cx, |this, _| this.worker.stop());
+                        cx.quit();
+                    });
+                    break;
+                }
+                #[cfg(all(feature = "native-control", target_os = "linux"))]
+                cx.update(|cx| {
+                    let request = weak
+                        .update(cx, |this, _| this.control.take())
+                        .ok()
+                        .flatten();
+                    if let Some(request) = request {
+                        let _ = controlled_window.update(cx, |_, window, cx| {
+                            control_ui::dispatch(&weak, request, window, cx)
+                        });
+                    }
+                });
                 #[cfg(all(feature = "ui-qualification", target_os = "linux"))]
                 cx.update(|cx| {
+                    for handle in cx.windows() {
+                        let _ = handle.update(cx, |_, window, cx| {
+                            crate::diagnostics::capture(window, cx);
+                        });
+                    }
                     let action = weak
                         .update(cx, |this, _| {
                             let action = this
@@ -118,7 +164,10 @@ impl Interface {
             }
         });
         let studio_app = match &connection {
-            #[cfg(all(any(feature = "studio", feature = "desktop-session-test"), target_os = "linux"))]
+            #[cfg(all(
+                any(feature = "studio", feature = "desktop-session-test"),
+                target_os = "linux"
+            ))]
             Connection::Studio | Connection::DesktopStudioSession(_) => true,
             _ => false,
         };
@@ -136,10 +185,14 @@ impl Interface {
             settings: false,
             catalog_open: false,
             studio_app,
+            expanded_window: None,
             appearance: Default::default(),
             tray_available: None,
             feedback: None,
             _poll: poll,
+            #[cfg(all(feature = "native-control", target_os = "linux"))]
+            control: crate::control::Control::from_configuration()
+                .expect("configured native control endpoint"),
             #[cfg(all(feature = "ui-qualification", target_os = "linux"))]
             probe: None,
             #[cfg(all(feature = "status-tray", target_os = "linux"))]
@@ -148,6 +201,8 @@ impl Interface {
     }
     fn refresh(&mut self, cx: &mut Context<Self>) {
         let next = self.worker.snapshot();
+        #[cfg(all(feature = "ui-qualification", target_os = "linux"))]
+        crate::diagnostics::state(&next);
         let mut changed = next.catalog.as_ref().map(|c| (&c.core, &c.applications))
             != self
                 .snapshot
@@ -162,6 +217,7 @@ impl Interface {
             || next.connected != self.snapshot.connected
             || next.busy != self.snapshot.busy
             || next.message != self.snapshot.message
+            || next.link.error != self.snapshot.link.error
             || next.link.phase != self.snapshot.link.phase;
         changed |= next.auto_connect != self.snapshot.auto_connect
             || next.startup != self.snapshot.startup
@@ -214,6 +270,31 @@ impl Interface {
         }
         if changed {
             cx.notify();
+        }
+    }
+    fn fit_drawers(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.catalog_open || self.settings {
+            let current = window.viewport_size();
+            if self.expanded_window.is_none() && current.height <= px(650.) {
+                let available = window
+                    .display(cx)
+                    .map(|d| d.bounds().size.height - px(80.))
+                    .unwrap_or(px(820.));
+                let desired = if self.catalog_open {
+                    px(820.)
+                } else {
+                    px(740.)
+                };
+                let expanded = size(current.width, desired.min(available).max(current.height));
+                if expanded.height > current.height {
+                    self.expanded_window = Some((current, expanded));
+                    window.resize(expanded);
+                }
+            }
+        } else if let Some((original, expanded)) = self.expanded_window.take() {
+            if window.viewport_size() == expanded {
+                window.resize(original);
+            }
         }
     }
     fn send(&mut self, command: Command, cx: &mut Context<Self>) {
@@ -288,7 +369,13 @@ impl Interface {
             .filter(|p| *p != 0);
         let status = pair.map(|p| format!("Link {p}")).unwrap_or_else(|| {
             if selected {
-                "Selected".into()
+                if self.snapshot.link.error.is_some() {
+                    "Selected · session stopped".into()
+                } else if self.snapshot.link.phase == Phase::Running {
+                    "Selected · waiting for assignment".into()
+                } else {
+                    "Selected · ready to publish".into()
+                }
             } else {
                 "Available".into()
             }
@@ -369,7 +456,13 @@ impl Interface {
                         Button::new(SharedString::from(format!("select-{}", id.0)))
                             .small()
                             .label(if selected { "Remove" } else { "Select" })
-                            .disabled(!live || (self.studio_app && !selected && (!self.snapshot.selected.is_empty() || app.streams.len() != 1)))
+                            .disabled(
+                                !live
+                                    || (self.studio_app
+                                        && !selected
+                                        && (!self.snapshot.selected.is_empty()
+                                            || app.streams.len() != 1)),
+                            )
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.send(
                                     if selected {
@@ -437,177 +530,6 @@ impl Interface {
         row.into_any_element()
     }
 }
-impl Interface {
-    fn console_strip(&self, pair: u8, width: f32, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.appearance.colors();
-        let fader_height = if self.catalog_open || self.settings {
-            64.
-        } else {
-            142.
-        };
-        let accent = p.channels[(pair - 1) as usize];
-        let names = self
-            .snapshot
-            .routing
-            .assignments
-            .iter()
-            .filter(|(_, p)| **p == pair)
-            .filter_map(|(id, _)| self.snapshot.selected.get(id))
-            .cloned()
-            .collect::<Vec<_>>();
-        let mut well = div()
-            .flex()
-            .flex_col()
-            .gap_1()
-            .min_h(px(36.))
-            .bg(rgb(p.well))
-            .rounded_sm()
-            .p_2();
-        if names.is_empty() {
-            well = well.child(
-                div()
-                    .text_xs()
-                    .text_color(rgb(p.muted))
-                    .child("Not assigned"),
-            );
-        }
-        for name in names {
-            well = well.child(div().text_xs().truncate().child(name));
-        }
-        let title = if pair == 1 {
-            "Link In".to_string()
-        } else {
-            format!("Link {pair} In")
-        };
-        div()
-            .id(SharedString::from(format!("channel-{pair}")))
-            .w(px(width))
-            .flex_shrink_0()
-            .flex()
-            .flex_col()
-            .bg(rgb(p.surface))
-            .border_t_2()
-            .border_color(rgb(accent))
-            .px_3()
-            .py_3()
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .child(div().text_sm().font_weight(FontWeight::MEDIUM).child(title))
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(rgb(p.muted))
-                            .child(format!("{pair:02}")),
-                    ),
-            )
-            .child(
-                div()
-                    .mt_1()
-                    .text_xs()
-                    .text_color(rgb(p.muted))
-                    .child("Linux send"),
-            )
-            .child(
-                div()
-                    .mt_4()
-                    .mb_3()
-                    .h(px(fader_height))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .gap_3()
-                    .child(
-                        div()
-                            .h_full()
-                            .flex()
-                            .flex_col()
-                            .justify_between()
-                            .text_color(rgb(p.muted))
-                            .text_size(px(9.))
-                            .children(
-                                ["0", "−6", "−12", "−24", "−48"]
-                                    .into_iter()
-                                    .map(|label| div().child(label)),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .relative()
-                            .w(px(28.))
-                            .h_full()
-                            .opacity(0.45)
-                            .child(
-                                div()
-                                    .absolute()
-                                    .left(px(12.))
-                                    .top_0()
-                                    .h_full()
-                                    .w(px(4.))
-                                    .rounded_sm()
-                                    .bg(rgb(p.track)),
-                            )
-                            .child(
-                                div()
-                                    .absolute()
-                                    .left_0()
-                                    .top(px(fader_height / 2. - 6.5))
-                                    .w(px(28.))
-                                    .h(px(13.))
-                                    .rounded_sm()
-                                    .border_1()
-                                    .border_color(rgb(p.line))
-                                    .bg(rgb(p.cap))
-                                    .child(div().mt(px(5.)).h(px(2.)).w_full().bg(rgb(p.track))),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .h_full()
-                            .flex()
-                            .gap(px(3.))
-                            .opacity(0.45)
-                            .child(div().h_full().w(px(4.)).bg(rgb(p.track)))
-                            .child(div().h_full().w(px(4.)).bg(rgb(p.track))),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .gap_1()
-                    .mb_2()
-                    .child(div().text_lg().text_color(rgb(p.muted)).child("—"))
-                    .child(div().text_size(px(9.)).text_color(rgb(p.muted)).child("dB")),
-            )
-            .child(
-                Button::new(SharedString::from(format!("send-mute-{pair}")))
-                    .small()
-                    .label("Mute")
-                    .disabled(true),
-            )
-            .child(
-                div()
-                    .mt_3()
-                    .mb_2()
-                    .text_size(px(9.))
-                    .text_color(rgb(p.muted))
-                    .child("APPLICATIONS"),
-            )
-            .child(well)
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |this, _, _, cx| {
-                    this.channel = Some(pair);
-                    cx.notify();
-                }),
-            )
-            .into_any_element()
-    }
-}
 impl Render for Interface {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = self.appearance.colors();
@@ -647,22 +569,66 @@ impl Render for Interface {
                     .iter()
                     .any(|b| b.to_lowercase().contains(&filter))
         });
-        let viewport = f32::from(window.viewport_size().width);
-        let columns = if viewport < 600. { 2. } else { 4. };
-        let width = ((viewport - 28.) / columns - 1.).max(130.);
+        let narrow = f32::from(window.viewport_size().width) < 700.;
         let mut bank = div()
             .id("console-bank")
-            .mx_3()
+            .mx(px(13.))
+            .flex_shrink_0()
             .flex()
-            .flex_wrap()
+            .flex_col()
             .gap(px(1.));
-        for pair in 1..=4 {
-            bank = bank.child(self.console_strip(pair, width, cx));
+        let count = if narrow { 2 } else { 4 };
+        for first in (1..=4u8).step_by(count) {
+            let mut row = div().w_full().flex().flex_nowrap();
+            for pair in first..first + count as u8 {
+                let names = self
+                    .snapshot
+                    .routing
+                    .assignments
+                    .iter()
+                    .filter(|(_, assigned)| **assigned == pair)
+                    .filter_map(|(id, _)| self.snapshot.selected.get(id))
+                    .cloned()
+                    .collect();
+                row = row.child(crate::console::strip(
+                    pair,
+                    names,
+                    if self.snapshot.selected.is_empty() {
+                        "Choose application"
+                    } else if self.snapshot.link.error.is_some() {
+                        "Session stopped"
+                    } else if running {
+                        "Waiting for assignment"
+                    } else {
+                        "Connect to publish"
+                    },
+                    self.appearance.light,
+                    p.channels[(pair - 1) as usize],
+                    cx.listener(move |this, _, window, cx| {
+                        this.channel = Some(pair);
+                        this.catalog_open = !this.catalog_open;
+                        this.fit_drawers(window, cx);
+                        cx.notify();
+                    }),
+                ));
+            }
+            #[cfg(all(feature = "ui-qualification", target_os = "linux"))]
+            {
+                row = row.on_children_prepainted(|bounds, window, _| {
+                    crate::diagnostics::row(&bounds, window)
+                });
+            }
+            bank = bank.child(row);
         }
         let status_label = if running || status == Status::Error {
             status.label()
         } else {
             self.snapshot.startup.label()
+        };
+        let tool_color = if self.appearance.light {
+            0x43515b
+        } else {
+            0xcdd1d7
         };
         let mut body = div()
             .id("linx-window")
@@ -672,27 +638,36 @@ impl Render for Interface {
             .flex_col()
             .bg(rgb(p.background))
             .text_color(rgb(p.text))
-            .text_sm()
+            .text_size(px(14.))
+            .font_family("Segoe UI")
+            .border_1()
+            .border_color(rgb(if self.appearance.light {
+                0xb9c2c2
+            } else {
+                0x3b3d41
+            }))
+            .rounded(px(10.))
             .child(
                 div()
+                    .id("console-header")
                     .flex_shrink_0()
                     .h(px(57.))
-                    .px_5()
+                    .px(px(20.))
                     .flex()
                     .items_center()
-                    .gap_2()
+                    .gap(px(9.))
                     .border_b_1()
-                    .border_color(rgb(p.line))
+                    .border_color(rgb(if self.appearance.light {
+                        0xdce1dc
+                    } else {
+                        0x2d2f32
+                    }))
                     .child(
                         div()
-                            .size(px(31.))
-                            .rounded_md()
-                            .bg(rgb(if self.appearance.light {
-                                0x252b31
-                            } else {
-                                p.background
-                            }))
-                            .p(px(4.))
+                            .size(px(if self.appearance.light { 31. } else { 23. }))
+                            .flex_shrink_0()
+                            .rounded(px(7.))
+                            .when(self.appearance.light, |e| e.bg(rgb(0x252b31)).p(px(5.)))
                             .child(
                                 svg()
                                     .path(icon_path(status))
@@ -703,28 +678,73 @@ impl Render for Interface {
                     .child(
                         div()
                             .text_size(px(19.))
+                            .line_height(px(25.))
                             .font_weight(FontWeight::SEMIBOLD)
-                            .child("LinX"),
+                            .flex()
+                            .children("LinX".chars().enumerate().map(|(index, ch)| {
+                                div()
+                                    .when(index != 0, |e| e.ml(px(-1.14)))
+                                    .child(ch.to_string())
+                            })),
                     )
                     .child(
                         div()
-                            .ml_2()
-                            .pl_3()
+                            .ml(px(4.))
+                            .pl(px(10.))
                             .border_l_1()
                             .border_color(rgb(p.line))
                             .text_size(px(9.))
+                            .line_height(px(13.))
                             .text_color(rgb(p.muted))
-                            .child("CONSOLE"),
+                            .child(tracked("STUDIO", 9., 0.9)),
                     )
                     .child(div().flex_1())
-                    .child(div().size(px(5.)).rounded_full().bg(color(status)))
-                    .child(div().text_xs().text_color(rgb(p.muted)).child(status_label))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(6.))
+                            .mr(px(7.))
+                            .child(div().size(px(5.)).rounded_full().bg(color(status)))
+                            .child(
+                                div()
+                                    .text_size(px(10.))
+                                    .text_color(rgb(p.muted))
+                                    .child(status_label),
+                            ),
+                    )
                     .child(
                         Button::new("session")
                             .ghost()
                             .small()
-                            .label(if running { "Pause" } else { "Connect" })
+                            .h(px(29.))
+                            .px(px(9.))
+                            .border_1()
+                            .border_color(rgb(p.line))
+                            .rounded(px(5.))
+                            .text_color(rgb(tool_color))
                             .disabled(!running && !start)
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(6.))
+                                    .child(
+                                        svg()
+                                            .path(if running {
+                                                "console/pause.svg"
+                                            } else {
+                                                "console/play.svg"
+                                            })
+                                            .size(px(13.))
+                                            .text_color(rgb(tool_color)),
+                                    )
+                                    .child(div().text_size(px(12.)).child(if running {
+                                        "Pause"
+                                    } else {
+                                        "Connect"
+                                    })),
+                            )
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.send(
                                     if running {
@@ -740,76 +760,103 @@ impl Render for Interface {
                         Button::new("settings")
                             .ghost()
                             .small()
-                            .icon(IconName::Settings)
-                            .on_click(cx.listener(|this, _, _, cx| {
+                            .ml(px(7.))
+                            .size(px(29.))
+                            .p_0()
+                            .border_1()
+                            .border_color(rgb(p.line))
+                            .rounded(px(5.))
+                            .text_color(rgb(tool_color))
+                            .child(
+                                svg()
+                                    .path("console/sliders.svg")
+                                    .size(px(13.))
+                                    .text_color(rgb(tool_color)),
+                            )
+                            .on_click(cx.listener(|this, _, window, cx| {
                                 this.settings = !this.settings;
+                                this.fit_drawers(window, cx);
                                 cx.notify();
                             })),
                     ),
             )
             .child(
                 div()
+                    .id("console-subheader")
                     .flex_shrink_0()
-                    .px_5()
-                    .py_3()
+                    .h(px(46.))
+                    .px(px(23.))
                     .flex()
                     .items_center()
                     .justify_between()
-                    .text_size(px(9.))
-                    .text_color(rgb(p.muted))
-                    .child("STUDIO LINK")
-                    .child("Assignments from streaming PC"),
+                    .child(
+                        div()
+                            .text_size(px(9.))
+                            .text_color(rgb(p.channels[0]))
+                            .child(tracked("LINUX SENDS", 9., 1.17)),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(10.))
+                            .text_color(rgb(p.muted))
+                            .child("4 stereo channels"),
+                    ),
             )
             .child(bank)
             .child(
                 div()
+                    .id("console-footer")
                     .flex_shrink_0()
-                    .px_5()
-                    .py_3()
+                    .h(px(42.))
+                    .px(px(21.))
                     .flex()
                     .items_center()
                     .justify_between()
-                    .gap_3()
                     .child(
                         div()
+                            .flex()
+                            .items_center()
+                            .gap(px(7.))
                             .text_size(px(9.))
                             .text_color(rgb(p.muted))
-                            .child("LINUX → STUDIO LINK"),
+                            .child("THIS PC")
+                            .child(
+                                svg()
+                                    .path("console/arrow.svg")
+                                    .size(px(12.))
+                                    .text_color(rgb(p.muted)),
+                            )
+                            .child("STUDIO")
+                            .child(
+                                svg()
+                                    .path("console/arrow.svg")
+                                    .size(px(12.))
+                                    .text_color(rgb(p.muted)),
+                            )
+                            .child("STREAMING PC"),
                     )
                     .child(
-                        div()
-                            .text_size(px(9.))
-                            .text_color(rgb(p.muted))
-                            .child("Gain and meters unavailable"),
-                    ),
-            )
-            .child(
-                div()
-                    .flex_shrink_0()
-                    .px_4()
-                    .pb_2()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .gap_2()
-                    .child(
-                        Switch::new("auto-connect")
-                            .small()
-                            .label("Connect automatically")
-                            .checked(self.snapshot.auto_connect)
-                            .on_change(cx.listener(|this, enabled, _, cx| {
-                                this.send(Command::AutoConnect(*enabled), cx)
-                            })),
-                    )
-                    .child(
-                        Button::new("applications")
+                        Button::new("mini-view")
                             .ghost()
                             .small()
-                            .label(format!("Applications · {}", self.snapshot.selected.len()))
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.catalog_open = !this.catalog_open;
-                                cx.notify();
-                            })),
+                            .h(px(14.))
+                            .p_0()
+                            .disabled(true)
+                            .tooltip("Mini view is not implemented yet")
+                            .text_color(rgb(p.channels[0]))
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(5.))
+                                    .child(
+                                        svg()
+                                            .path("console/expand.svg")
+                                            .size(px(12.))
+                                            .text_color(rgb(p.channels[0])),
+                                    )
+                                    .child(div().text_size(px(10.)).child("Mini view")),
+                            ),
                     ),
             );
         if self.settings {
@@ -845,6 +892,32 @@ impl Render for Interface {
                     .flex()
                     .flex_col()
                     .gap_2()
+                    .child(
+                        Switch::new("auto-connect")
+                            .small()
+                            .label("Connect automatically while LinX is open")
+                            .checked(self.snapshot.auto_connect)
+                            .on_change(cx.listener(|this, enabled, _, cx| {
+                                this.send(Command::AutoConnect(*enabled), cx)
+                            })),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .text_color(rgb(p.muted))
+                            .child("Gain, mute and meters are not connected yet."),
+                    )
+                    .child(
+                        Button::new("applications-settings")
+                            .ghost()
+                            .small()
+                            .label("Applications")
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.catalog_open = !this.catalog_open;
+                                this.fit_drawers(window, cx);
+                                cx.notify();
+                            })),
+                    )
                     .child(div().text_xs().text_color(rgb(p.muted)).child("Appearance"))
                     .child(
                         div()
@@ -877,8 +950,11 @@ impl Render for Interface {
             );
         }
         if let Some(message) = self
-            .feedback
+            .snapshot
+            .link
+            .error
             .as_ref()
+            .or(self.feedback.as_ref())
             .or(self.snapshot.preference_error.as_ref())
             .or(self
                 .snapshot
@@ -892,7 +968,11 @@ impl Render for Interface {
                     .px_4()
                     .pb_2()
                     .text_xs()
-                    .text_color(rgb(p.muted))
+                    .text_color(if self.snapshot.link.error.is_some() {
+                        color(Status::Error)
+                    } else {
+                        rgb(p.muted)
+                    })
                     .child(model::label(message)),
             );
         }
@@ -955,7 +1035,8 @@ impl Render for Interface {
                                         "Play audio in an app to see it here."
                                     },
                                 ))
-                            }),
+                            })
+                            .test_support(),
                     ),
             );
         }
@@ -979,6 +1060,7 @@ fn launch(
         crate::qualification::Configuration,
     >,
 ) {
+    crate::shutdown::install();
     application().with_assets(Assets).run(move |cx| {
         #[cfg(all(feature = "studio-session-test", target_os = "linux"))]
         if probe.as_ref().is_some_and(|probe| probe.studio) {
@@ -1021,7 +1103,9 @@ fn launch(
                     #[cfg(all(feature = "ui-qualification", target_os = "linux"))]
                     let view = {
                         let mut view = view;
-                        if probe.is_some() { view.catalog_open = true; }
+                        if probe.is_some() {
+                            view.catalog_open = true;
+                        }
                         view.probe = probe.map(crate::qualification::Probe::new);
                         view
                     };

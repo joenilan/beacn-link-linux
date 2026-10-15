@@ -1,0 +1,98 @@
+# Native LinX component control
+
+The optional `native-control` feature exposes the actual GPUI application through
+an explicitly enabled Linux Unix socket. It uses the normal native worker and
+real GPUI click/text/scroll handlers. There is no separate routing implementation,
+browser server, OS cursor movement or keyboard injection into another app.
+
+Build with `--features studio,native-control` to include the physical backend and
+control interface. Normal builds and launches without `--control-socket` have no
+endpoint. Example on the normal Linux desktop account:
+
+```sh
+linx --studio --control-socket "$XDG_RUNTIME_DIR/linx-control.sock"
+```
+
+The absolute parent directory must already be private, canonical and owned by
+that account. The socket is mode 0600; Linux peer credentials must have the same
+effective UID. Existing paths are refused. Shutdown removes only the retained
+socket inode. No network listener, stored credentials or SSH configuration is
+created. This is a local development control interface, not an MCP server.
+
+## Protocol
+
+Send one JSON object per line. Every request needs a string/number `id` and `op`.
+Requests are capped at 16 KiB, responses at 2 MiB, the queue at eight entries and
+the request lifetime at five seconds. The UI rejects expired requests before
+dispatch. One controller is served at a time; an idle or incomplete client is
+disconnected after five seconds so it cannot monopolize the listener. The target
+is the retained app window handle rather than the first window in a list.
+A response to an event means it was
+dispatched; read `state` to observe asynchronous worker completion or failure.
+
+```json
+{"id":1,"op":"state"}
+{"id":2,"op":"pause"}
+{"id":3,"op":"click","target":"applications"}
+{"id":4,"op":"text","target":"search-input","text":"Firefox"}
+```
+
+Successful UI responses use `{"id":1,"result":{"ok":true,"value":...}}`;
+UI refusal uses `result.ok=false` and `result.error`. Framing/transport errors
+have a top-level `error`. Unknown, hidden, missing and disabled components are
+refused. The component list reports current bounds, visibility and enabled state;
+it is a curated inventory of controls rather than arbitrary memory inspection.
+
+| Operation | Behavior |
+| --- | --- |
+| `state`, `components` | Actual catalog/stream identities, selections, assignments, phase, startup state, errors, cleanup, completed cycles and visible component bounds |
+| `click` with `target` | Dispatch through the named native component's GPUI handler |
+| `text` with `target`, `text` | Replace the search or an expanded published-name input, up to 1024 bytes |
+| `scroll` with `target`, `delta` | Send a bounded vertical wheel event inside the app |
+| `resize` with `width`, `height` | Resize this window within 360–1600 by 400–1200 |
+| `screenshot` | Capture only this app's retained window; returns the private PPM path |
+| `pause` | Queue the same native Stop command as Pause, including while idle |
+| `quit` | Join/release the native worker, then close the application |
+
+Typical IDs are `session`, `settings`, `applications`, `applications-2` through
+`applications-4`, `applications-settings`, `auto-connect`, `theme-light`,
+`theme-dark`, `accent-mint/blue/violet/amber/rose`, `search-input` and
+`application-list`. Application rows expose `select-<current application id>`,
+`details-<id>`, and expanded `name-<id>` / `save-<id>`. Discover IDs from `state`;
+do not bind a future process or stream by an old numeric ID or display name.
+Mini, gain, mute and audio meters remain unwired.
+
+The controller must collect/remove the preceding screenshot before requesting
+another. The app never overwrites that path or accepts a caller-selected output
+path. GPU readback is attempted first, then the app's own X11/Xwayland handle;
+unsupported Wayland capture returns an error. It never captures the whole desktop.
+
+Automatic connection can be enabled in the user's preferences. For UI-only work,
+send `pause` and observe `startup=Paused` **before selecting an application**.
+Selecting while automatic connection is armed can start the native hardware
+session. App control does not grant access to BEACN App on another computer or
+manufacture received assignment records.
+
+## Current evidence and remaining boundary
+
+On 2026-10-15 the actual desktop main was driven through this endpoint to open
+Applications, edit/search/select/remove Firefox, expand details, change both
+themes and all five accents, and capture its own window. It stayed paused with no
+USB/audio start; desktop and tracked persistent-state comparison matched exactly.
+Transport tests cover local round-trip, private socket mode, disabled-by-default
+startup, preserved occupied paths and oversized requests. Focused native checks
+cover all four planned assignments and cleanup; these are not physical playback
+acceptance of the new pair-switching path.
+
+The prior owner attempt stopped after its selected roster changed, before any
+assignment was accepted. Logs then lacked the invalidating selection event;
+the precise cause remains unknown. Revocation now records old/new stream identity
+metadata, and explicit selection commands are logged separately. The UI retains
+the session error above routine selection feedback. Do not claim that this has
+already fixed or reproduced the owner's physical failure.
+
+Reference architecture: Haiwire's separated native control transport/UI dispatch
+(`experiments/gpui-window/src/control_stdio.rs`, `control_window.rs`) and explicit
+opt-in control documented in its `docs/INTEGRATIONS/native-control-toggle.md`.
+LinX uses a Linux same-user socket and its pinned GPUI Kit APIs rather than
+copying Windows named-pipe or unrelated application code.

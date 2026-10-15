@@ -72,6 +72,16 @@ Develop runtime behavior in the native Rust/C owners and actual application.
 Scripts may build, snapshot and collect evidence; they must not stand in for
 application routing, playback, device/session ownership or a usable app lifecycle.
 
+## Delegation and model cost
+Use Luna (`gpt-6-luna`) for bounded independent reviews, routine investigation,
+mechanical checks and other delegated work it can handle. Select it explicitly;
+do not silently inherit a higher-cost parent model for every subagent. Reserve
+higher-cost models for tasks whose complexity requires them and explain an
+escalation. Delegate useful independent work when it improves progress or review,
+without creating agents or duplicate work merely to demonstrate delegation.
+State the delegated task and model concisely. Keep agents away from live hardware,
+shared runtime mutations and overlapping edits unless specifically coordinated.
+
 ## Private material
 Do not commit proprietary binaries, raw captures, secrets, device serials,
 machine-specific endpoint GUIDs, host addresses or SSH configuration/key paths.

@@ -1,4 +1,18 @@
 //! Owner-approved Console palette. Session status colors belong to app-core.
+pub fn tool_svg(path: &str) -> Option<String> {
+    let shape = match path {
+        "console/play.svg" => "m8 5 11 7-11 7Z",
+        "console/pause.svg" => "M8 5v14M16 5v14",
+        "console/sliders.svg" => "M5 3v4m0 4v10M12 3v10m0 4v4M19 3v2m0 4v12M2 7h6m1 10h6m1-12h6",
+        "console/expand.svg" => "M14 4h6v6m0-6-8 8M10 20H4v-6m0 6 8-8",
+        "console/arrow.svg" => "M4 12h15m-6-6 6 6-6 6",
+        "console/speaker.svg" => "M11 5 6 9H3v6h3l5 4ZM15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14",
+        _ => return None,
+    };
+    Some(format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path d=\"{shape}\" fill=\"none\" stroke=\"black\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>"
+    ))
+}
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub enum Accent {
     #[default]

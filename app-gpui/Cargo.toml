@@ -10,6 +10,7 @@ default = ["native-catalog", "status-tray"]
 studio = ["native-catalog", "beacn-linx-core/desktop-session-test"]
 native-catalog = ["beacn-linx-core/native-catalog"]
 status-tray = ["beacn-linx-core/status-tray"]
+native-control = ["gpui-kit/test-support"]
 private-session-test = ["native-catalog", "beacn-linx-core/private-session-test"]
 ui-qualification = ["private-session-test", "gpui-kit/test-support"]
 studio-session-test = ["ui-qualification", "beacn-linx-core/studio-session-test"]
@@ -23,6 +24,7 @@ beacn-link-protocol = { path = ".." }
 gpui-kit = "=0.7.3"
 anyhow = "1"
 raw-window-handle = "=0.6.2"
+serde_json = "1"
 
 [workspace]
 

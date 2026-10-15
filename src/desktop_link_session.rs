@@ -15,17 +15,18 @@ use std::{
 /// A native lease must mint its own fresh sealed proof and release only its handles.
 pub trait DesktopLease {
     fn publication(&mut self, inventory: &Inventory) -> Result<DesktopRoutePublication, String>;
-    fn apply_first_pair(&mut self) -> Result<(), String>;
+    fn apply_pair(&mut self, pair: u8) -> Result<(), String>;
     fn stop(&mut self) -> Result<(), String>;
 }
 /// One selected existing desktop stream and one explicitly selected Studio.
 /// Construction opens only the catalog-pinned desktop connection; audio waits
-/// for a received, planner-resolved first-pair assignment.
+/// for a received, planner-resolved stereo-pair assignment.
 pub struct StudioDesktopLease {
     target: DesktopTarget,
     sysfs: PathBuf,
     expected: Vec<u8>,
     hardware: crate::executor::ObjectRef,
+    attached: bool,
 }
 impl StudioDesktopLease {
     /// Discover only a unique supported Studio, then pin descriptor bytes and a
@@ -33,26 +34,44 @@ impl StudioDesktopLease {
     pub fn discover(service: &ApplicationService) -> Result<Self, String> {
         use std::{fs, io::Read};
         let mut devices = Vec::new();
-        for entry in fs::read_dir("/sys/bus/usb/devices").map_err(|e| e.to_string())?.take(512) {
+        for entry in fs::read_dir("/sys/bus/usb/devices")
+            .map_err(|e| e.to_string())?
+            .take(512)
+        {
             let path = entry.map_err(|e| e.to_string())?.path();
             if fs::read_to_string(path.join("idVendor")).is_ok_and(|s| s.trim() == "33ae")
-                && fs::read_to_string(path.join("idProduct")).is_ok_and(|s| s.trim() == "4003") {
+                && fs::read_to_string(path.join("idProduct")).is_ok_and(|s| s.trim() == "4003")
+            {
                 devices.push(path.canonicalize().map_err(|e| e.to_string())?);
             }
         }
-        if devices.len() != 1 { return Err("Connect one BEACN Studio to this Linux PC.".into()); }
+        if devices.len() != 1 {
+            return Err("Connect one BEACN Studio to this Linux PC.".into());
+        }
         let sysfs = devices.remove(0);
         let mut expected = Vec::new();
-        fs::File::open(sysfs.join("descriptors")).map_err(|e| e.to_string())?
+        fs::File::open(sysfs.join("descriptors"))
+            .map_err(|e| e.to_string())?
             .take((crate::usb_descriptors::MAX_DESCRIPTOR_BYTES + 1) as u64)
-            .read_to_end(&mut expected).map_err(|e| e.to_string())?;
-        let mut lease = Self::connect(service, &sysfs, &expected, crate::executor::ObjectRef { id: 0, serial: 0 }, true)?;
+            .read_to_end(&mut expected)
+            .map_err(|e| e.to_string())?;
+        let mut lease = Self::connect(
+            service,
+            &sysfs,
+            &expected,
+            crate::executor::ObjectRef { id: 0, serial: 0 },
+            true,
+        )?;
         lease.hardware = lease.target.studio_hardware(&sysfs)?;
         lease.target.manage_playback_until_stop();
         Ok(lease)
     }
-    pub fn sysfs(&self) -> &Path { &self.sysfs }
-    pub fn descriptors(&self) -> &[u8] { &self.expected }
+    pub fn sysfs(&self) -> &Path {
+        &self.sysfs
+    }
+    pub fn descriptors(&self) -> &[u8] {
+        &self.expected
+    }
     pub fn connect(
         service: &ApplicationService,
         sysfs: &Path,
@@ -80,6 +99,7 @@ impl StudioDesktopLease {
             sysfs: sysfs.to_owned(),
             expected: expected.to_vec(),
             hardware,
+            attached: false,
         })
     }
     pub fn server_pid(&self) -> u32 {
@@ -93,10 +113,16 @@ impl DesktopLease for StudioDesktopLease {
     fn publication(&mut self, inventory: &Inventory) -> Result<DesktopRoutePublication, String> {
         self.target.publication(inventory)
     }
-    fn apply_first_pair(&mut self) -> Result<(), String> {
+    fn apply_pair(&mut self, pair: u8) -> Result<(), String> {
+        self.target.set_pair(pair)?;
+        if self.attached {
+            return Ok(());
+        }
         self.target.start()?;
         self.target
-            .attach_studio(&self.sysfs, &self.expected, self.hardware, true)
+            .attach_studio(&self.sysfs, &self.expected, self.hardware, true)?;
+        self.attached = true;
+        Ok(())
     }
     fn stop(&mut self) -> Result<(), String> {
         self.target.stop()
@@ -167,11 +193,17 @@ impl<L: DesktopLease, T: OwnedControlTransport> DesktopLinkSession<L, T> {
         transport: impl FnOnce(&L, &Inventory, Options) -> Result<T, OpenFailure>,
     ) -> Result<(), String> {
         options.validate()?;
-        self.start_with(service, Some(options.cycles), ManagedOptions {
-            poll_policy: options.poll_policy,
-            names: options.names,
-            initialization_timeout: options.initialization_timeout,
-        }, factory, |routes, inventory| transport(routes, inventory, options))
+        self.start_with(
+            service,
+            Some(options.cycles),
+            ManagedOptions {
+                poll_policy: options.poll_policy,
+                names: options.names,
+                initialization_timeout: options.initialization_timeout,
+            },
+            factory,
+            |routes, inventory| transport(routes, inventory, options),
+        )
     }
     /// Explicit app lifetime: retain the same sealed desktop/USB owners until
     /// Pause, Quit, stream loss or failed proof. Bounded callers stay bounded.
@@ -182,9 +214,16 @@ impl<L: DesktopLease, T: OwnedControlTransport> DesktopLinkSession<L, T> {
         factory: impl FnOnce() -> Result<L, String>,
         transport: impl FnOnce(&L, &Inventory, ManagedOptions) -> Result<T, OpenFailure>,
     ) -> Result<(), String> {
-        Options { cycles: 1, poll_policy: options.poll_policy, names: options.names,
-            initialization_timeout: options.initialization_timeout }.validate()?;
-        self.start_with(service, None, options, factory, |routes, inventory| transport(routes, inventory, options))
+        Options {
+            cycles: 1,
+            poll_policy: options.poll_policy,
+            names: options.names,
+            initialization_timeout: options.initialization_timeout,
+        }
+        .validate()?;
+        self.start_with(service, None, options, factory, |routes, inventory| {
+            transport(routes, inventory, options)
+        })
     }
     fn start_with(
         &mut self,
@@ -290,14 +329,19 @@ impl<L: DesktopLease, T: OwnedControlTransport> DesktopLinkSession<L, T> {
             .active
             .as_ref()
             .ok_or("Desktop session is not running.")?;
-        if service.current().map(|c| &c.core) != Some(&a.core)
-            || service.selection_revision() != a.selection_revision
+        if service.current().map(|c| &c.core) != Some(&a.core) {
+            return Err(
+                "The Linux audio server changed. Select the application again and Connect.".into(),
+            );
+        }
+        if service.selected().is_empty() {
+            return Err("The selected application was removed or its audio stream stopped. Select its current stream and Connect again.".into());
+        }
+        if service.selection_revision() != a.selection_revision
             || service.inventory().map(|i| &i.applications)
                 != a.tracker.current().map(|i| &i.applications)
         {
-            return Err(
-                "Desktop selected roster or core changed; explicit recovery required.".into(),
-            );
+            return Err("The selected application, published name or audio stream changed. Review the selection and Connect again.".into());
         }
         Ok(())
     }
@@ -363,18 +407,18 @@ impl<L: DesktopLease, T: OwnedControlTransport> DesktopLinkSession<L, T> {
                         "assignment blocked"
                     } else {
                         let routes = plan.proposed_routes().collect::<Vec<_>>();
-                        if routes.len() != 1 || routes[0].link.assignment() != 1 {
+                        if routes.len() != 1 || !(1..=4).contains(&routes[0].link.assignment()) {
                             return Err(
-                                "Desktop physical qualification supports first Link In only."
-                                    .into(),
+                                "Desktop routing requires one assignment to Link In 1–4.".into()
                             );
                         }
-                        if assignment == 0 {
-                            a.routes.apply_first_pair()?;
+                        let requested = routes[0].link.assignment();
+                        if assignment != requested {
+                            a.routes.apply_pair(requested)?;
                             assignment = a.routes.publication(inventory)?.records()[0]
                                 .assignment
                                 .byte();
-                            if assignment != 1 {
+                            if assignment != requested {
                                 return Err("Desktop applied assignment not verified.".into());
                             }
                         }

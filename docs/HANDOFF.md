@@ -1,6 +1,121 @@
 # LinX continuation handoff
 Updated 2026-10-15 UTC. Resume development; do not restart the investigation.
 
+## Latest checkpoint: native component control and four-pair desktop routing
+
+The owner has left and authorized agent control of LinX for further development.
+Do not start unattended physical listening/assignment checks. Use the new
+[native control interface](native-control.md) to drive the actual app without
+moving their mouse. It is opt-in, same-UID, private Linux Unix socket control,
+not an extra review server or Python session owner. State includes component
+bounds, actual stream identities, selections, assignments, phase/error/cleanup.
+Named click/text/scroll, app-only screenshot, resize, Pause and joined Quit use
+the actual GPUI/native paths. The default build/launch has no control endpoint.
+
+The owner tried selecting Firefox and assigning it again. Diagnostic main
+`751f691ae9f70629cec5e5d4d38765b80a343806076d2cd4f433183a52dd18b9`
+stopped at cycle 10 because its selected roster/core changed; selected became
+empty before a received assignment, PCM checks remained zero and release was
+clean. The log cannot distinguish the original revocation from an explicit
+Remove; do not invent the cause. New logs distinguish selection commands and
+revocation old/new stream metadata, and errors are no longer obscured by routine
+"Selection updated" feedback. Empty wells distinguish selected/awaiting/stopped
+from truly unselected. The actual underlying owner-reported failure is not yet
+reproduced or claimed fixed.
+
+Desktop routing now accepts one live stereo application assigned to any of the
+four Link In pairs and switches the retained bridge pair on a changed received
+assignment. It publishes the new pair only after native bridge/PCM/graph checks.
+Only retained link proxies are destroyed; disappearance is verified by serial
+before replacement. Confirmed detached ledger records are retired by exact
+pointer to prevent accumulation through repeated switches. Pending/foreign
+objects cannot authorize retirement. Zero/unresolved records preserve the
+existing documented semantics. Multi-application desktop routing is still absent.
+
+The USB transport's independent PCM proof now receives the managed desktop
+lifetime too; previously only the target-side proof lifted its 4096-check count
+fuse. Bounded and other constructors keep their limits. Identity, format, held-FD,
+clock/stall and ownership checks remain. This is preventive, not the cause of
+the cycle-10 owner failure.
+
+The fixed source/build workspace and target cache were reused, without new
+source trees, branches, servers or binary copies. The real main is compiled with
+`studio,ui-qualification,native-control`; final build/test receipts and owner
+runtime state are retained privately in the fixed LinX workspace. Main SHA256:
+`9b15818ff782e8ebef59743a491142433a33fccee8296b7672557f46f7ae566c`.
+The final exact native tree passes 10 desktop-session, eight desktop-target,
+three PCM-guard and two USB policy/guard checks; the independent control transport
+passes four checks, including an idle client yielding the listener. The reviewed
+UI dispatcher pins its actual app window and partial screenshot writes remove
+only their own inode; previous completed captures remain protected. Through the
+actual desktop app, 37 native requests exercise
+drawers, search/name editing, Firefox Select/Remove, both themes and five accents
+while paused. Desktop and tracked persistent state match exactly. Additional
+negative requests refuse disabled/missing controls, invalid resize/input/ops and
+overwriting the existing screenshot. Native `quit` joins the worker, exits the
+process and removes its owned socket; desktop/state match exactly afterward.
+The same binary is reopened on the normal desktop and left paused, no selections.
+The app-only control screenshot was captured and visually inspected. About
+31 GiB remains free; no audio/USB session was started by these control checks.
+Keep the app paused while selecting during unattended UI work: saved automatic
+connection is enabled, so selection without Pause can open the device.
+
+Next: reproduce the owner failure with the new invalidation diagnostics, then
+confirm output and live reassignment through all four pairs while the owner listens.
+All-four physical playback/switching and durable stream restart/reconnect remain
+unaccepted in this newest main. Actions stay disabled; use [skip ci].
+
+## Latest checkpoint: corrected Console on the actual desktop; owner review pending
+
+The owner rejected the prior visual port and observed Link 4 wrapped below the
+other strips in the real desktop app. Earlier isolated images did not establish
+that actual window's appearance. Do not claim 1:1 approval. Two explicitly selected
+Luna subagents provided a bounded visual review and the strip component; the root
+agent integrated, compiled, captured and inspected the result. AGENTS now requires
+Luna for suitable bounded delegated work rather than inheriting a costly parent.
+
+Console now uses native equal-flex, non-wrapping rows, with explicit two-row narrow
+layout below 700 pixels. It no longer derives fixed strip widths from the outer
+viewport. The actual desktop frame reports the approved four strips exactly:
+x=14/204/394/584, y=104, each 190x420, at viewport 788x568. Header/subheader/bank/
+footer geometry follows the original reference, including 174px faders, all six
+scale labels, source/category titles, thin separators, bevelled caps, source chips,
+the original SVG tool/speaker/arrows and one footer. Settings holds automatic
+connection/appearance; clicking an application well opens real selection. Drawers
+expand a compact window within the display bounds and restore its original size
+when closed, unless the owner has resized it. Gain/mute/meters and Mini remain
+unwired; meters are unlit and dB is a dash. No false gains or routing records.
+
+The reference uses Segoe UI/Consolas. Owner-provided system font files are installed
+privately on the test laptop and hashed outside Git, not committed or included in
+a distributable. This establishes the local review font environment, not portable
+font packaging. Light palette support remains, but this batch's inspected frame
+is Dark/Mint; do not claim a new full appearance/widget matrix.
+
+The existing fixed source/build workspace was reused. Actual main with `studio`
+and developer capture support built in 2.87 seconds; SHA256:
+`68db20e4101ea40d24b9edecf2eb06d8b07b6ea30ef3b2a35c0408261c72de1e`.
+`--capture-frame` is developer-feature-only and captures only this app's window.
+Linux GPU scene readback is unsupported, so the diagnostic uses its exact retained
+X11 handle, not another window or whole desktop. A normal desktop Xwayland display
+was available; no VNC/display/review server was installed. Native SIGTERM/SIGINT now
+requests the same worker join/release as Quit instead of abrupt termination.
+
+The actual main passed read-only native render/normal-signal-close: full desktop/
+settings/state exact, owned catalog configs restored, no USB/audio. The owner then
+closed the old Wayland app normally. The new main was atomically installed and
+reopened on their normal desktop with `--studio`, no selection or automated audio,
+and its own desktop window captured/inspected. Current app stays open for review.
+No new hardware playback acceptance or design approval was reported. Existing
+scripted widget sequences predate the moved controls; update their interactions
+when next needed rather than claiming they passed on this tree.
+
+No review servers are running. Fixed current source/app/logs are retained, about
+32 GiB free remains, and previous render attempts are compactly archived instead
+of making new trees or binary copies. Next: owner review/direct native app use;
+fix any remaining parity or runtime issue in this same app. Do not restart audio
+checks without fresh readiness or silently substitute a test fixture for the app.
+
 ## Latest checkpoint: actual Studio-enabled LinX executable open for owner testing
 
 The owner prioritizes a usable native app over further scripted test cycles.

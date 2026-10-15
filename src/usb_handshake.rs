@@ -181,6 +181,18 @@ impl Publication {
     pub(crate) fn verified_routes(&self) -> bool {
         self.verified_routes
     }
+    /// Only the explicit managed desktop constructor grants an app lifetime to
+    /// its independent PCM guard. Other publication constructors stay bounded.
+    pub(crate) fn managed_desktop_lifetime(&self) -> bool {
+        #[cfg(all(feature = "native-desktop-target", target_os = "linux"))]
+        {
+            self.desktop && self.periodic && self.verified_routes && self.remaining.is_none()
+        }
+        #[cfg(not(all(feature = "native-desktop-target", target_os = "linux")))]
+        {
+            false
+        }
+    }
 }
 #[derive(Clone, PartialEq, Eq)]
 pub struct Observation {
@@ -754,6 +766,26 @@ impl<B: Backend> Drop for Handshake<B> {
 #[cfg(test)]
 mod playback_tests {
     use super::*;
+    #[cfg(all(feature = "native-desktop-target", target_os = "linux"))]
+    #[test]
+    fn only_managed_desktop_policy_lifts_the_transport_pcm_count_limit() {
+        let inventory =
+            crate::snapshot::inventory_from_tsv(1, "test\ttest\tstream\tlive\n").unwrap();
+        let policy = crate::session::PollPolicy::ReportRejectedMarker;
+        assert!(Publication::managed_desktop(&inventory, policy)
+            .unwrap()
+            .managed_desktop_lifetime());
+        assert!(!Publication::bounded_desktop(&inventory, 1, policy)
+            .unwrap()
+            .managed_desktop_lifetime());
+        assert!(!Publication::managed_selected(&inventory, policy)
+            .unwrap()
+            .managed_desktop_lifetime());
+        assert!(!Publication::from_inventory(&inventory)
+            .unwrap()
+            .with_verified_routes()
+            .managed_desktop_lifetime());
+    }
     struct Fake {
         current: Observation,
         valid: bool,

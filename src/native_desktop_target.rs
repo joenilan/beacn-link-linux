@@ -120,16 +120,20 @@ unsafe extern "C" {
         session: *mut c_void,
         hardware: *const Receipt,
         card: u32,
+        pair: c_int,
         owner: *const c_char,
         links: *mut Receipt,
         adapter: *mut Receipt,
     ) -> c_int;
+    fn bcl_desktop_switch_pair(session: *mut c_void, pair: c_int, links: *mut Receipt) -> c_int;
     fn bcl_desktop_bridge_check(session: *mut c_void) -> c_int;
     fn bcl_desktop_adapter_ready(session: *mut c_void) -> c_int;
     #[cfg(all(test, feature = "native-test-faults"))]
     fn bcl_desktop_test_metadata_guards() -> c_int;
     #[cfg(all(test, feature = "native-test-faults"))]
     fn bcl_desktop_test_core_identity() -> c_int;
+    #[cfg(all(test, feature = "native-test-faults"))]
+    fn bcl_desktop_test_pair_mapping() -> c_int;
     #[cfg(feature = "native-test-faults")]
     fn bcl_desktop_test_fail_after_target_echo(session: *mut c_void) -> c_int;
 }
@@ -228,6 +232,7 @@ pub struct DesktopTarget {
     bridge_links: BTreeSet<ObjectRef>,
     adapter: Option<ObjectRef>,
     physical: Option<DesktopPlayback>,
+    pair: u8,
     managed_playback: bool,
     expected_apps: Vec<crate::planner::Application>,
     proof_epoch: Rc<Cell<u64>>,
@@ -246,6 +251,16 @@ impl DesktopPlayback {
         Ok(())
     }
 }
+fn publication_pair(pair: u8, bridge_verified: bool) -> Result<u8, String> {
+    if !bridge_verified {
+        return Ok(0);
+    }
+    if (1..=4).contains(&pair) {
+        Ok(pair)
+    } else {
+        Err("Desktop publication pair is unsupported.".into())
+    }
+}
 impl DesktopTarget {
     pub fn manage_playback_until_stop(&mut self) {
         self.managed_playback = true;
@@ -254,17 +269,32 @@ impl DesktopTarget {
     /// only; the retained connection and the later bridge revalidate identity.
     pub fn studio_hardware(&self, sysfs: &Path) -> Result<ObjectRef, String> {
         let selected = sysfs.canonicalize().map_err(|e| e.to_string())?;
-        if !selected.starts_with("/sys/devices") { return Err("Invalid Studio sysfs path.".into()); }
+        if !selected.starts_with("/sys/devices") {
+            return Err("Invalid Studio sysfs path.".into());
+        }
         let mut cards = Vec::new();
         for entry in fs::read_dir("/sys/class/sound").map_err(|e| e.to_string())? {
             let entry = entry.map_err(|e| e.to_string())?;
             let name = entry.file_name();
-            let Some(number) = name.to_str().and_then(|n| n.strip_prefix("card")).and_then(|n| n.parse::<u32>().ok()) else { continue; };
-            if entry.path().join("device").canonicalize().is_ok_and(|p| p.starts_with(&selected)) {
+            let Some(number) = name
+                .to_str()
+                .and_then(|n| n.strip_prefix("card"))
+                .and_then(|n| n.parse::<u32>().ok())
+            else {
+                continue;
+            };
+            if entry
+                .path()
+                .join("device")
+                .canonicalize()
+                .is_ok_and(|p| p.starts_with(&selected))
+            {
                 cards.push(number);
             }
         }
-        if cards.len() != 1 { return Err("Studio ALSA card absent or ambiguous.".into()); }
+        if cards.len() != 1 {
+            return Err("Studio ALSA card absent or ambiguous.".into());
+        }
         let mut receipt = Receipt::default();
         if unsafe { bcl_desktop_find_studio(self.session, cards[0], &mut receipt) } != 0 {
             return Err("Studio playback endpoint absent or ambiguous.".into());
@@ -405,6 +435,7 @@ impl DesktopTarget {
             bridge_links: Default::default(),
             adapter: None,
             physical: None,
+            pair: 1,
             managed_playback: false,
             expected_apps,
             proof_epoch: Rc::new(Cell::new(0)),
@@ -561,7 +592,9 @@ impl DesktopTarget {
         }
         let mut proof = PinnedPlayback::pin(&selected, self.server)
             .map_err(|_| "Selected desktop Studio PCM preflight refused.")?;
-        if self.managed_playback { proof.manage_until_stop(); }
+        if self.managed_playback {
+            proof.manage_until_stop();
+        }
         let card = proof.card();
         self.physical = Some(DesktopPlayback {
             proof,
@@ -576,6 +609,7 @@ impl DesktopTarget {
                 self.session,
                 &hardware.into(),
                 card,
+                self.pair as c_int,
                 token.as_ptr(),
                 links.as_mut_ptr(),
                 &mut adapter,
@@ -625,6 +659,57 @@ impl DesktopTarget {
     pub fn physical_stats(&self) -> Option<(u32, u64)> {
         self.physical.as_ref().map(|p| p.proof.stats())
     }
+    /// Select one of the four verified stereo pairs. Before Studio attachment
+    /// this records the requested pair; during an attached lease it replaces
+    /// the exact two retained bridge links and verifies their new destinations.
+    pub fn set_pair(&mut self, pair: u8) -> Result<(), String> {
+        self.proof_epoch.set(0);
+        if !(1..=4).contains(&pair) || self.failed || self.cleanup.is_some() {
+            return Err("Desktop stereo-pair change needs a current target lease.".into());
+        }
+        if self.physical.is_none() {
+            self.pair = pair;
+            return Ok(());
+        }
+        if self.sink.is_none() {
+            return Err("Desktop pair switch needs an active target sink.".into());
+        }
+        if pair == self.pair {
+            return self.check();
+        }
+
+        self.failed = true;
+        if unsafe { bcl_desktop_check(self.session) } != 0
+            || unsafe { bcl_desktop_bridge_check(self.session) } != 0
+        {
+            return Err("Desktop pair switch refused by current route proof.".into());
+        }
+        let mut links = [Receipt::default(); 2];
+        if unsafe { bcl_desktop_switch_pair(self.session, pair as c_int, links.as_mut_ptr()) } != 0
+        {
+            return Err("Desktop stereo-pair switch was not verified.".into());
+        }
+
+        // Record fresh C-owner serial receipts before any later check can fail,
+        // so stop() can still reconcile precisely what the C owner now owns.
+        self.bridge_links = links.into_iter().map(ObjectRef::from).collect();
+        self.pair = pair;
+        let physical = self.physical.as_mut().expect("checked attached playback");
+        physical.binding()?;
+        physical.proof.validate().map_err(|_| {
+            format!(
+                "Desktop Studio PCM proof refused; {}",
+                physical.proof.diagnostic()
+            )
+        })?;
+        let observed = self.observe()?;
+        self.conserved(&observed.graph)?;
+        if unsafe { bcl_desktop_bridge_check(self.session) } != 0 {
+            return Err("Desktop stereo-pair bridge changed after switch.".into());
+        }
+        self.failed = false;
+        Ok(())
+    }
     pub(crate) fn server_pid(&self) -> u32 {
         self.server
     }
@@ -639,16 +724,17 @@ impl DesktopTarget {
             {
                 return Err("Desktop publication roster changed or lease failed.".into());
             }
-            let assignment = if self.sink.is_some() {
+            let bridge_verified = if self.sink.is_some() {
                 if self.physical.is_none() || self.adapter.is_none() || self.bridge_links.len() != 2
                 {
                     return Err("Desktop publication requires the verified physical bridge.".into());
                 }
                 self.check()?;
-                1
+                true
             } else {
-                0
+                false
             };
+            let assignment = publication_pair(self.pair, bridge_verified)?;
             let observed = self.observe()?;
             self.conserved(&observed.graph)?;
             if observed.inventory.applications != self.expected_apps
@@ -742,6 +828,21 @@ mod tests {
             id,
             serial: id as u64 + 100,
         }
+    }
+    #[cfg(feature = "native-test-faults")]
+    #[test]
+    fn native_stereo_pair_indices_cover_exactly_four_stereo_outputs() {
+        assert_eq!(unsafe { bcl_desktop_test_pair_mapping() }, 11);
+    }
+    #[test]
+    fn publication_reports_only_a_verified_selected_pair() {
+        assert_eq!(publication_pair(1, false), Ok(0));
+        assert_eq!(publication_pair(4, false), Ok(0));
+        for pair in 1..=4 {
+            assert_eq!(publication_pair(pair, true), Ok(pair));
+        }
+        assert!(publication_pair(0, true).is_err());
+        assert!(publication_pair(5, true).is_err());
     }
     fn fixture() -> GraphSnapshot {
         GraphSnapshot {

@@ -37,14 +37,14 @@ impl DesktopLease for Lease {
             self.nonce,
         ))
     }
-    fn apply_first_pair(&mut self) -> Result<(), String> {
+    fn apply_pair(&mut self, pair: u8) -> Result<(), String> {
         self.epoch.set(0);
         let mut s = self.shared.borrow_mut();
         s.events.push("route-apply");
         if s.fail_apply {
             Err("injected partial route failure".into())
         } else {
-            s.assignment = 1;
+            s.assignment = pair;
             Ok(())
         }
     }
@@ -285,14 +285,38 @@ fn partial_apply_failure_and_cleanup_failure_latch_without_forward_publication()
     }
 }
 #[test]
-fn unsupported_physical_pair_stops_without_applying() {
+fn all_four_pairs_apply_switch_and_publish_only_verified_assignment() {
     let shared = Rc::new(RefCell::new(Shared::default()));
-    shared.borrow_mut().replies.push_back(reply(2));
+    shared
+        .borrow_mut()
+        .replies
+        .extend([reply(1), reply(2), reply(3), reply(4)]);
     let mut s = service();
-    let mut owner = start(shared.clone(), &s, 2);
-    advance(&mut s);
-    assert!(owner.tick(&s).is_err());
-    assert_eq!(shared.borrow().events, ["route-stop", "usb-release"]);
+    let mut owner = start(shared.clone(), &s, 5);
+    for pair in 1..=4 {
+        advance(&mut s);
+        owner.tick(&s).unwrap();
+        assert_eq!(owner.status.assignment, Some(pair));
+    }
+    let published = shared
+        .borrow()
+        .frames
+        .iter()
+        .map(|f| crate::decode_records(&f[4..]).unwrap()[0].assignment.byte())
+        .collect::<Vec<_>>();
+    assert_eq!(published, [0, 1, 2, 3]);
+    owner.stop().unwrap();
+    assert_eq!(
+        shared.borrow().events,
+        [
+            "route-apply",
+            "route-apply",
+            "route-apply",
+            "route-apply",
+            "route-stop",
+            "usb-release"
+        ]
+    );
 }
 #[test]
 fn revoked_or_expired_seal_cannot_refresh_or_submit() {
@@ -410,22 +434,40 @@ fn managed_desktop_outlives_bounded_budget_and_releases_on_selection_loss() {
     let mut owner = DesktopLinkSession::default();
     let a = shared.clone();
     let b = shared.clone();
-    owner.start_managed(&service, ManagedOptions {
-        poll_policy: session::PollPolicy::ReportRejectedMarker,
-        names: ReceivedNamePolicy::WindowsCString,
-        initialization_timeout: usb_handshake::MAX_TIMEOUT,
-    }, || Ok(Lease { shared: a, epoch: Rc::new(Cell::new(0)), nonce: 0 }),
-    |_, inventory, options| {
-        let p = Publication::managed_desktop(inventory, options.poll_policy).unwrap();
-        Ok(Handshake::prepare_publication(Fake::new(b), p).unwrap_or_else(|_| panic!("managed fake prepare")))
-    }).unwrap();
-    for _ in 0..42 { advance(&mut service); owner.tick(&service).unwrap(); }
+    owner
+        .start_managed(
+            &service,
+            ManagedOptions {
+                poll_policy: session::PollPolicy::ReportRejectedMarker,
+                names: ReceivedNamePolicy::WindowsCString,
+                initialization_timeout: usb_handshake::MAX_TIMEOUT,
+            },
+            || {
+                Ok(Lease {
+                    shared: a,
+                    epoch: Rc::new(Cell::new(0)),
+                    nonce: 0,
+                })
+            },
+            |_, inventory, options| {
+                let p = Publication::managed_desktop(inventory, options.poll_policy).unwrap();
+                Ok(Handshake::prepare_publication(Fake::new(b), p)
+                    .unwrap_or_else(|_| panic!("managed fake prepare")))
+            },
+        )
+        .unwrap();
+    for _ in 0..42 {
+        advance(&mut service);
+        owner.tick(&service).unwrap();
+    }
     assert_eq!(owner.status().phase, Phase::Running);
     assert_eq!(owner.status().cycle_limit, None);
     assert_eq!(owner.status().completed_cycles, 42);
     assert_eq!(owner.status().assignment, Some(1));
     assert_eq!(shared.borrow().frames.len(), 42);
-    service.select(&ApplicationId(ID.into()), "Different name").unwrap();
+    service
+        .select(&ApplicationId(ID.into()), "Different name")
+        .unwrap();
     assert!(owner.check(&service).is_err());
     assert_eq!(owner.status().phase, Phase::Stopped);
     assert_eq!(&shared.borrow().events[1..], ["route-stop", "usb-release"]);

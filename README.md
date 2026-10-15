@@ -34,11 +34,15 @@ also passes real desktop Firefox assignment, audio, automatic connection and Pau
 with restored output/state. Normal startup remains gated; broader desktop support,
 assignment continuity and an installed standalone app remain unfinished.
 An explicit `studio` build of the actual GPUI executable now provides `--studio`:
-native device discovery, one selected stereo desktop app, first Link In and a
+native device discovery, one selected stereo desktop app, Link In 1–4 and a
 session retained until Pause/Quit/failure. It has been built and opened on Debian
 for direct owner testing; this managed main executable has no new physical
 acceptance yet. See [the current handoff](docs/HANDOFF.md). Default startup stays
-read-only; broader app/pair support and automatic hotplug remain unfinished.
+read-only; multi-app support and automatic hotplug remain unfinished. The new
+[local native component interface](docs/native-control.md) lets a development
+controller inspect and drive the actual app without taking the desktop cursor.
+The newest four-pair desktop switching path has offline checks, with physical
+acceptance pending. Earlier heard-output evidence does not qualify this new main.
 The earlier egui preview remains available for comparison. The primary UI also has
 a saved Connect automatically toggle, waiting/paused states and read-only discovery
 recovery. Automatic session tests use owned private cores; physical GUI connection

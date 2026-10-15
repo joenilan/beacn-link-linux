@@ -578,6 +578,7 @@ dependencies = [
  "beacn-linx-core",
  "gpui-kit",
  "raw-window-handle",
+ "serde_json",
 ]
 
 [[package]]

@@ -393,8 +393,11 @@ pub fn open_publication_with_owned_playback(
     if !authorized || !publication.verified_routes() {
         return Err(OpenError::Refused);
     }
-    let playback = crate::native_audio::PinnedPlayback::pin(sysfs, server_pid)
+    let mut playback = crate::native_audio::PinnedPlayback::pin(sysfs, server_pid)
         .map_err(|_| OpenError::Refused)?;
+    if publication.managed_desktop_lifetime() {
+        playback.manage_until_stop();
+    }
     open_selected_with_playback(
         sysfs,
         expected,
