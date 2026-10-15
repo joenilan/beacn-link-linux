@@ -22,7 +22,10 @@ An optional [native Rust/C playback owner](docs/native-playback-owner.md) now
 passes all four virtual mappings, native failure/release checks and GUI
 Pause/reconnect/Quit. Its [first physical Studio pair](docs/native-playback-startup.md)
 also passes with owner-heard mpv output and exact immediate/late laptop settings
-comparisons. Physical Pause/reconnect, ordinary desktop integration and an
+comparisons. A subsequent [Pause/reconnect qualification](docs/native-studio-recovery.md)
+passes with two owner-heard native playback runs and exact immediate cleanup.
+Reassignment was needed after Pause; a later Firefox desktop volume/state
+comparison differed. Ordinary desktop integration, assignment continuity and an
 installed standalone app remain unfinished.
 The earlier egui preview remains available for comparison. The primary UI also has
 a saved Connect automatically toggle, waiting/paused states and read-only discovery

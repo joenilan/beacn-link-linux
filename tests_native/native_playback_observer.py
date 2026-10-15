@@ -140,3 +140,52 @@ class Observer:
     def fail(self,error):
         self.journal.update(error=str(error),clock_checks=len(self.observations),completed=self.complete)
         bridge.owner.save(self.root/'journal.json',self.journal)
+
+
+class RecoveryObserver:
+    """Two bounded native owners, with an independent released-state barrier.
+
+    Never resets a failed observer or carries PCM progress into the next owner.
+    The second session requires the explicit GUI resume marker after our pause
+    proof; the GUI waits for that proof before clicking its Connect widget.
+    """
+    def __init__(self,*args):
+        self.args=list(args);self.root=args[2];self.root.mkdir(mode=0o700)
+        self.round=1;self.paused=False;self.resumed=False
+        self.current=self.make(1)
+    def make(self,number):
+        args=self.args.copy();args[2]=self.root/('session-%d'%number)
+        return Observer(*args)
+    @property
+    def native(self):return self.current.native
+    @native.setter
+    def native(self,value):self.current.native=value
+    @property
+    def complete(self):return self.round==2 and self.resumed and self.current.complete
+    def sample(self):return self.current.sample()
+    def filtered(self,objects,native):return self.current.filtered(objects,native)
+    def event(self,raw,native):return self.current.event(raw,native)
+    def pause(self):
+        current=self.current
+        if self.round!=1 or self.paused or not current.complete or current.active:
+            raise RuntimeError('recovery pause requires completed first native owner')
+        if current.native is None or current.native.poll() is not None:
+            raise RuntimeError('recovery GUI owner disappeared during pause')
+        _,objects=current.dump()
+        if any(o.get('type')==bridge.LINK for o in objects):
+            raise RuntimeError('private routes survived GUI pause')
+        if (not bridge.pcms_closed(current.before['card'])
+                or bridge.owner.snapshot()!=current.before['snapshot']
+                or bridge.owner.connected_binding(current.selected)!=current.before['binding']):
+            raise RuntimeError('released baseline differs at GUI pause')
+        self.paused=True
+        bridge.owner.save(self.root/'pause-proof.json',{
+            'pcm_closed':True,'private_links_absent':True,'desktop_state_exact_equal':True,
+            'connected_binding_equal':True,'gui_owner_alive':True})
+    def resume(self):
+        if self.round!=1 or not self.paused or self.resumed or not self.current.complete:
+            raise RuntimeError('recovery resume before verified pause or duplicate resume')
+        native=self.current.native
+        self.current=self.make(2);self.current.native=native
+        self.round=2;self.resumed=True
+    def fail(self,error):return self.current.fail(error)

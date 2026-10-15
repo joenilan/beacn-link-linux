@@ -53,6 +53,7 @@ fn main() {
             studio: false,
             managed,
             native_playback: false,
+            studio_recovery: false,
         },
     );
 }

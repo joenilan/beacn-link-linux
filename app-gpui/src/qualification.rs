@@ -15,6 +15,7 @@ pub struct Configuration {
     pub studio: bool,
     pub managed: bool,
     pub native_playback: bool,
+    pub studio_recovery: bool,
 }
 pub struct Probe {
     config: Configuration,
@@ -45,6 +46,9 @@ impl Probe {
         }
     }
     pub fn next(&mut self, snapshot: &Snapshot) -> Option<Action> {
+        if self.config.studio_recovery {
+            return self.next_studio_recovery(snapshot);
+        }
         if self.config.native_playback {
             return self.next_native_playback(snapshot);
         }
@@ -107,11 +111,13 @@ impl Probe {
             }
             28 => Action::Click("session".into()),
             29 if snapshot.link.phase == Phase::Stopped => {
-                assert!(snapshot
-                    .link
-                    .transport_cleanup
-                    .as_ref()
-                    .is_some_and(Result::is_ok));
+                assert!(
+                    snapshot
+                        .link
+                        .transport_cleanup
+                        .as_ref()
+                        .is_some_and(Result::is_ok)
+                );
                 assert!(snapshot.routing.cleanup.as_ref().is_some_and(Result::is_ok));
                 Action::Click("session".into())
             }
@@ -119,11 +125,13 @@ impl Probe {
                 Action::Click(format!("select-{}", second.0))
             }
             31 if snapshot.selected.len() == 1 && snapshot.link.phase == Phase::Stopped => {
-                assert!(snapshot
-                    .link
-                    .transport_cleanup
-                    .as_ref()
-                    .is_some_and(Result::is_ok));
+                assert!(
+                    snapshot
+                        .link
+                        .transport_cleanup
+                        .as_ref()
+                        .is_some_and(Result::is_ok)
+                );
                 assert!(snapshot.routing.cleanup.as_ref().is_some_and(Result::is_ok));
                 Action::Click("session".into())
             }
@@ -145,11 +153,13 @@ impl Probe {
                 && self.pause.elapsed() > Duration::from_millis(1100) =>
             {
                 assert!(snapshot.auto_connect);
-                assert!(snapshot
-                    .link
-                    .transport_cleanup
-                    .as_ref()
-                    .is_some_and(Result::is_ok));
+                assert!(
+                    snapshot
+                        .link
+                        .transport_cleanup
+                        .as_ref()
+                        .is_some_and(Result::is_ok)
+                );
                 assert!(snapshot.routing.cleanup.as_ref().is_some_and(Result::is_ok));
                 Action::Capture("paused.ppm")
             }
@@ -172,6 +182,74 @@ impl Probe {
     }
 }
 impl Probe {
+    fn next_studio_recovery(&mut self, snapshot: &Snapshot) -> Option<Action> {
+        if snapshot.link.error.is_some()
+            || snapshot.link.phase == Phase::NeedsReview
+            || self.start.elapsed() > Duration::from_secs(80)
+        {
+            return Some(Action::Fail(
+                self.config.root.clone(),
+                format!(
+                    "Studio recovery stage={} message={:?}",
+                    self.stage, snapshot.message
+                ),
+            ));
+        }
+        if self.pause.elapsed() < Duration::from_millis(220) {
+            return None;
+        }
+        let assigned = snapshot.link.phase == Phase::Running
+            && snapshot.routing.assignments.len() == 1
+            && snapshot.routing.assignments.values().next() == Some(&1)
+            && snapshot.link.completed_cycles + 8 < 40;
+        let action = match self.stage {
+            0 if snapshot.connected => Action::Click(format!("select-{}", self.config.first)),
+            1 if snapshot.selected.len() == 1 => Action::Click("auto-connect".into()),
+            2 if assigned => Action::Capture("recovery-first-running.ppm"),
+            3 if assigned && self.pause.elapsed() > Duration::from_secs(4) => {
+                Action::Click("session".into())
+            }
+            4 if snapshot.link.phase == Phase::Stopped
+                && snapshot.startup == beacn_linx_core::startup::State::Paused
+                && self.pause.elapsed() > Duration::from_millis(1200) =>
+            {
+                assert!(snapshot.auto_connect);
+                assert!(
+                    snapshot
+                        .link
+                        .transport_cleanup
+                        .as_ref()
+                        .is_some_and(Result::is_ok)
+                );
+                assert!(snapshot.routing.cleanup.as_ref().is_some_and(Result::is_ok));
+                println!("STUDIO RECOVERY PAUSED");
+                std::io::stdout().flush().unwrap();
+                Action::Capture("recovery-paused.ppm")
+            }
+            5 if snapshot.link.phase == Phase::Stopped
+                && snapshot.startup == beacn_linx_core::startup::State::Paused
+                && self.pause.elapsed() > Duration::from_secs(1)
+                // The hardware witness checks both closed PCMs, released USB,
+                // full desktop/state and absence of our first route receipts.
+                // A synthetic test has no physical target to acknowledge.
+                && (snapshot.private_session
+                    || std::fs::read(self.config.root.join("paused-witness.txt"))
+                        .is_ok_and(|v| v == b"released baseline verified\n")) =>
+            {
+                println!("STUDIO RECOVERY RESUME");
+                std::io::stdout().flush().unwrap();
+                Action::Click("session".into())
+            }
+            6 if assigned => Action::Capture("recovery-resumed.ppm"),
+            7 if assigned && self.pause.elapsed() > Duration::from_secs(4) => {
+                Action::Finish(self.config.root.clone())
+            }
+            _ => return None,
+        };
+        self.stage += 1;
+        self.pause = Instant::now();
+        Some(action)
+    }
     fn next_native_playback(&mut self, snapshot: &Snapshot) -> Option<Action> {
         if snapshot.link.error.is_some()
             || snapshot.link.phase == Phase::NeedsReview
@@ -205,11 +283,13 @@ impl Probe {
                 && self.pause.elapsed() > Duration::from_millis(1200) =>
             {
                 assert_eq!(snapshot.startup, beacn_linx_core::startup::State::Paused);
-                assert!(snapshot
-                    .link
-                    .transport_cleanup
-                    .as_ref()
-                    .is_some_and(Result::is_ok));
+                assert!(
+                    snapshot
+                        .link
+                        .transport_cleanup
+                        .as_ref()
+                        .is_some_and(Result::is_ok)
+                );
                 assert!(snapshot.routing.cleanup.as_ref().is_some_and(Result::is_ok));
                 Action::Capture("native-playback-paused.ppm")
             }
@@ -277,11 +357,13 @@ impl Probe {
                 && self.pause.elapsed() > Duration::from_millis(1200) =>
             {
                 assert!(snapshot.auto_connect);
-                assert!(snapshot
-                    .link
-                    .transport_cleanup
-                    .as_ref()
-                    .is_some_and(Result::is_ok));
+                assert!(
+                    snapshot
+                        .link
+                        .transport_cleanup
+                        .as_ref()
+                        .is_some_and(Result::is_ok)
+                );
                 assert!(snapshot.routing.cleanup.as_ref().is_some_and(Result::is_ok));
                 Action::Capture("managed-paused.ppm")
             }
@@ -294,11 +376,13 @@ impl Probe {
                 && snapshot.selected.len() == 1
                 && self.pause.elapsed() > Duration::from_millis(1200) =>
             {
-                assert!(snapshot
-                    .link
-                    .transport_cleanup
-                    .as_ref()
-                    .is_some_and(Result::is_ok));
+                assert!(
+                    snapshot
+                        .link
+                        .transport_cleanup
+                        .as_ref()
+                        .is_some_and(Result::is_ok)
+                );
                 assert!(snapshot.routing.cleanup.as_ref().is_some_and(Result::is_ok));
                 Action::Click("session".into())
             }
@@ -348,11 +432,13 @@ impl Probe {
                         format!("studio stopped early: {:?}", snapshot.link.error),
                     ));
                 }
-                assert!(snapshot
-                    .link
-                    .transport_cleanup
-                    .as_ref()
-                    .is_some_and(Result::is_ok));
+                assert!(
+                    snapshot
+                        .link
+                        .transport_cleanup
+                        .as_ref()
+                        .is_some_and(Result::is_ok)
+                );
                 assert!(snapshot.routing.cleanup.as_ref().is_some_and(Result::is_ok));
                 Action::Finish(self.config.root.clone())
             }
@@ -369,14 +455,32 @@ impl Probe {
         Some(action)
     }
     pub fn on_quit(&self, snapshot: &Snapshot) {
+        if self.config.studio_recovery {
+            if self.stage == 8 {
+                assert_eq!(snapshot.link.phase, Phase::Stopped);
+                assert!(
+                    snapshot
+                        .link
+                        .transport_cleanup
+                        .as_ref()
+                        .is_some_and(Result::is_ok)
+                );
+                assert!(snapshot.routing.cleanup.as_ref().is_some_and(Result::is_ok));
+                std::fs::write(self.config.root.join("recovery-result.txt"),
+                    "sessions=2 pause_held=true explicit_resume=true quit_while_running=true route_release=verified transport_release=verified\n").unwrap();
+            }
+            return;
+        }
         if self.config.native_playback {
             if self.stage == 7 {
                 assert_eq!(snapshot.link.phase, Phase::Stopped);
-                assert!(snapshot
-                    .link
-                    .transport_cleanup
-                    .as_ref()
-                    .is_some_and(Result::is_ok));
+                assert!(
+                    snapshot
+                        .link
+                        .transport_cleanup
+                        .as_ref()
+                        .is_some_and(Result::is_ok)
+                );
                 assert!(snapshot.routing.cleanup.as_ref().is_some_and(Result::is_ok));
                 std::fs::write(
                     self.config.root.join("result.txt"),
@@ -389,11 +493,13 @@ impl Probe {
         if self.config.managed {
             if self.stage == 14 {
                 assert_eq!(snapshot.link.phase, Phase::Stopped);
-                assert!(snapshot
-                    .link
-                    .transport_cleanup
-                    .as_ref()
-                    .is_some_and(Result::is_ok));
+                assert!(
+                    snapshot
+                        .link
+                        .transport_cleanup
+                        .as_ref()
+                        .is_some_and(Result::is_ok)
+                );
                 assert!(snapshot.routing.cleanup.as_ref().is_some_and(Result::is_ok));
                 let count = std::fs::read_dir("/tmp")
                     .unwrap()
@@ -413,11 +519,13 @@ impl Probe {
         if self.config.studio {
             if self.stage == 4 {
                 assert_eq!(snapshot.link.phase, Phase::Stopped);
-                assert!(snapshot
-                    .link
-                    .transport_cleanup
-                    .as_ref()
-                    .is_some_and(Result::is_ok));
+                assert!(
+                    snapshot
+                        .link
+                        .transport_cleanup
+                        .as_ref()
+                        .is_some_and(Result::is_ok)
+                );
                 assert!(snapshot.routing.cleanup.as_ref().is_some_and(Result::is_ok));
                 std::fs::write(self.config.root.join("studio-result.txt"),format!("hardware_session=true cycles={} route_release=verified transport_release=verified\n",snapshot.link.completed_cycles)).unwrap();
             }
@@ -427,11 +535,13 @@ impl Probe {
             return;
         }
         assert_eq!(snapshot.link.phase, Phase::Stopped);
-        assert!(snapshot
-            .link
-            .transport_cleanup
-            .as_ref()
-            .is_some_and(Result::is_ok));
+        assert!(
+            snapshot
+                .link
+                .transport_cleanup
+                .as_ref()
+                .is_some_and(Result::is_ok)
+        );
         assert!(snapshot.routing.cleanup.as_ref().is_some_and(Result::is_ok));
         let count = std::fs::read_dir("/tmp")
             .unwrap()
@@ -482,12 +592,16 @@ pub fn execute(action: Action, window: &mut Window, cx: &mut App) {
             }
         }
         Action::Only(first, second) => {
-            assert!(window
-                .try_find(SharedString::from(format!("select-{first}")))
-                .is_some());
-            assert!(window
-                .try_find(SharedString::from(format!("select-{second}")))
-                .is_none());
+            assert!(
+                window
+                    .try_find(SharedString::from(format!("select-{first}")))
+                    .is_some()
+            );
+            assert!(
+                window
+                    .try_find(SharedString::from(format!("select-{second}")))
+                    .is_none()
+            );
             window.resize(size(px(720.), px(520.)));
         }
         Action::Unchanged(first) => {

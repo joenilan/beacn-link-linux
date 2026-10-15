@@ -57,8 +57,10 @@ class NativeChild:
 
 
 def execute(binary, root, selected, cache, app_id, pair, cycles, native_arguments,
-            fresh, concurrent, pulse, observer=None):
+            fresh, concurrent, pulse, observer=None, recovery=False):
     """Own Xvfb/bus + direct Rust child PID; exact bounded physical IPC only."""
+    if recovery and (observer is None or pair!=1 or cycles!=40):
+        raise RuntimeError('recovery requires two explicit bounded native first-pair sessions')
     root.mkdir(mode=0o700)
     owned = []
     logs = []
@@ -68,6 +70,8 @@ def execute(binary, root, selected, cache, app_id, pair, cycles, native_argument
     started = False
     observed = 0
     verified_routes = 0
+    first_cycles = None
+    paused = False
     pending = bytearray()
     output = {'stdout': bytearray(), 'stderr': bytearray()}
     result = {'exit': 2, 'child_exited': True, 'timed_out': False,
@@ -94,7 +98,8 @@ def execute(binary, root, selected, cache, app_id, pair, cycles, native_argument
         if not software_icd.is_file():raise RuntimeError('isolated GUI software renderer unavailable')
         env.update(LIBGL_ALWAYS_SOFTWARE='1', WINIT_UNIX_BACKEND='x11', LINX_STUDIO_GUI_TEST='1', LIBUSB_DEBUG='0',
                    VK_DRIVER_FILES=str(software_icd),VK_ICD_FILENAMES=str(software_icd))
-        command = ['xvfb-run','-a','-s','-screen 0 1280x900x24','dbus-run-session','--',str(binary), '--authorize-bounded-native-studio-gui' if observer is not None else '--authorize-bounded-studio-gui', str(root/'gui'),str(selected),str(cache),
+        mode='--authorize-bounded-native-studio-recovery-gui' if recovery else '--authorize-bounded-native-studio-gui' if observer is not None else '--authorize-bounded-studio-gui'
+        command = ['xvfb-run','-a','-s','-screen 0 1280x900x24','dbus-run-session','--',str(binary), mode, str(root/'gui'),str(selected),str(cache),
                    app_id,str(pair),str(cycles),*native_arguments]
         child = subprocess.Popen(command,env=env,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         owned.append(child);result['private_child_pid']=child.pid
@@ -133,6 +138,18 @@ def execute(binary, root, selected, cache, app_id, pair, cycles, native_argument
                             assignment=int(fields[3].removeprefix('assigned='))
                             if assignment not in range(5):raise RuntimeError('invalid verified assignment')
                             if assignment:verified_routes+=1
+                        elif raw==b'STUDIO RECOVERY PAUSED':
+                            if not recovery or paused or not started or active or observed<1:
+                                raise RuntimeError('unexpected recovery pause marker')
+                            observer.pause()
+                            paused=True
+                            with (root/'gui/paused-witness.txt').open('xb') as witness:
+                                witness.write(b'released baseline verified\n')
+                        elif raw==b'STUDIO RECOVERY RESUME':
+                            if not recovery or not paused or first_cycles is not None or active:
+                                raise RuntimeError('unexpected recovery resume marker')
+                            observer.resume()
+                            first_cycles=observed;observed=0;started=False
                         elif raw.startswith(b'PHYSICAL'):
                             if observer is not None:raise RuntimeError('external physical bridge refused in native-owner mode')
                             starting=physical_request(raw,pair,observed,cycles,started,active)
@@ -153,8 +170,12 @@ def execute(binary, root, selected, cache, app_id, pair, cycles, native_argument
                             if not starting:result['physical_stage_completed']=True
                     if len(pending)>4096:raise RuntimeError('Studio GUI line exceeds bound')
             child.wait(timeout=max(.01,deadline-time.monotonic()))
-        evidence=root/'gui/studio-result.txt'
-        result['gui_hardware_verified']=child.returncode==0 and observed==cycles and evidence.is_file() and evidence.read_text()==f'hardware_session=true cycles={cycles} route_release=verified transport_release=verified\n' and not (root/'gui/failure.txt').exists()
+        evidence=root/('gui/recovery-result.txt' if recovery else 'gui/studio-result.txt')
+        expected=('sessions=2 pause_held=true explicit_resume=true quit_while_running=true route_release=verified transport_release=verified\n'
+                  if recovery else f'hardware_session=true cycles={cycles} route_release=verified transport_release=verified\n')
+        counts_ok=(first_cycles is not None and 1<=first_cycles<=cycles and 1<=observed<=cycles) if recovery else observed==cycles
+        result['gui_hardware_verified']=child.returncode==0 and counts_ok and evidence.is_file() and evidence.read_text()==expected and not (root/'gui/failure.txt').exists()
+        if recovery:result.update(recovery_pause_verified=paused,recovery_session_cycles=[first_cycles,observed])
         if not result['gui_hardware_verified']:raise RuntimeError('Studio GUI session proof failed')
         if observer is not None and not observer.complete:raise RuntimeError('native playback observer proof incomplete')
     except (OSError,ValueError,RuntimeError,KeyError,TypeError,IndexError,StopIteration,subprocess.TimeoutExpired) as error:

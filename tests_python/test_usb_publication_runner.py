@@ -107,6 +107,20 @@ class PublicationRunnerTests(unittest.TestCase):
         for bad in ("",proof+proof,proof.replace("12","11"),proof.replace("12","4097"),proof.replace("288000","287999")):
             with self.assertRaises(RuntimeError):runner.concurrent_proof(bad,96000)
 
+    def test_recovery_proves_each_owner_progress_separately(self):
+        proof='native owned PCM checks=12 pointer_progress=288000;'
+        self.assertEqual(runner.concurrent_proof(proof+proof,96000,2),
+            {'owned_pcm_checks':24,'owned_pcm_control_progress':576000})
+        for text,count in [(proof,2),(proof*3,2),(proof+proof.replace('288000','1'),2),(proof*2,3)]:
+            with self.subTest(text=text,count=count),self.assertRaises(RuntimeError):
+                runner.concurrent_proof(text,96000,count)
+
+    def test_recovery_requires_native_first_pair_gui_before_any_child(self):
+        with patch.object(sys,'argv',['test','run','--evidence-dir','unused','--executor','unused','--studio-recovery-check']), \
+             patch.object(runner.subprocess,'Popen') as child,contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):runner.main()
+            child.assert_not_called()
+
     def test_continuous_mode_requires_physical_authority_and_progress_budget(self):
         for extra in (["--cycles", "40"], ["--cycles", "8", "--authorize-studio-first-pair-silence", "--private-routing"]):
             argv = ["test", "run", "--evidence-dir", "unused", "--executor", "unused", "--continuous-studio-first-pair", *extra]

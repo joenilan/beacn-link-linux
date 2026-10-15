@@ -59,4 +59,46 @@ class NativePlaybackWitnessTests(unittest.TestCase):
                 # A refused malformed marker does not authorize a new session.
                 self.assertFalse(sample.called)
 
+    def test_recovery_requires_independent_pause_and_fresh_second_owner(self):
+        with tempfile.TemporaryDirectory() as folder:
+            native=SimpleNamespace(pid=44,poll=lambda:None)
+            before={'card':2,'snapshot':{'baseline':True},'binding':{'released':True}}
+            recovery=witness.RecoveryObserver('selected',before,Path(folder)/'recovery',
+                lambda:(None,[]),SimpleNamespace(),SimpleNamespace(),SimpleNamespace(),{},'owned',1)
+            recovery.native=native
+            with self.assertRaises(RuntimeError):recovery.resume()
+            with self.assertRaises(RuntimeError):recovery.pause()
+            recovery.current.complete=True
+            with patch.object(witness.bridge,'pcms_closed',return_value=True), \
+                 patch.object(witness.bridge.owner,'snapshot',return_value=before['snapshot']), \
+                 patch.object(witness.bridge.owner,'connected_binding',return_value=before['binding']):
+                recovery.pause()
+            first=recovery.current
+            recovery.resume()
+            self.assertIsNot(first,recovery.current)
+            self.assertIs(recovery.native,native)
+            self.assertFalse(recovery.current.started)
+            self.assertEqual(recovery.current.observations,[])
+            self.assertFalse(recovery.complete)
+            with self.assertRaises(RuntimeError):recovery.resume()
+            recovery.current.complete=True
+            self.assertTrue(recovery.complete)
+
+    def test_recovery_pause_rejects_foreign_route_open_pcm_and_baseline_drift(self):
+        for wrong in ['route','pcm','settings','binding','owner']:
+            with self.subTest(wrong=wrong),tempfile.TemporaryDirectory() as folder:
+                before={'card':2,'snapshot':'baseline','binding':'released'}
+                recovery=witness.RecoveryObserver('selected',before,Path(folder)/'recovery',
+                    lambda:(None,[{'type':witness.bridge.LINK}] if wrong=='route' else []),
+                    None,None,None,None,'owned',1)
+                recovery.native=SimpleNamespace(poll=lambda:1 if wrong=='owner' else None)
+                recovery.current.complete=True
+                with patch.object(witness.bridge,'pcms_closed',return_value=wrong!='pcm'), \
+                     patch.object(witness.bridge.owner,'snapshot',return_value='changed' if wrong=='settings' else 'baseline'), \
+                     patch.object(witness.bridge.owner,'connected_binding',return_value='changed' if wrong=='binding' else 'released'):
+                    with self.assertRaises(RuntimeError):recovery.pause()
+                self.assertFalse(recovery.paused)
+                self.assertFalse((Path(folder)/'recovery/pause-proof.json').exists())
+                with self.assertRaises(RuntimeError):recovery.resume()
+
 if __name__=='__main__':unittest.main()

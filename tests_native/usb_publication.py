@@ -22,11 +22,11 @@ WIRE_NAME = "BEACN Linux VM Test"
 MAX_CYCLES = 40
 
 
-def concurrent_proof(stderr, rate):
+def concurrent_proof(stderr, rate, sessions=1):
     proofs = re.findall(r"native owned PCM checks=(\d+) pointer_progress=(\d+);", stderr)
-    if len(proofs) != 1 or not 12 <= int(proofs[0][0]) <= 4096 or int(proofs[0][1]) < rate * 3:
+    if sessions not in (1,2) or len(proofs) != sessions or any(not 12<=int(count)<=4096 or int(progress)<rate*3 for count,progress in proofs):
         raise RuntimeError("continuous vendor playback proof was insufficient")
-    return {"owned_pcm_checks": int(proofs[0][0]), "owned_pcm_control_progress": int(proofs[0][1])}
+    return {"owned_pcm_checks": sum(int(p[0]) for p in proofs), "owned_pcm_control_progress": sum(int(p[1]) for p in proofs)}
 
 
 def inventory_message(inventory):
@@ -218,6 +218,7 @@ def main():
     parser.add_argument('--playback-owner-check', help='native eight-channel sink owner qualification; no-USB catalog-service scope only')
     parser.add_argument('--virtual-monitors', action='store_true', help='monitor ports on retained virtual destinations for no-USB playback qualification')
     parser.add_argument('--native-studio-playback', action='store_true', help='explicit Studio GUI native playback owner; Python is metadata witness only')
+    parser.add_argument('--studio-recovery-check', action='store_true', help='two bounded native first-pair GUI sessions with verified Pause and explicit resume')
     parser.add_argument("--authorize-studio-first-pair-silence", action="store_true",
                         help="native-only assignment-1 physical stage; pauses USB until owned audio cleanup")
     parser.add_argument("--authorize-studio-first-pair-tone", action="store_true")
@@ -242,6 +243,8 @@ def main():
         except RuntimeError as error:parser.error(str(error))
     if args.native_studio_playback and not args.studio_gui_check:
         parser.error('native Studio playback requires the explicit bounded Studio GUI check')
+    if args.studio_recovery_check and (not args.native_studio_playback or args.studio_pair!=1):
+        parser.error('Studio recovery requires the explicit native first-pair GUI mode')
     audible = args.audible_first_pair or args.audible_studio_pair
     if args.continuous_studio_first_pair and not physical_requested:
         parser.error("continuous physical mode requires explicit silence/tone authority")
@@ -580,12 +583,13 @@ def main():
                 if native_observer is not None:native_observer.sample()
             if args.studio_gui_check:
                 if args.native_studio_playback:
-                    from native_playback_observer import Observer
-                    native_observer=Observer(selected,physical_before,root/'native-physical-observation',dump,server,controller,playback,ordered[args.studio_pair-1],token,args.studio_pair)
+                    from native_playback_observer import Observer, RecoveryObserver
+                    observer_type=RecoveryObserver if args.studio_recovery_check else Observer
+                    native_observer=observer_type(selected,physical_before,root/'native-physical-observation',dump,server,controller,playback,ordered[args.studio_pair-1],token,args.studio_pair)
                 result['studio_gui_binary_sha256']=hashlib.sha256(Path(args.studio_gui_check).read_bytes()).hexdigest()
                 base.save(root/'studio-gui-binary.json',{'sha256':result['studio_gui_binary_sha256']})
                 result.update(gui_studio.execute(Path(args.studio_gui_check).resolve(strict=True),root/'studio-gui',selected,pinned,
-                    inventory['applications'][0]['application_id'],args.studio_pair,args.cycles,native_arguments,fresh,concurrent_stage,pulse,observer=native_observer))
+                    inventory['applications'][0]['application_id'],args.studio_pair,args.cycles,native_arguments,fresh,concurrent_stage,pulse,observer=native_observer,recovery=args.studio_recovery_check))
             else:
                 result.update(execute_periodic(command, fresh, args.cycles, timeout=90 if args.private_routing else 50,
                                            physical=physical_stage if physical_before is not None and not args.continuous_studio_first_pair else None,
@@ -607,7 +611,7 @@ def main():
             if application is not None:application.validate(objects)
             result["owned_source_preserved"] = playback.poll() is None and owned_inventory(objects, playback.pid, node_name, inventory["snapshot_id"], destinations, wire_name) == inventory
         if args.continuous_studio_first_pair:
-            result.update(concurrent_proof(result.get("stderr", ""), rate))
+            result.update(concurrent_proof(result.get("stderr", ""), rate,2 if args.studio_recovery_check else 1))
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
         result["runner_error"] = type(error).__name__ + ": " + str(error)
     finally:

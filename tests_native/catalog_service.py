@@ -75,6 +75,9 @@ def verify(binary, root, runtime, remote, env, dump, first_pid, media, propertie
             evidence=root/'gui/result.txt'
             expected = ('managed=true cycles_at_least=96 applications=2 pause_held=true explicit_resume=true selection_loss_stopped=true quit_release=verified configs_removed=true' if managed_gui else 'widgets_selected=2 renamed=true removed=true worker_stopped=true session_started_stopped_restarted=true lifecycle_release_verified=true owned_configs_remaining=0 failed=false')
             if env.get('LINX_NATIVE_PLAYBACK_GUI_TEST')=='1':expected='native_playback=true usb=false pause_resume_quit=verified'
+            if env.get('LINX_STUDIO_RECOVERY_GUI_TEST')=='1':
+                expected='sessions=2 pause_held=true explicit_resume=true quit_while_running=true route_release=verified transport_release=verified'
+                evidence=root/'gui/recovery-result.txt'
             proof['gui_widgets_verified']=result.returncode==0 and evidence.is_file() and evidence.read_text().strip()==expected and not (root/'gui/failure.txt').exists()
             proof['gui_managed_session']=managed_gui
             if not proof['gui_widgets_verified']:raise RuntimeError('native graphical qualification failed; inspect GUI evidence')

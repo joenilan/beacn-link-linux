@@ -13,8 +13,15 @@ fn main() {
         "--authorize-bounded-studio-gui" => studio_session::Playback::Supervisor,
         #[cfg(feature = "native-playback-test")]
         "--authorize-bounded-native-studio-gui" => studio_session::Playback::NativeStudio,
+        #[cfg(feature = "native-playback-test")]
+        "--authorize-bounded-native-studio-recovery-gui" => studio_session::Playback::NativeStudio,
         _ => panic!("requires explicit bounded Studio backend authority"),
     };
+    let recovery = args[0] == "--authorize-bounded-native-studio-recovery-gui";
+    if recovery {
+        assert_eq!(args[5], "1");
+        assert_eq!(args[6], "40");
+    }
     let root = PathBuf::from(&args[1]);
     std::fs::create_dir(&root).expect("exclusive GUI evidence");
     let mut expected = Vec::new();
@@ -67,6 +74,7 @@ fn main() {
             studio: true,
             managed: false,
             native_playback: false,
+            studio_recovery: recovery,
         },
     );
 }

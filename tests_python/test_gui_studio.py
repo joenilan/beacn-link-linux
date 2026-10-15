@@ -31,6 +31,12 @@ class StudioGuiTests(unittest.TestCase):
             self.assertTrue(gui.physical_request(f'PHYSICAL START {pair}'.encode(),pair,4,40,False,False))
             self.assertFalse(gui.physical_request(f'PHYSICAL STOP {pair}'.encode(),pair,39,40,True,True))
 
+    def test_recovery_cannot_launch_supervisor_other_pair_or_unbounded_scope(self):
+        for observer,pair,cycles in [(None,1,40),(object(),2,40),(object(),1,80)]:
+            with self.subTest(pair=pair,cycles=cycles),self.assertRaises(RuntimeError):
+                gui.execute(None,None,None,None,None,pair,cycles,None,None,None,None,
+                    observer=observer,recovery=True)
+
     @unittest.skipUnless(sys.platform=='linux','Linux pidfd process ownership')
     def test_actual_owned_process_is_pinned_and_stopped_via_pidfd(self):
         child=subprocess.Popen(['/usr/bin/sleep','30'])

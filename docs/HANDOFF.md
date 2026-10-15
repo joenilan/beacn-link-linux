@@ -1,6 +1,34 @@
 # LinX continuation handoff
 Updated 2026-10-15 UTC. Resume development; do not restart the investigation.
 
+## Latest checkpoint: native Studio Pause and explicit reconnect heard
+
+Read [native-studio-recovery.md](native-studio-recovery.md). The next native GUI
+check passes its real virtual-endpoint/widget rehearsal: two fresh
+nine-cycle owners, Pause held while automatic stays on, explicit resume and Quit
+while playing. Six native library and 44 focused Linux Python checks pass.
+The physical mode adds an independent released USB/PCM/full settings-state barrier
+before reconnect and requires separate clock progress in both owners. It remains
+two bounded sessions, not managed USB, hotplug or ordinary desktop integration.
+Source `beacn-native-source-20261015T123729Z`; frozen native Studio image SHA256
+`834e7cddc60524c8aab9234d0029ecceb71ba2ae8a66cf37afdd4f310828bd94`.
+Physical run `beacn-native-studio-recovery-20261015T124049Z` then passed: two native
+owners in the same GUI process, cycle counts 23/14, independent paused-state
+barrier, explicit resume and quit while playing. The owner heard both runs but
+had to reassign mpv after the first success; assignment persistence is unfinished.
+Result SHA256 `ed1e1b131782fe3e8fca4b0ec9507c69291ec9499568b9188eac65689b90b5b4`.
+Immediate full settings/state/USB and private-core cleanup comparisons matched;
+both PCMs closed and all owned children exited. **Later** audit differs in Firefox
+stream volume/identities and its state-file hash, with cause unknown. Preserve
+that evidence; do not claim exact late restoration or restore foreign changes.
+Studio is attached and released; no test is running. Next ordinary desktop/native
+integration, assignment continuity and approved Console UI; failure/hotplug,
+multi-app physical routing and long runs remain open. Laptop has about 8 GB free;
+cached builds finished. Keep evidence and snapshots private.
+
+The owner handed C: cleanup to another agent. Return to LinX development; do not
+continue disk cleanup or disturb the owner's other projects/builds.
+
 ## Latest checkpoint: native first-pair playback heard and released cleanly
 
 Read [native-playback-startup.md](native-playback-startup.md). Owner returned,
