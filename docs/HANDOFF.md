@@ -1,6 +1,21 @@
 # LinX continuation handoff
 Updated 2026-10-15 UTC. Resume development; do not restart the investigation.
 
+## Design checkpoint: compact overview and expandable mixer concept
+
+Owner requested design research/mockup while waiting for the next attended test.
+Open [the interactive study](../design/linx-concept/index.html); its
+[research and capability plan](../design/linx-concept/README.md) separates proposed
+Linux app gain/mute from unverified streaming-PC monitor/audience control.
+The study uses existing lynx geometry/status colors and proposes a compact
+overview plus an expanded mixer. All apps, assignments, levels and state changes
+are fictional, labeled and local to the page. It performs no network/storage,
+device/audio I/O or process execution and changes no production UI/backend gate.
+Both views/six states rendered at four widths (48 layouts), with interactive
+volume/mute/filter/settings checks and private screenshots outside Git.
+The next hardware step below remains prepared but unrun; no new physical test
+was started for design work. Keep Rust/GPUI Kit and existing snapshot/owner logic.
+
 ## Current checkpoint: native playback owner and GUI pass unattended
 
 Owner asked to finish everything possible while asleep. Optional Rust/C playback

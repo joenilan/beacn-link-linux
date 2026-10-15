@@ -2,6 +2,12 @@
 
 Independent, unofficial Linux compatibility research; not affiliated with BEACN.
 
+A [reviewable interface study](design/linx-concept/index.html) proposes a compact
+overview and expandable mixer for the existing Rust/GPUI Kit app. Its
+[research and plan](design/linx-concept/README.md) distinguish future Linux volume
+controls from unverified remote BEACN mixer control. The study is an offline
+visual mockup with fictional data; it changes no audio or production routing.
+
 The primary [LinX interface](docs/gpui-interface.md) now uses GPUI Kit: a compact
 window, responsive channel cards, expandable application details and a shared
 lynx status icon/tray. Real widgets and private-session routing/cleanup pass native
