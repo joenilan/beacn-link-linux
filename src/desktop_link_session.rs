@@ -365,6 +365,57 @@ impl<L: DesktopLease, T: OwnedControlTransport> DesktopLinkSession<L, T> {
     }
     /// One serial native/USB cycle, with the same 500-ms diagnostic cadence as
     /// existing attended checks. Run on the service worker, never the UI thread.
+    pub fn assign(&mut self, service: &ApplicationService, pair: u8) -> Result<(), String> {
+        if self.status.phase != Phase::Running || !(1..=4).contains(&pair) {
+            return Err("Local assignment needs a running desktop session and Link In 1–4.".into());
+        }
+        let result = (|| {
+            self.current(service)?;
+            let inventory = service.inventory().ok_or("Desktop selection absent.")?;
+            let a = self.active.as_mut().unwrap();
+            let before = a.routes.publication(inventory)?;
+            if !before.valid() || before.inventory() != inventory || before.records().len() != 1 {
+                return Err("Local assignment needs a fresh native desktop proof.".into());
+            }
+            // Explicit local intent passes the same planner as remote records;
+            // it is not fabricated USB input or an optimistic UI assignment.
+            let intent = crate::Record {
+                name: inventory.applications[0].advertised_name.clone(),
+                assignment: crate::Assignment::from_byte(pair),
+            };
+            let plan = planner::plan(inventory, &[intent]).map_err(|e| e.to_string())?;
+            if plan.proposed_routes().count() != 1
+                || plan
+                    .resolutions
+                    .iter()
+                    .any(|r| !matches!(r.outcome, Outcome::Proposed(_)))
+            {
+                return Err(
+                    "Local assignment did not resolve the selected live application.".into(),
+                );
+            }
+            if before.records()[0].assignment.byte() != pair {
+                a.routes.apply_pair(pair)?;
+            }
+            let after = a.routes.publication(inventory)?;
+            if !after.valid()
+                || after.inventory() != inventory
+                || after.records().len() != 1
+                || after.records()[0].assignment.byte() != pair
+            {
+                return Err("Local assignment was not verified by the native route owner.".into());
+            }
+            Ok(())
+        })();
+        match result {
+            Ok(()) => {
+                self.status.assignment = Some(pair);
+                self.status.last_reply = Some("local assignment applied and verified");
+                Ok(())
+            }
+            Err(error) => self.fail(error),
+        }
+    }
     pub fn tick(&mut self, service: &ApplicationService) -> Result<(), String> {
         if self.status.phase != Phase::Running {
             return Err("Desktop session is not running.".into());

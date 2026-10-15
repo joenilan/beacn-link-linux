@@ -105,7 +105,9 @@ impl Worker {
                         catalog = Some(match &connection {
                             Connection::Desktop => NativeCatalog::desktop()?,
                             #[cfg(feature = "desktop-session-test")]
-                            Connection::DesktopStudioSession(_) | Connection::Studio => NativeCatalog::desktop()?,
+                            Connection::DesktopStudioSession(_) | Connection::Studio => {
+                                NativeCatalog::desktop()?
+                            }
                             Connection::Private { runtime, core } => {
                                 NativeCatalog::connect(runtime, core)?
                             }
@@ -219,6 +221,52 @@ impl Worker {
                                     {
                                         Err("Device connection is not enabled in this preview."
                                             .into())
+                                    }
+                                }
+                                Command::Assign(id, alias, pair) => {
+                                    #[cfg(all(
+                                        feature = "desktop-session-test",
+                                        target_os = "linux"
+                                    ))]
+                                    {
+                                        if !matches!(
+                                            &connection,
+                                            Connection::Studio
+                                                | Connection::DesktopStudioSession(_)
+                                        ) {
+                                            Err("Local assignment is available only for a desktop Studio session.".into())
+                                        } else {
+                                            (|| {
+                                                if model.service().selected().get(&id).is_none() {
+                                                    model.command(Command::Select(
+                                                        id.clone(),
+                                                        alias,
+                                                    ))?;
+                                                }
+                                                supervisor.manual_start();
+                                                if link.status().phase
+                                                    != beacn_link_protocol::link_session::Phase::Running
+                                                {
+                                                    link.start(model.service())?;
+                                                    just_started = true;
+                                                }
+                                                let assigned = link.assign(model.service(), pair);
+                                                if assigned.is_ok() {
+                                                    // The next serial tick needs a newer catalog observation
+                                                    // than the one sealed into this assignment request.
+                                                    just_started = true;
+                                                }
+                                                assigned
+                                            })()
+                                        }
+                                    }
+                                    #[cfg(not(all(
+                                        feature = "desktop-session-test",
+                                        target_os = "linux"
+                                    )))]
+                                    {
+                                        let _ = (id, alias, pair);
+                                        Err("Local assignment is not enabled in this build.".into())
                                     }
                                 }
                                 command => model.command(command),

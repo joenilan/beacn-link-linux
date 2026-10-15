@@ -90,6 +90,13 @@ impl Owner {
             Self::NativePlayback(link) => link.start_synthetic(service),
         }
     }
+    pub fn assign(&mut self, service: &ApplicationService, pair: u8) -> Result<(), String> {
+        match self {
+            #[cfg(feature = "desktop-session-test")]
+            Self::Desktop(link) => link.assign(service, pair),
+            _ => Err("Local assignment is available only for a desktop Studio session.".into()),
+        }
+    }
     pub fn check(&mut self, service: &ApplicationService) -> Result<(), String> {
         match self {
             #[cfg(feature = "desktop-session-test")]

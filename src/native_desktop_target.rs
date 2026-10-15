@@ -685,9 +685,24 @@ impl DesktopTarget {
             return Err("Desktop pair switch refused by current route proof.".into());
         }
         let mut links = [Receipt::default(); 2];
-        if unsafe { bcl_desktop_switch_pair(self.session, pair as c_int, links.as_mut_ptr()) } != 0
-        {
-            return Err("Desktop stereo-pair switch was not verified.".into());
+        let switched =
+            unsafe { bcl_desktop_switch_pair(self.session, pair as c_int, links.as_mut_ptr()) };
+        if switched != 0 {
+            let stage = match switched {
+                -1 => "current bridge proof",
+                -2 => "retained link handles",
+                -3 => "unlink synchronization",
+                -4 => "old link disappearance",
+                -5 => "retained ledger retirement",
+                -6 => "monitor/adapter port discovery",
+                -7 => "adapter port identity",
+                -8 => "link properties allocation",
+                -9 => "new link acknowledgement",
+                _ => "new bridge graph verification",
+            };
+            return Err(format!(
+                "Desktop stereo-pair switch failed during {stage} (code {switched})."
+            ));
         }
 
         // Record fresh C-owner serial receipts before any later check can fail,

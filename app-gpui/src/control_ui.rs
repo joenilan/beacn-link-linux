@@ -158,6 +158,32 @@ impl Interface {
                     && !self.snapshot.selected.is_empty()
                     && self.snapshot.link.phase != Phase::NeedsReview);
         }
+        if let Some(rest) = id.strip_prefix("route-") {
+            let Some((pair, raw)) = rest.split_once('-') else {
+                return false;
+            };
+            if !matches!(pair, "1" | "2" | "3" | "4")
+                || !self.studio_app
+                || self.snapshot.link.phase == Phase::NeedsReview
+            {
+                return false;
+            }
+            let key = beacn_link_protocol::planner::ApplicationId(raw.into());
+            let Some(app) = self
+                .snapshot
+                .catalog
+                .as_ref()
+                .and_then(|c| c.applications.get(&key))
+            else {
+                return false;
+            };
+            return self.snapshot.connected
+                && beacn_linx_core::model::live(app)
+                && app.streams.len() == 1
+                && (self.snapshot.selected.is_empty()
+                    || (self.snapshot.selected.len() == 1
+                        && self.snapshot.selected.contains_key(&key)));
+        }
         for prefix in ["select-", "save-", "name-"] {
             if let Some(raw) = id.strip_prefix(prefix) {
                 let key = beacn_link_protocol::planner::ApplicationId(raw.into());
@@ -216,6 +242,9 @@ impl Interface {
             for id in catalog.applications.keys() {
                 for prefix in ["select", "details", "name", "save"] {
                     ids.push(format!("{prefix}-{}", id.0));
+                }
+                for pair in 1..=4 {
+                    ids.push(format!("route-{pair}-{}", id.0));
                 }
             }
         }

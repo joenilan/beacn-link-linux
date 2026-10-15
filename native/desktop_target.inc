@@ -16,6 +16,7 @@ struct desktop_target {
   uint32_t pid;
   unsigned pair;
   char owner[129];
+  struct created *switch_bridge[2];
   struct receipt source_ports[2];
   bool active, conflict, stopping, expected_present;
   char expected_type[33], expected[129];
@@ -132,7 +133,7 @@ static bool dt_retire_created(struct session *s, struct created *c,
     return false;
   if (s->desktop->adapter_proxy == c) return false;
   for (int i=0;i<2;i++)
-    if (s->desktop->bridge[i] == c) return false;
+    if (s->desktop->bridge[i] == c || s->desktop->switch_bridge[i] == c) return false;
   struct object *o=find(s,old.id,LINK);
   if (o && serial(o)==old.serial) return false;
   struct created **slot=&s->created;
@@ -143,7 +144,7 @@ static bool dt_retire_created(struct session *s, struct created *c,
   free(c);
   return true;
 }
-static bool dt_ports(struct session *s, struct receipt node, int direction, struct object **result) {
+static bool dt_ports_mode(struct session *s, struct receipt node, int direction, struct object **result, bool monitor) {
   result[0] = result[1] = NULL;
   for (size_t i = 0; i < s->count; i++) {
     struct object *p = s->objects[i];
@@ -153,12 +154,15 @@ static bool dt_ports(struct session *s, struct receipt node, int direction, stru
     const char *ch = prop(p, PW_KEY_AUDIO_CHANNEL);
     int side = spa_streq(ch, "FL") ? 0 : spa_streq(ch, "FR") ? 1 : -1;
     if (!p->info || !serial(p) || side < 0 || result[side] ||
-        spa_streq(prop(p, PW_KEY_PORT_MONITOR), "true") ||
+        spa_streq(prop(p, PW_KEY_PORT_MONITOR), "true") != monitor ||
         spa_streq(prop(p, PW_KEY_PORT_CONTROL), "true"))
       return false;
     result[side] = p;
   }
   return result[0] && result[1];
+}
+static bool dt_ports(struct session *s, struct receipt node, int direction, struct object **result) {
+  return dt_ports_mode(s,node,direction,result,false);
 }
 static bool dt_source(struct session *s) {
   struct desktop_target *d = s->desktop;
@@ -340,6 +344,7 @@ int bcl_desktop_release_sink(struct session *s) {
 }
 static bool dt_bridge_graph(struct session *s) {
   struct desktop_target *d=s->desktop;
+  if (d->switch_bridge[0] || d->switch_bridge[1]) return false;
   struct object *hardware=find(s,d->hardware.id,NODE), *inputs[8];
   struct object *adapter=find(s,d->adapter.node.id,NODE);
   if (d->pair < 1 || d->pair > 4 || !dt_ref(hardware,d->hardware) || !dt_route(s,d->sink) ||
@@ -449,44 +454,46 @@ int bcl_desktop_switch_pair(struct session *s, int pair, struct receipt *links) 
     return 0;
   }
 
-  /* Remove only the two exact retained link proxies, then require both serials
-   * to disappear before creating the replacement pair. */
+  /* Keep the old pair active until both replacement links are acknowledged.
+   * Otherwise the retained ALSA driver pauses/re-prepares with no active input,
+   * resetting the hardware clock and correctly invalidating both PCM proofs.
+   * Every partial replacement is retained for the ordinary stop owner. */
+  struct object *out[2]={NULL,NULL}, *inputs[8];
+  if (!dt_ports_mode(s,d->sink,PW_DIRECTION_OUTPUT,out,true) ||
+      !playback_ports(s,&d->adapter.node,inputs)) return -6;
+  for (int i=0;i<8;i++)
+    if (!dt_ref(inputs[i],d->adapter.ports[i])) return -7;
+  for (int i=0;i<2;i++) {
+    struct pw_properties *p=pw_properties_new(PW_KEY_OBJECT_LINGER,"false",PW_KEY_LINK_PASSIVE,"false",OWNER,d->owner,NULL);
+    if (!p) return -8;
+    struct created *c=playback_created(s,"link-factory",PW_TYPE_INTERFACE_Link,
+        PW_VERSION_LINK,p,d->owner,false,out[i],inputs[dt_pair_index((unsigned)pair,(unsigned)i)]);
+    pw_properties_free(p);d->switch_bridge[i]=c;
+    if (!c || playback_ack(s,c,false,&links[i])<0) return -9;
+  }
+  /* Retire only exact old proxies after the replacement is carrying audio. */
   struct receipt old[2];
   struct created *old_created[2];
   for (int i=0;i<2;i++) {
     struct created *c=d->bridge[i];
     if (!c || !c->proxy || c->removed || c->error || !c->bound || !c->info)
-      return -1;
+      return -2;
     old[i]=(struct receipt){c->id,c->serial};
     old_created[i]=c;
     spa_hook_remove(&c->listener);spa_hook_remove(&c->info_listener);
     pw_proxy_destroy(c->proxy);c->proxy=NULL;
   }
-  if (barrier(s)<0 || barrier(s)<0) return -1;
+  if (barrier(s)<0 || barrier(s)<0) return -3;
   for (int i=0;i<2;i++) {
     struct object *o=find(s,old[i].id,LINK);
-    if (o && serial(o)==old[i].serial) return -1;
-    d->bridge[i]=NULL;
+    if (o && serial(o)==old[i].serial) return -4;
+    d->bridge[i]=d->switch_bridge[i];d->switch_bridge[i]=NULL;
   }
   for (int i=0;i<2;i++)
-    if (!dt_retire_created(s,old_created[i],old[i])) return -1;
+    if (!dt_retire_created(s,old_created[i],old[i])) return -5;
 
-  struct object *out[2]={NULL,NULL}, *inputs[8];
-  if (!dt_ports(s,d->sink,PW_DIRECTION_OUTPUT,out) ||
-      !playback_ports(s,&d->adapter.node,inputs)) return -1;
-  for (int i=0;i<8;i++)
-    if (!dt_ref(inputs[i],d->adapter.ports[i])) return -1;
   d->pair=(unsigned)pair;
-  for (int i=0;i<2;i++) {
-    struct pw_properties *p=pw_properties_new(PW_KEY_OBJECT_LINGER,"false",PW_KEY_LINK_PASSIVE,"false",OWNER,d->owner,NULL);
-    if (!p) return -1;
-    struct created *c=playback_created(s,"link-factory",PW_TYPE_INTERFACE_Link,
-        PW_VERSION_LINK,p,d->owner,false,out[i],inputs[dt_pair_index(d->pair,(unsigned)i)]);
-    pw_properties_free(p);
-    d->bridge[i]=c;
-    if (!c || playback_ack(s,c,false,&links[i])<0) return -1;
-  }
-  return dt_bridge_graph(s)?0:-1;
+  return dt_bridge_graph(s)?0:-10;
 }
 int bcl_desktop_bridge_check(struct session *s) {
   return bcl_desktop_check(s)==0 && dt_bridge_graph(s)?0:-1;
@@ -506,6 +513,11 @@ int bcl_desktop_unbridge(struct session *s) {
   if (!s || !s->desktop) return -1;
   struct desktop_target *d=s->desktop;
   for (int i=0;i<2;i++) {
+    struct created *pending=d->switch_bridge[i];
+    if (pending && pending->proxy) {
+      spa_hook_remove(&pending->listener);spa_hook_remove(&pending->info_listener);
+      pw_proxy_destroy(pending->proxy);pending->proxy=NULL;
+    }
     struct created *c=d->bridge[i];
     if (!c || !c->proxy) continue;
     spa_hook_remove(&c->listener);spa_hook_remove(&c->info_listener);
@@ -519,6 +531,9 @@ int bcl_desktop_unbridge(struct session *s) {
   if (!d->hardware.serial) return 0;
   if (barrier(s)<0 || barrier(s)<0) return -1;
   for (int i=0;i<2;i++) {
+    struct created *pending=d->switch_bridge[i];
+    struct object *fresh=pending?find(s,pending->id,LINK):NULL;
+    if (fresh && serial(fresh)==pending->serial) return -1;
     struct created *c=d->bridge[i];
     struct object *o=c?find(s,c->id,LINK):NULL;
     if (o && serial(o)==c->serial) return -1;
@@ -612,8 +627,73 @@ fail:
 fail_freed:
   return -1;
 }
+static bool dt_test_port_fixture(const char **channels, const char **monitors,
+                                const char **controls, size_t count, bool monitor) {
+  if (count > 4) return false;
+  struct session s = {0};
+  struct object objects[4] = {0};
+  struct object *result[2] = {NULL, NULL};
+  bool valid = false;
+  for (size_t i = 0; i < count; i++) {
+    char id[16], serial_text[16];
+    snprintf(id, sizeof(id), "%u", 7u);
+    snprintf(serial_text, sizeof(serial_text), "%u", (unsigned)(20 + i));
+    objects[i].id = (uint32_t)(30 + i);
+    objects[i].kind = PORT;
+    objects[i].present = true;
+    objects[i].info = true;
+    objects[i].direction = PW_DIRECTION_OUTPUT;
+    objects[i].props = pw_properties_new(
+        PW_KEY_NODE_ID, id,
+        PW_KEY_OBJECT_SERIAL, serial_text,
+        PW_KEY_AUDIO_CHANNEL, channels[i],
+        NULL);
+    if (!objects[i].props) goto done;
+    if (monitors[i])
+      pw_properties_set(objects[i].props, PW_KEY_PORT_MONITOR, monitors[i]);
+    if (controls[i])
+      pw_properties_set(objects[i].props, PW_KEY_PORT_CONTROL, controls[i]);
+    s.objects[s.count++] = &objects[i];
+  }
+  valid = dt_ports_mode(&s, (struct receipt){.id = 7}, PW_DIRECTION_OUTPUT,
+                        result, monitor);
+done:
+  for (size_t i = 0; i < count; i++)
+    if (objects[i].props) pw_properties_free(objects[i].props);
+  return valid;
+}
+static int bcl_desktop_test_port_monitor_modes(void) {
+  const char *channels[] = {"FL", "FR", "FL", "MONO"};
+  const char *unexpected[] = {"FL", "FR", "MONO", "FL"};
+  const char *monitor[] = {"true", "true", "true", "true"};
+  const char *ordinary[] = {NULL, NULL, NULL, NULL};
+  const char *controls[] = {NULL, NULL, NULL, NULL};
+  int checks = 0;
+
+  /* The output of LinX's Studio sink is a monitor pair. */
+  if (!dt_test_port_fixture(channels, monitor, controls, 2, true) ||
+      dt_test_port_fixture(channels, monitor, controls, 2, false))
+    return -1;
+  checks += 2;
+  /* An application's ordinary output pair is accepted only in normal mode. */
+  if (!dt_test_port_fixture(channels, ordinary, controls, 2, false) ||
+      dt_test_port_fixture(channels, ordinary, controls, 2, true))
+    return -1;
+  checks += 2;
+  /* Duplicate/unexpected channels and control ports are refused in both modes. */
+  if (dt_test_port_fixture(channels, ordinary, controls, 3, false) ||
+      dt_test_port_fixture(unexpected, ordinary, controls, 3, false))
+    return -1;
+  checks += 2;
+  controls[1] = "true";
+  if (dt_test_port_fixture(channels, monitor, controls, 2, true))
+    return -1;
+  checks++;
+  return checks;
+}
 int bcl_desktop_test_pair_mapping(void) {
   if (bcl_desktop_test_ledger_retirement()!=5) return -1;
+  if (bcl_desktop_test_port_monitor_modes()!=7) return -1;
   int checks=0;
   for (unsigned pair=1;pair<=4;pair++) {
     for (unsigned side=0;side<2;side++) {

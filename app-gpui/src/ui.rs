@@ -348,6 +348,8 @@ impl Interface {
         let select_id = id.clone();
         let details_id = id.clone();
         let save_id = id.clone();
+        let route_id = id.clone();
+        let target_pair = self.channel.unwrap_or(1);
         let alias = self
             .snapshot
             .selected
@@ -380,6 +382,7 @@ impl Interface {
                 "Available".into()
             }
         });
+        let route_alias = alias.clone();
         let mut row = div()
             .flex()
             .flex_col()
@@ -475,6 +478,29 @@ impl Interface {
                             })),
                     ),
             );
+        if self.studio_app {
+            row = row.child(
+                Button::new(SharedString::from(format!("route-{target_pair}-{}", id.0)))
+                    .small()
+                    .label(if target_pair == 1 {
+                        "Assign to Link In".to_owned()
+                    } else {
+                        format!("Assign to Link {target_pair} In")
+                    })
+                    .disabled(
+                        !live
+                            || self.snapshot.link.phase == Phase::NeedsReview
+                            || (!selected
+                                && (!self.snapshot.selected.is_empty() || app.streams.len() != 1)),
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.send(
+                            Command::Assign(route_id.clone(), route_alias.clone(), target_pair),
+                            cx,
+                        )
+                    })),
+            );
+        }
         if expanded {
             let mut details = div().flex().flex_col().gap_2().pl_10().pb_1().child(
                 div()
@@ -593,7 +619,16 @@ impl Render for Interface {
                 row = row.child(crate::console::strip(
                     pair,
                     names,
-                    if self.snapshot.selected.is_empty() {
+                    if self.snapshot.selected.is_empty()
+                        || (running
+                            && self.snapshot.selected.keys().all(|id| {
+                                self.snapshot
+                                    .routing
+                                    .assignments
+                                    .get(id)
+                                    .is_some_and(|pair| *pair != 0)
+                            }))
+                    {
                         "Choose application"
                     } else if self.snapshot.link.error.is_some() {
                         "Session stopped"
@@ -605,8 +640,9 @@ impl Render for Interface {
                     self.appearance.light,
                     p.channels[(pair - 1) as usize],
                     cx.listener(move |this, _, window, cx| {
+                        let same = this.catalog_open && this.channel == Some(pair);
                         this.channel = Some(pair);
-                        this.catalog_open = !this.catalog_open;
+                        this.catalog_open = !same;
                         this.fit_drawers(window, cx);
                         cx.notify();
                     }),
@@ -995,12 +1031,18 @@ impl Render for Interface {
                             .items_center()
                             .gap_3()
                             .px_1()
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(rgb(p.muted))
-                                    .child("APPLICATIONS"),
-                            )
+                            .child(div().text_xs().text_color(rgb(p.muted)).child(
+                                if self.studio_app {
+                                    let pair = self.channel.unwrap_or(1);
+                                    if pair == 1 {
+                                        "APPLICATIONS → LINK IN".to_owned()
+                                    } else {
+                                        format!("APPLICATIONS → LINK {pair} IN")
+                                    }
+                                } else {
+                                    "APPLICATIONS".to_owned()
+                                },
+                            ))
                             .child(
                                 div().flex_1().child(
                                     Input::new(&self.search)

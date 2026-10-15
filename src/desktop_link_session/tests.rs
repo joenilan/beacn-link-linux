@@ -319,6 +319,49 @@ fn all_four_pairs_apply_switch_and_publish_only_verified_assignment() {
     );
 }
 #[test]
+fn local_assignment_requires_live_owner_and_verifies_each_pair_before_display() {
+    let shared = Rc::new(RefCell::new(Shared::default()));
+    let mut service = service();
+    let mut owner = start(shared.clone(), &service, 6);
+    assert!(owner.assign(&service, 0).is_err());
+    assert!(shared.borrow().events.is_empty());
+    for pair in 1..=4 {
+        owner.assign(&service, pair).unwrap();
+        assert_eq!(owner.status().assignment, Some(pair));
+        advance(&mut service);
+        owner.tick(&service).unwrap();
+        assert_eq!(owner.status().assignment, Some(pair));
+    }
+    owner.stop().unwrap();
+    assert!(owner.assign(&service, 1).is_err());
+    assert_eq!(
+        shared
+            .borrow()
+            .frames
+            .iter()
+            .map(|f| crate::decode_records(&f[4..]).unwrap()[0].assignment.byte())
+            .collect::<Vec<_>>(),
+        [1, 2, 3, 4]
+    );
+}
+#[test]
+fn failed_local_assignment_does_not_publish_or_display_success() {
+    let shared = Rc::new(RefCell::new(Shared {
+        fail_apply: true,
+        ..Shared::default()
+    }));
+    let service = service();
+    let mut owner = start(shared.clone(), &service, 2);
+    assert!(owner.assign(&service, 1).is_err());
+    assert_eq!(owner.status().assignment, None);
+    assert_eq!(owner.status().phase, Phase::Stopped);
+    assert!(shared.borrow().frames.is_empty());
+    assert_eq!(
+        shared.borrow().events,
+        ["route-apply", "route-stop", "usb-release"]
+    );
+}
+#[test]
 fn revoked_or_expired_seal_cannot_refresh_or_submit() {
     for mode in 0..3 {
         let shared = Rc::new(RefCell::new(Shared::default()));

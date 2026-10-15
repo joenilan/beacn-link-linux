@@ -26,6 +26,7 @@ pub struct Snapshot {
 #[derive(Clone, Debug)]
 pub enum Command {
     Select(ApplicationId, String),
+    Assign(ApplicationId, String, u8),
     Unselect(ApplicationId),
     Refresh,
     Start,
@@ -66,15 +67,40 @@ impl Request {
                     .ok_or("Application is no longer available.")?
                     .clone(),
             ),
+            Command::Assign(id, name, pair) => {
+                if !(1..=4).contains(pair) {
+                    return Err("Assignment must target Link In 1–4.".into());
+                }
+                if snapshot.selected.len() > 1
+                    || snapshot
+                        .selected
+                        .iter()
+                        .any(|(selected_id, selected_name)| {
+                            selected_id != id || selected_name != name
+                        })
+                {
+                    return Err(
+                        "Assign one application at a time without changing its published name."
+                            .into(),
+                    );
+                }
+                let app = catalog
+                    .applications
+                    .get(id)
+                    .ok_or("Application is no longer available.")?;
+                if app.streams.len() != 1 || !crate::model::live(app) {
+                    return Err("Assignment requires one live application stream.".into());
+                }
+                Some(app.clone())
+            }
             Command::Refresh | Command::Start | Command::Stop | Command::AutoConnect(_) => None,
         };
-        let selected = if matches!(command, Command::Start) {
-            Some(snapshot.selected.clone())
-        } else {
-            None
+        let selected = match &command {
+            Command::Start | Command::Assign(..) => Some(snapshot.selected.clone()),
+            _ => None,
         };
         let roster = if selected.is_some() {
-            snapshot
+            let mut roster = snapshot
                 .selected
                 .keys()
                 .map(|id| {
@@ -84,7 +110,17 @@ impl Request {
                         .cloned()
                         .ok_or("Selected application disappeared.")
                 })
-                .collect::<Result<Vec<_>, _>>()?
+                .collect::<Result<Vec<_>, _>>()?;
+            if let Command::Assign(id, _, _) = &command {
+                let target = catalog
+                    .applications
+                    .get(id)
+                    .ok_or("Application is no longer available.")?;
+                if !roster.iter().any(|app| app.id == target.id) {
+                    roster.push(target.clone());
+                }
+            }
+            roster
         } else {
             vec![]
         };
@@ -200,7 +236,7 @@ impl Model {
             Command::Select(id, alias) => self.service.select(&id, &alias),
             Command::Unselect(id) => self.service.unselect(&id),
             Command::Refresh => Ok(()),
-            Command::Start | Command::Stop | Command::AutoConnect(_) => {
+            Command::Assign(..) | Command::Start | Command::Stop | Command::AutoConnect(_) => {
                 Err("Session commands require the routing owner.".into())
             }
         };

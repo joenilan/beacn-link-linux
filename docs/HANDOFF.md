@@ -1,6 +1,46 @@
 # LinX continuation handoff
 Updated 2026-10-15 UTC. Resume development; do not restart the investigation.
 
+## Latest checkpoint: actual local assignment and live switching passed
+
+The owner explicitly corrected the paused-only stopping point and authorized
+driving the actual app's start/assignment path, with heard-output confirmation
+later. Do not reimpose the older unattended restriction below on this authorized
+app/device path. Preserve snapshots, ownership checks and cleanup.
+
+A live Connect run held Firefox selected for 23 cycles with assignment zero;
+the owner saw it in BEACN App's Applications list. Source review found the well's
+chosen `channel` was never used: it only opened the drawer. The UI now has **Assign
+to Link In / Link 2 In / Link 3 In / Link 4 In** for the chosen well. Native
+`Command::Assign` binds current app/stream/alias/roster, selects only if absent,
+starts if needed, uses the existing planner and applies the native route. The
+well fills only after a fresh sealed route/PCM proof; no USB reply is injected.
+
+Real execution exposed two switch bugs missed offline: ordinary-port discovery
+rejected the sink's monitor ports, then removing all old links before creating
+new links paused ALSA into PREPARED and reset its clock. Explicit monitor mode
+keeps application ports strict. The new pair is now retained/acknowledged before
+old exact proxies are destroyed, preserving continuous playback. Cleanup owns
+both pending and current arrays. Luna reviewed partial-failure ownership.
+
+Final main SHA256 `2eb730013389121f8de54f159aa4f7db6c2e458c91a8f49eb759c404f1f7001a`
+passed real native UI assignments 1→2→3→4 in one physical session. Every actual
+window capture shows Firefox in that well; native phase remains Running and the
+verified assignment matches. There were 15 cycles, 60 USB-owned PCM checks and
+hardware pointer progress 1,407,003. No audio payload was captured. Pause restored
+Firefox's original output; both PCMs closed and both cleanup owners returned Ok.
+Persistent-state bytes/hashes and connected binding match after WirePlumber's
+delayed save settles. Raw graph equality is false only for the two recreated
+Firefox route link serials; excluding only those identities, the graph matches.
+
+Five focused checks pass: two native local-assignment/failure checks, two
+request/stale-identity checks, and the C monitor/ordinary-port/ledger fixture.
+The final UI wording fix makes unused wells say Choose application after the
+selected app is already assigned. Current build and repeated live receipt are
+in the fixed private workspace. No new trees, caches, branches or servers.
+Next: owner confirmation of sound at the streaming PC, then longer use/reconnect.
+One stereo app is still the desktop limit. The actual app is left paused.
+
 ## Latest checkpoint: native component control and four-pair desktop routing
 
 The owner has left and authorized agent control of LinX for further development.

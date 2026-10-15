@@ -60,6 +60,10 @@ Typical IDs are `session`, `settings`, `applications`, `applications-2` through
 `application-list`. Application rows expose `select-<current application id>`,
 `details-<id>`, and expanded `name-<id>` / `save-<id>`. Discover IDs from `state`;
 do not bind a future process or stream by an old numeric ID or display name.
+Studio rows also expose `route-<pair>-<id>` for the currently chosen well. This
+**Assign** button starts the actual desktop owner if needed, validates current
+identity and planner intent, and reports a nonzero assignment only after a fresh
+physical route proof. It is independent of received USB assignment records.
 Mini, gain, mute and audio meters remain unwired.
 
 The controller must collect/remove the preceding screenshot before requesting
@@ -81,10 +85,13 @@ themes and all five accents, and capture its own window. It stayed paused with n
 USB/audio start; desktop and tracked persistent-state comparison matched exactly.
 Transport tests cover local round-trip, private socket mode, disabled-by-default
 startup, preserved occupied paths and oversized requests. Focused native checks
-cover all four planned assignments and cleanup; these are not physical playback
-acceptance of the new pair-switching path.
+cover all four planned assignments and cleanup. A subsequent actual native-app
+run also assigned Firefox through all four wells in one physical session, with
+continuous PCM progress and original-route restoration on Pause. Saved state
+matched after its delayed write settled. Only the recreated selected-route link
+serials differ in the raw graph. Heard output remains an owner observation.
 
-The prior owner attempt stopped after its selected roster changed, before any
+An earlier owner attempt stopped after its selected roster changed, before any
 assignment was accepted. Logs then lacked the invalidating selection event;
 the precise cause remains unknown. Revocation now records old/new stream identity
 metadata, and explicit selection commands are logged separately. The UI retains

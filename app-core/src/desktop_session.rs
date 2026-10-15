@@ -33,7 +33,12 @@ impl Session {
         }
     }
     pub fn managed() -> Self {
-        Self { config: None, owner: Default::default(), status: Default::default(), physical_stats: None }
+        Self {
+            config: None,
+            owner: Default::default(),
+            status: Default::default(),
+            physical_stats: None,
+        }
     }
     pub fn status(&self) -> &Status {
         &self.status
@@ -87,14 +92,20 @@ impl Session {
                 names: ReceivedNamePolicy::WindowsCString,
                 initialization_timeout: usb_handshake::DIAGNOSTIC_INITIALIZATION_TIMEOUT,
             };
-            let result = self.owner.start_managed(service, options,
+            let result = self.owner.start_managed(
+                service,
+                options,
                 || StudioDesktopLease::discover(service),
                 |routes, inventory, options| {
                     let publication = Publication::managed_desktop(inventory, options.poll_policy)
-                        .map_err(|e| OpenFailure { message: e.to_string(), cleanup: Ok(()) })?
+                        .map_err(|e| OpenFailure {
+                            message: e.to_string(),
+                            cleanup: Ok(()),
+                        })?
                         .with_initialization_diagnostic();
                     open_control(routes, publication)
-                });
+                },
+            );
             self.update(Some(service), None);
             return result;
         };
@@ -150,6 +161,11 @@ impl Session {
         self.update(Some(service), None);
         r
     }
+    pub fn assign(&mut self, service: &ApplicationService, pair: u8) -> Result<(), String> {
+        let r = self.owner.assign(service, pair);
+        self.update(Some(service), None);
+        r
+    }
     pub fn stop(&mut self, reason: StopReason) -> Result<(), String> {
         let r = self.owner.stop();
         self.update(None, Some(reason));
@@ -157,13 +173,24 @@ impl Session {
     }
 }
 
-fn open_control(routes: &StudioDesktopLease, publication: Publication) -> Result<Handshake<NativeUsb>, OpenFailure> {
-    native_usb::open_publication_with_owned_playback(routes.sysfs(), routes.descriptors(), publication, true, routes.server_pid())
-        .map_err(|e| OpenFailure {
-            cleanup: match &e {
-                OpenError::Setup(f) if !f.cleanup.baseline_restored => Err("Desktop USB startup cleanup unverified.".into()),
-                _ => Ok(()),
-            },
-            message: e.to_string(),
-        })
+fn open_control(
+    routes: &StudioDesktopLease,
+    publication: Publication,
+) -> Result<Handshake<NativeUsb>, OpenFailure> {
+    native_usb::open_publication_with_owned_playback(
+        routes.sysfs(),
+        routes.descriptors(),
+        publication,
+        true,
+        routes.server_pid(),
+    )
+    .map_err(|e| OpenFailure {
+        cleanup: match &e {
+            OpenError::Setup(f) if !f.cleanup.baseline_restored => {
+                Err("Desktop USB startup cleanup unverified.".into())
+            }
+            _ => Ok(()),
+        },
+        message: e.to_string(),
+    })
 }
