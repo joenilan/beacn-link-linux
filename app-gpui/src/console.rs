@@ -2,9 +2,65 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
 use crate::appearance::Appearance;
+use std::{cell::Cell, rc::Rc};
 
 const STRIP_HEIGHT: f32 = 420.0;
 const FADER_HEIGHT: f32 = 174.0;
+const CAP_HEIGHT: f32 = 13.0;
+/// Fader range: top is 0 dB, the bottom stop is silence.
+pub const FADER_FLOOR_DB: f32 = -60.0;
+
+/// A channel's send level for an interactive fader.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Level {
+    /// Gain in dB (negative infinity when silent).
+    pub db: f32,
+    pub muted: bool,
+}
+impl Level {
+    pub fn from_linear(volume: f32, muted: bool) -> Self {
+        let db = if volume <= 0.0 {
+            f32::NEG_INFINITY
+        } else {
+            (20.0 * volume.log10()).min(0.0)
+        };
+        Self { db, muted }
+    }
+    pub fn linear(db: f32) -> f32 {
+        if db <= FADER_FLOOR_DB {
+            0.0
+        } else {
+            10f32.powf(db.min(0.0) / 20.0)
+        }
+    }
+    fn label(self) -> String {
+        if self.db <= FADER_FLOOR_DB {
+            "−∞".into()
+        } else if self.db > -0.05 {
+            "0.0".into()
+        } else {
+            format!("−{:.1}", -self.db)
+        }
+    }
+}
+/// Fader callback: (new linear volume, new mute), each optional.
+pub type OnLevel = Rc<dyn Fn(Option<f32>, Option<bool>, &mut Window, &mut App)>;
+
+fn cap_offset(db: f32) -> f32 {
+    let travel = FADER_HEIGHT - CAP_HEIGHT;
+    let fraction = ((db.max(FADER_FLOOR_DB) - FADER_FLOOR_DB) / -FADER_FLOOR_DB).clamp(0.0, 1.0);
+    travel * (1.0 - fraction)
+}
+fn db_at(track: Bounds<Pixels>, y: Pixels) -> f32 {
+    let travel = f32::from(track.size.height) - CAP_HEIGHT;
+    let offset = f32::from(y - track.origin.y) - CAP_HEIGHT / 2.0;
+    let fraction = (1.0 - offset / travel.max(1.0)).clamp(0.0, 1.0);
+    if fraction <= 0.005 {
+        f32::NEG_INFINITY
+    } else {
+        FADER_FLOOR_DB * (1.0 - fraction)
+    }
+}
 
 /// Render one static Console strip. The application well owns the only click
 /// handler; the disabled fader and mute decoration cannot trigger selection.
@@ -16,6 +72,7 @@ pub fn strip(
     light: bool,
     accent: u32,
     meter: Option<crate::meter::Display>,
+    level: Option<(Level, OnLevel)>,
     choose: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> Stateful<Div> {
     let colors = Appearance {
@@ -45,11 +102,11 @@ pub fn strip(
     } else {
         format!("applications-{pair}")
     };
-    let application = names
-        .first()
-        .cloned()
-        .or_else(|| pending_name.clone())
-        .unwrap_or_else(|| empty_label.into());
+    let application = match names.len() {
+        0 => pending_name.clone().unwrap_or_else(|| empty_label.into()),
+        1 => names[0].clone(),
+        n => format!("{} +{}", names[0], n - 1),
+    };
     let glyph = names
         .first()
         .or(pending_name.as_ref())
@@ -198,18 +255,28 @@ pub fn strip(
                     .text_color(rgb(if dark { 0xabb1b8 } else { colors.muted }))
                     .child(route),
             )
-            .child(fader_block(
-                dark,
-                [16., 8., 32., 24.][(pair - 1) as usize],
-                colors.muted,
-                rail,
-                rail_highlight,
-                cap_top,
-                cap_mid,
-                cap_bottom,
-                colors.line,
-                meter,
-            ))
+            .child({
+                let block = fader_block(
+                    dark,
+                    level
+                        .as_ref()
+                        .map(|(l, _)| cap_offset(l.db))
+                        .unwrap_or([16., 8., 32., 24.][(pair - 1) as usize]),
+                    colors.muted,
+                    rail,
+                    rail_highlight,
+                    cap_top,
+                    cap_mid,
+                    cap_bottom,
+                    colors.line,
+                    meter,
+                );
+                match &level {
+                    Some((current, on_level)) => interactive_fader(pair, block, *current, on_level.clone())
+                        .into_any_element(),
+                    None => block.into_any_element(),
+                }
+            })
             .child(
                 div()
                     .h(px(24.))
@@ -220,12 +287,17 @@ pub fn strip(
                     .gap(px(4.))
                     .child(
                         div()
-                            .w(px(37.))
+                            .w(px(46.))
                             .text_right()
                             .text_size(px(18.))
                             .font_weight(gpui_kit::FontWeight::MEDIUM)
                             .text_color(rgb(if dark { 0xe5e7e8 } else { colors.text }))
-                            .child("—"),
+                            .child(
+                                level
+                                    .as_ref()
+                                    .map(|(l, _)| l.label())
+                                    .unwrap_or_else(|| "—".into()),
+                            ),
                     )
                     .child(
                         div()
@@ -234,8 +306,15 @@ pub fn strip(
                             .child("dB"),
                     ),
             )
-            .child(
-                div()
+            .child({
+                let muted = level.as_ref().is_some_and(|(l, _)| l.muted);
+                let (bg, border, fg) = if muted {
+                    if dark { (0x5a2427, 0xa1373d, 0xffd9db) } else { (0xf6d6d7, 0xc8484e, 0x8c1d22) }
+                } else {
+                    (button, button_border, if dark { 0xcdd2d8 } else { colors.muted })
+                };
+                let button = div()
+                    .id(format!("mute-{pair}"))
                     .h(px(32.))
                     .w_full()
                     .flex()
@@ -244,18 +323,30 @@ pub fn strip(
                     .gap(px(6.))
                     .rounded(px(4.))
                     .border_1()
-                    .border_color(rgb(button_border))
-                    .bg(rgb(button))
+                    .border_color(rgb(border))
+                    .bg(rgb(bg))
                     .text_size(px(12.))
-                    .text_color(rgb(if dark { 0xcdd2d8 } else { colors.muted }))
+                    .text_color(rgb(fg))
                     .child(
                         svg()
                             .path("console/speaker.svg")
                             .size(px(13.))
-                            .text_color(rgb(if dark { 0xcdd2d8 } else { 0x45545d })),
+                            .text_color(rgb(fg)),
                     )
-                    .child("Mute"),
-            )
+                    .child(if muted { "Muted" } else { "Mute" });
+                match &level {
+                    Some((current, on_level)) => {
+                        let on_level = on_level.clone();
+                        let muted = current.muted;
+                        button
+                            .cursor_pointer()
+                            .on_click(move |_, window, cx| on_level(None, Some(!muted), window, cx))
+                            .test_support()
+                            .into_any_element()
+                    }
+                    None => button.into_any_element(),
+                }
+            })
             .child(
                 div()
                     .id(well_id)
@@ -307,6 +398,47 @@ pub fn strip(
                     .test_support(),
             ),
     )
+}
+
+/// Drag or click the track to set the level; the wheel nudges by 1 dB.
+fn interactive_fader(pair: u8, block: Div, current: Level, on_level: OnLevel) -> impl IntoElement {
+    let track: Rc<Cell<Option<Bounds<Pixels>>>> = Rc::new(Cell::new(None));
+    let set = {
+        let track = track.clone();
+        let on_level = on_level.clone();
+        move |y: Pixels, window: &mut Window, cx: &mut App| {
+            if let Some(bounds) = track.get() {
+                on_level(Some(Level::linear(db_at(bounds, y))), None, window, cx);
+            }
+        }
+    };
+    let drag = set.clone();
+    let stored = track.clone();
+    div()
+        .id(format!("fader-{pair}"))
+        .cursor_pointer()
+        .child(block.on_children_prepainted(move |children, _, _| {
+            // Children: scale labels, fader track, meters.
+            stored.set(children.get(1).copied());
+        }))
+        .on_mouse_down(MouseButton::Left, move |event, window, cx| {
+            set(event.position.y, window, cx)
+        })
+        .on_mouse_move(move |event, window, cx| {
+            if event.pressed_button == Some(MouseButton::Left) {
+                drag(event.position.y, window, cx)
+            }
+        })
+        .on_scroll_wheel(move |event, window, cx| {
+            let dy = f32::from(event.delta.pixel_delta(px(20.)).y);
+            if dy == 0.0 {
+                return;
+            }
+            let from = if current.db.is_finite() { current.db } else { FADER_FLOOR_DB - 1.0 };
+            let db = (from.max(FADER_FLOOR_DB - 1.0) + dy.signum()).min(0.0);
+            on_level(Some(Level::linear(db)), None, window, cx);
+        })
+        .test_support()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -380,7 +512,7 @@ fn fader_block(
                         .left_0()
                         .top(px(cap_offset))
                         .w(px(28.))
-                        .h(px(13.))
+                        .h(px(CAP_HEIGHT))
                         .rounded(px(2.))
                         .border_1()
                         .border_color(rgb(if dark { 0xe4e6e9 } else { cap_border }))

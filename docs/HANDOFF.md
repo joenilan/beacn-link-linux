@@ -1,12 +1,38 @@
 # LinX continuation handoff
-Updated 2026-10-15 UTC. Resume development; do not restart the investigation.
+Updated 2026-10-15 UTC (Link Console). Resume development; do not restart the investigation.
 
 Agent-specific access and operational instructions are intentionally local and
 untracked (`AGENTS.md` and `local/AGENT-HANDOFF.md` in the owner's checkout).
 Public contributors should start with [CONTRIBUTING.md](../CONTRIBUTING.md).
 No credentials or machine-specific connection files belong in this repository.
 
-## Latest checkpoint: single-action assignment and media waiting
+## Latest checkpoint: Link Console with persistent channels (2026-10-15)
+
+`--studio` now runs the [Link Console](link-console.md). Four persistent
+sinks ("LinX Link In 1–4") are bridged to the Studio for the whole
+connection; applications are routed by `target.object`, like a volume
+control. Any number of applications, any channel. Channel memory per
+application re-applies on new streams and after PipeWire/WirePlumber
+recreation; Pause/Quit return each moved application to its previous output.
+The USB control channel runs on its own thread with automatic retry and never
+gates audio. Closing the window keeps LinX in the tray, or minimized where no
+tray host exists. The single-application lease remains as `--studio-legacy`.
+
+Why: the lease stopped on any foreign graph change (another app's sound),
+any `default.*` metadata change and other streams' metadata clears; every
+media pause rebuilt USB/PCM/sink/route; one stereo stream only; WirePlumber
+0.5.8 only. The new path needs no WirePlumber patch.
+
+Faders and mute now set each channel's send level. Verified in software only
+(no Studio attached): 41 root and 11 app-core library tests, plus the actual
+GUI on Debian 13 / PipeWire 1.4.2 for assignment, capture taps, media
+pause/resume, Pause/reconnect, channel moves, Off, faders, mute and
+close-to-dock, with saved application settings preserved. Still untested on hardware: Studio transport with four
+sinks, audible Link In audio, the new control channel (publication, remote
+assignment, host indicator), unplug/replug, long soak, UCM-split
+distributions and tray-host desktops.
+
+## Earlier checkpoint: single-action assignment and media waiting
 
 The owner reported that listening worked, then identified redundant Select/Assign
 buttons and media Pause dropping the link. Studio rows now have one Assign action

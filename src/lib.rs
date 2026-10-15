@@ -325,6 +325,10 @@ pub mod usb_handshake;
 mod native_audio;
 #[cfg(all(feature = "native-usb", target_os = "linux"))]
 pub mod native_usb;
+#[cfg(all(feature = "link-bus", target_os = "linux"))]
+pub mod link_bus;
+#[cfg(all(feature = "link-bus", target_os = "linux"))]
+pub mod link_engine;
 
 #[cfg(all(feature = "native-desktop-target", target_os = "linux"))]
 pub mod desktop_link_session;

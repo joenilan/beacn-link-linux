@@ -13,6 +13,7 @@ studio-session-test = ["private-session-test", "beacn-link-protocol/native-usb"]
 native-playback-test = ["studio-session-test", "beacn-link-protocol/native-playback"]
 desktop-session-test = ["private-session-test", "beacn-link-protocol/native-desktop-target"]
 status-tray = ["dep:ksni"]
+link = ["native-catalog", "beacn-link-protocol/link-bus"]
 [dependencies]
 beacn-link-protocol = { path = ".." }
 [target.'cfg(target_os = "linux")'.dependencies]

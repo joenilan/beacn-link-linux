@@ -183,6 +183,7 @@ impl Publication {
     }
     /// Only the explicit managed desktop constructor grants an app lifetime to
     /// its independent PCM guard. Other publication constructors stay bounded.
+    #[cfg_attr(not(feature = "native-desktop-target"), allow(dead_code))]
     pub(crate) fn managed_desktop_lifetime(&self) -> bool {
         #[cfg(all(feature = "native-desktop-target", target_os = "linux"))]
         {

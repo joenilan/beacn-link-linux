@@ -28,7 +28,7 @@ fn main() {
     }
     if args == ["--help"] {
         println!(
-            "LinX\nDefault: read-only application discovery.\n--studio: native Studio session (studio-enabled build); select one stereo app, Connect, assign it to Link In 1–4 on the streaming PC. Pause/Quit releases owned output.\nOptional: --private-runtime PATH --core NAME\nOptional: --software-renderer (Linux; installed Mesa CPU Vulkan, this process only)\nDeveloper builds: --control-socket PATH (private local component control; off by default)"
+            "LinX\nDefault: read-only application discovery.\n--studio: Link Console (studio-enabled build); four persistent Link In channels, any application on any channel, BEACN App publication. Closing the window keeps LinX in the tray.\n--studio-legacy: earlier single-application desktop session.\nOptional: --private-runtime PATH --core NAME\nOptional: --software-renderer (Linux; installed Mesa CPU Vulkan, this process only)\nDeveloper builds: --control-socket PATH (private local component control; off by default)"
         );
         return;
     }
@@ -39,10 +39,17 @@ fn main() {
     if software == 1 {
         args.retain(|a| a != "--software-renderer");
     }
+    // The Link Console: persistent Link In channels (default Studio mode).
+    #[cfg(all(feature = "link", target_os = "linux"))]
+    if args.as_slice() == ["--studio"] {
+        apply_software_renderer(software == 1);
+        beacn_linx_gpui::link_ui::run();
+        return;
+    }
     let connection = match args.as_slice() {
         [] => Connection::Desktop,
         #[cfg(all(feature = "studio", target_os = "linux"))]
-        [flag] if flag == "--studio" => Connection::Studio,
+        [flag] if flag == "--studio" || flag == "--studio-legacy" => Connection::Studio,
         [a, r, b, c] if a == "--private-runtime" && b == "--core" => Connection::Private {
             runtime: PathBuf::from(r),
             core: c.clone(),
@@ -52,7 +59,12 @@ fn main() {
             std::process::exit(2);
         }
     };
-    if software == 1 {
+    apply_software_renderer(software == 1);
+    beacn_linx_gpui::ui::run(connection);
+}
+
+fn apply_software_renderer(enabled: bool) {
+    if enabled {
         #[cfg(target_os = "linux")]
         {
             let manifest = [
@@ -78,5 +90,4 @@ fn main() {
             std::process::exit(2);
         }
     }
-    beacn_linx_gpui::ui::run(connection);
 }

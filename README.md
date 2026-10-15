@@ -2,19 +2,16 @@
 
 ### Unofficial BEACN Link app for Linux
 
-LinX is an independent Linux desktop app for routing a live stereo application
-through BEACN Studio to one of four Link In channels. BEACN App remains on the
-Windows streaming PC, where you can see the incoming application and its
-assignment.
+LinX is an independent Linux desktop app that does what BEACN Link does on
+Windows: it gives the gaming PC four Link In channels on BEACN Studio, and
+sends applications to them. BEACN App on the Windows streaming PC sees each
+application and its channel, and can move it.
 
 LinX is **unofficial and not affiliated with BEACN**. It is experimental
 compatibility software, not a BEACN product or a replacement for BEACN App on
 Windows.
 
 ![LinX native Console with a live application assigned to Link In 4](assets/screenshots/linx-console.png)
-
-Actual native app capture. The selected application's stereo levels appear on
-its assigned pair; faders and mute buttons remain disabled.
 
 <details>
 <summary>Light theme</summary>
@@ -25,68 +22,60 @@ its assigned pair; faders and mute buttons remain disabled.
 
 ## What works today
 
-- Native Rust and GPUI desktop application with PipeWire application discovery.
-- One selected live stereo application at a time.
-- Local assignment to Link In 1, 2, 3, or 4, verified by the native route owner.
-- Live stereo RMS bars with peak and hold markers for the selected application.
-- Pause and Quit release LinX-owned audio and device resources.
-- Media Pause remembers the channel and waits for the same application's audio.
+- Four persistent channels, **LinX Link In 1–4**, bridged to the Studio's Link
+  In pairs at 96 kHz. They also appear in your desktop sound settings.
+- Any number of applications, each on any channel. Moving an application
+  between channels is a single redirect; nothing is torn down.
+- Applications keep their channel through media pause/resume, new browser
+  tabs, application restarts and PipeWire/WirePlumber restarts.
+- Other applications, notifications, default-device changes and capture tools
+  (such as OBS application audio) do not disturb the links.
+- Application names are published to BEACN App, and assignments made there
+  move the application.
+- Live stereo levels for every channel, plus working faders and mute that set
+  what this PC sends on each Link In. They stay in sync with the channel's
+  volume in your desktop sound settings.
+- Closing the window keeps LinX running in the system tray (or minimized,
+  on desktops without a tray). Pause or Quit returns every application to the
+  output it used before.
 - Light and dark themes, with five accent palettes.
 
-The owner confirmed that all four assignments appeared in BEACN App with
-incoming meter activity during a native run. Direct listening acceptance for
-the current app build is still pending. See the [current handoff](docs/HANDOFF.md)
-for exact runtime evidence and its limits.
-An earlier twenty-minute silent physical-path run also passed repeated pair switching
-and exact desktop/saved-state cleanup.
+Hardware status: the new channel engine has passed software checks on
+Debian 13 with PipeWire 1.4.2 and the actual GUI. It still needs testing with
+the Studio attached (audio on each channel, BEACN App names and remote
+assignment, unplug/replug). See [Link Console](docs/link-console.md).
 
 ## Current limits
 
-LinX currently routes one stereo application at a time. Multi-application
-desktop routing, Linux gain and mute controls, Mini mode, remote volume
-controls, installers, and launch-at-login support are not implemented. Faders
-and mute buttons are disabled. Meters show local digital levels for the one
-selected application and are not calibrated analog VU meters or remote Windows
-mix levels; see [native meter behavior and evidence](docs/native-meters.md).
-Assignment continuity after application restart and broader hotplug recovery
-still need work.
-Pausing media shows **Waiting for audio** and releases the active route. Playback
-can resume automatically on the remembered channel while the same PipeWire client
-remains. Restarted clients, ambiguous streams and unverified cleanup require
-attention; this is not general application-restart recovery.
-The current native backend requires a scoped WirePlumber 0.5.8 integration to
-keep temporary LinX routes out of saved application targets. Other WirePlumber
-versions are not supported yet. This is not yet ready for regular use.
+Faders, mute and meters act on what this PC sends. LinX does not control
+the streaming PC's mix.
+There is no installer or launch-at-login yet, and no Windows version.
+Distributions whose BEACN UCM profile splits the Studio into separate Link
+outputs (alsa-ucm-conf 1.2.15 and later) are untested.
 
-## Try the native Studio mode
+## Try it
 
 This is a development build path, not an installer. Use a Linux desktop with
-PipeWire/WirePlumber, connect BEACN Studio to the Linux PC, and run BEACN App on
-the Windows streaming PC. The GPUI app uses the Rust 1.99.0 toolchain pinned in
-`app-gpui/rust-toolchain.toml`. The native Linux build needs PipeWire/SPA
-development headers 1.0 or newer and libusb 1.0.27 or newer; see the
-[PipeWire build notes](docs/native-executor.md) and
+PipeWire and WirePlumber, connect BEACN Studio to the Linux PC, and run
+BEACN App on the Windows streaming PC. The GPUI app uses the Rust 1.99.0
+toolchain pinned in `app-gpui/rust-toolchain.toml`. The native build needs
+PipeWire/SPA development headers 1.0 or newer and libusb 1.0.27 or newer; see
+the [PipeWire build notes](docs/native-executor.md) and
 [USB requirements](docs/native-usb-handshake.md).
-
-Before enabling Studio mode, install and verify the
-[WirePlumber target-cache guard](docs/wireplumber-integration.md). Follow its
-stock-source hash check and per-user installation steps at a safe point with
-LinX paused. LinX refuses desktop routing when that guard is missing.
-
-From the repository root:
 
 ```sh
 cd app-gpui
 cargo run --features studio -- --studio
 ```
 
-Start audio in an application, click a channel's **Choose application** box, and
-use **Assign to Link In** (or Link 2/3/4 In) beside that application. LinX connects
-and fills the well after verifying the route. Pause or quit to release the session.
-Launching without `--studio` stays in the
-read-only discovery mode. See [native desktop session details](docs/native-desktop-session.md),
-the [optional developer control interface](docs/native-control.md), and the
-[GPUI interface notes](docs/gpui-interface.md).
+Click a channel's application box, then pick 1–4 next to an application.
+**Off** returns it to its previous output. You can also choose
+"LinX Link In N" as an application's output in your desktop sound settings.
+Audio works as is. For the BEACN App connection (names and remote
+assignment), your desktop account needs access to the Studio's USB device; if
+LinX reports the BEACN App link as unavailable, install
+[`integrations/udev/70-linx-beacn-studio.rules`](integrations/udev/70-linx-beacn-studio.rules)
+to `/etc/udev/rules.d/` and replug the Studio.
 
 ## Screenshots
 
@@ -106,6 +95,7 @@ and BEACN Link are referenced only to identify the compatibility target.
 
 ## Further reading
 
+- [Link Console design and evidence](docs/link-console.md)
 - [Current handoff and runtime evidence](docs/HANDOFF.md)
 - [Contributing](CONTRIBUTING.md)
 - [Release preparation](docs/releasing.md)

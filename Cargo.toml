@@ -14,6 +14,7 @@ native-test-faults = ["native-pipewire"]
 native-usb = []
 native-playback = ["native-pipewire", "native-usb"]
 native-desktop-target = ["native-playback"]
+link-bus = ["native-pipewire", "native-usb"]
 qualification-peer = []
 
 [lib]

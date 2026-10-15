@@ -8,7 +8,8 @@ license = "GPL-3.0-only"
 
 [features]
 default = ["native-catalog", "status-tray"]
-studio = ["native-catalog", "beacn-linx-core/desktop-session-test"]
+studio = ["native-catalog", "beacn-linx-core/desktop-session-test", "link"]
+link = ["native-catalog", "beacn-linx-core/link"]
 native-catalog = ["beacn-linx-core/native-catalog"]
 status-tray = ["beacn-linx-core/status-tray"]
 native-control = ["gpui-kit/test-support"]

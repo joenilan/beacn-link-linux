@@ -267,6 +267,21 @@ fn open_selected_with_playback(
     if !authorized {
         return Err(OpenError::Refused);
     }
+    let backend = wrap(sysfs, expected, initial_read_limit_ms, playback)?;
+    if initial_read_limit_ms == 5000 {
+        Handshake::prepare_initialization_diagnostic(backend, startup)
+    } else {
+        Handshake::prepare_with_startup(backend, startup)
+    }
+    .map_err(OpenError::Setup)
+}
+/// Open and pin the selected device node without claiming any interface.
+fn wrap(
+    sysfs: &Path,
+    expected: &[u8],
+    initial_read_limit_ms: u32,
+    playback: Option<crate::native_audio::PinnedPlayback>,
+) -> Result<NativeUsb, OpenError> {
     if library_version() < (1, 0, 27) {
         return Err(OpenError::Refused);
     }
@@ -339,12 +354,7 @@ fn open_selected_with_playback(
         ))
         .map_err(OpenError::Local)?;
     }
-    if initial_read_limit_ms == 5000 {
-        Handshake::prepare_initialization_diagnostic(backend, startup)
-    } else {
-        Handshake::prepare_with_startup(backend, startup)
-    }
-    .map_err(OpenError::Setup)
+    Ok(backend)
 }
 /// Explicit publication policy: one-shot normally, capped cycles only through
 /// Publication::bounded. The default opener remains handshake-only.
@@ -393,8 +403,10 @@ pub fn open_publication_with_owned_playback(
     if !authorized || !publication.verified_routes() {
         return Err(OpenError::Refused);
     }
+    #[allow(unused_mut)]
     let mut playback = crate::native_audio::PinnedPlayback::pin(sysfs, server_pid)
         .map_err(|_| OpenError::Refused)?;
+    #[cfg(feature = "native-desktop-target")]
     if publication.managed_desktop_lifetime() {
         playback.manage_until_stop();
     }
@@ -407,6 +419,84 @@ pub fn open_publication_with_owned_playback(
         Some(playback),
     )
     .map(|owner| owner.enable_publication(publication))
+}
+/// Always-on Link control channel for the persistent channel bus. Claims only
+/// the vendor interface (audio interfaces stay with the kernel driver), uses
+/// the observed Windows startup order, and exposes framed bulk I/O for
+/// `session::Session`. Failures close the channel; the owner may reopen it.
+pub struct ControlUsb {
+    usb: NativeUsb,
+}
+pub fn open_control(sysfs: &Path, expected: &[u8]) -> Result<ControlUsb, OpenError> {
+    use crate::usb_handshake::Backend;
+    crate::usb_handshake::check_descriptors(expected).map_err(|_| OpenError::Refused)?;
+    let mut usb = wrap(sysfs, expected, 5000, None)?;
+    let setup = (|| {
+        usb.claim_three()?;
+        // Unconditional: a crashed session can leave alternate one selected.
+        usb.guard()?;
+        unsafe { result(libusb_set_interface_alt_setting(usb.handle, 3, 0)) }?;
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        usb.select_one()?;
+        usb.clear_input_halt()
+    })();
+    match setup {
+        Ok(()) => Ok(ControlUsb { usb }),
+        Err(code) => {
+            if usb.claimed {
+                let _ = usb.release_three();
+            }
+            usb.close();
+            Err(OpenError::Local(code))
+        }
+    }
+}
+impl crate::session::Transport for ControlUsb {
+    fn write(
+        &mut self,
+        pipe: u8,
+        bytes: &[u8],
+        timeout: std::time::Duration,
+    ) -> Result<usize, crate::session::TransportError> {
+        use crate::usb_handshake::Backend;
+        let ms = crate::usb_handshake::timeout_ms(timeout)
+            .ok_or(crate::session::TransportError::NoTransfer)?;
+        if pipe != crate::session::OUT_PIPE {
+            return Err(crate::session::TransportError::NoTransfer);
+        }
+        self.usb
+            .write(bytes, ms)
+            .map_err(|_| crate::session::TransportError::Unknown)
+    }
+    fn read(
+        &mut self,
+        pipe: u8,
+        bytes: &mut [u8],
+        timeout: std::time::Duration,
+    ) -> Result<usize, crate::session::TransportError> {
+        use crate::usb_handshake::Backend;
+        if pipe != crate::session::IN_PIPE {
+            return Err(crate::session::TransportError::NoTransfer);
+        }
+        // The first read (handshake A2) may take up to five seconds.
+        let limit = if self.usb.initial_read_used { 500 } else { 5000 };
+        let ms = u32::try_from(timeout.as_millis())
+            .ok()
+            .filter(|ms| (1..=limit).contains(ms))
+            .ok_or(crate::session::TransportError::NoTransfer)?;
+        self.usb
+            .read(bytes, ms)
+            .map_err(|_| crate::session::TransportError::Unknown)
+    }
+}
+impl Drop for ControlUsb {
+    fn drop(&mut self) {
+        use crate::usb_handshake::Backend;
+        if self.usb.claimed {
+            let _ = self.usb.release_three();
+        }
+        self.usb.close();
+    }
 }
 impl NativeUsb {
     fn guard(&self) -> Result<(), i32> {

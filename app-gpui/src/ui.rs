@@ -23,11 +23,11 @@ use std::{
 #[path = "control_ui.rs"]
 mod control_ui;
 
-fn color(status: Status) -> Rgba {
+pub(crate) fn color(status: Status) -> Rgba {
     let [r, g, b, _] = status.color();
     rgb((r as u32) << 16 | (g as u32) << 8 | b as u32)
 }
-fn icon_path(status: Status) -> &'static str {
+pub(crate) fn icon_path(status: Status) -> &'static str {
     match status {
         Status::Disconnected => "lynx/gray.svg",
         Status::Connecting => "lynx/amber.svg",
@@ -37,8 +37,8 @@ fn icon_path(status: Status) -> &'static str {
         Status::PrivateTest => "lynx/blue.svg",
     }
 }
-struct Assets;
-fn tracked(text: &'static str, size: f32, spacing: f32) -> Div {
+pub(crate) struct Assets;
+pub(crate) fn tracked(text: &'static str, size: f32, spacing: f32) -> Div {
     div()
         .flex()
         .items_center()
@@ -750,6 +750,7 @@ impl Render for Interface {
                     self.meter
                         .filter(|(active_pair, _)| *active_pair == pair)
                         .map(|(_, levels)| levels),
+                    None,
                     cx.listener(move |this, _, window, cx| {
                         let same = this.catalog_open && this.channel == Some(pair);
                         this.channel = Some(pair);

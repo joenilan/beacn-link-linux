@@ -1,5 +1,7 @@
 pub mod continuity;
 pub mod icon;
+#[cfg(all(feature = "link", target_os = "linux"))]
+pub mod link;
 pub mod model;
 pub mod preferences;
 #[cfg(all(feature = "private-session-test", target_os = "linux"))]

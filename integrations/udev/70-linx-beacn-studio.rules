@@ -1,0 +1,4 @@
+# LinX: let the logged-in desktop user open BEACN Studio's USB device for the
+# BEACN Link control interface (app names and assignments). Audio itself
+# does not need this. Install to /etc/udev/rules.d/ and replug the Studio.
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="33ae", ATTR{idProduct}=="4003", TAG+="uaccess"
