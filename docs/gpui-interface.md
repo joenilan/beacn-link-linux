@@ -32,16 +32,18 @@ The [current visual comparison](../design/linx-concept/directions/index.html)
 and [image-based research](../design/linx-concept/directions/README.md) show
 the owner-selected Console default, a routing matrix and a compact utility, with
 shared Light/Dark and five accent palettes. The owner rejected
-the earlier cards/list study for repeating the current layout. These are separate
-offline concepts; they have not replaced the qualified native interface below.
-Their gain controls/meters are not implemented production capabilities. The
+the earlier cards/list study for repeating the current layout. Console is now
+ported to native GPUI; Matrix and Mini remain offline concepts.
+Gain controls/meters are not implemented production capabilities. The
 [capability plan](../design/linx-concept/README.md) retains local/remote boundaries.
 
-Default client size is 720 by 520 pixels. The header has the lynx session icon,
-LinX name, actual session text, Connect/Pause and an expandable information panel.
-Four channel cards share a row when there is space and become two rows in narrow
-windows. Selecting a card reveals its assignment explanation. Application details
-expand individually for process/stream identity and published-name editing.
+Default client size is 788 by 568 pixels. The header has the lynx session icon,
+LinX name, Console label, actual session text, Connect/Pause and Appearance toggle.
+Four contiguous channel strips contain the actual Link In names, palette bars,
+disabled fader/mute geometry, unlit meter rails and live assignment wells. The dB
+readout is a dash, never a fictional measured value. Below 600 pixels they reflow
+to two columns. The Applications drawer expands real discovery/search/selection;
+individual details expose process/stream identity and published-name editing.
 Selected aliases appear in the primary row, with the original app name retained
 in its status line. Search matches app names, executable names and selected aliases.
 
@@ -49,7 +51,44 @@ The application list fills remaining space and scrolls. At short window heights,
 the whole view also scrolls so expanded panels cannot hide the remaining controls. Expanding sections and
 resizing use the current layout; normal controls do not forcibly resize the user's
 window. Future controls can be added to these sections without reserving large
-empty panels. There are no simulated audio meters or enabled volume controls.
+empty panels. The inactive fader area shortens when either drawer is open. Light/
+Dark and Mint/Blue/Violet/Amber/Rose are actual native buttons; appearance currently
+stays in memory. Session/status icon colors remain independent of the palette.
+There are no simulated audio meters or enabled volume controls.
+
+### Native Console qualification, 2026-10-15
+
+Exact compiled source `beacn-native-source-20261015T141718Z` built the Console and
+private-session examples offline with the existing Rust 1.99.0 / GPUI Kit 0.7.3
+toolchain. No dependencies or backend ownership rules changed. A read-only preview
+uses only `Connection::Desktop`; it cannot construct a physical owner. Its real
+widgets selected an observed application, changed Light/Dark and all five palettes,
+expanded both drawers and resized to 480 pixels. Native 788x568 and narrow captures
+are retained privately. Result `linx-console-preview-20261015T141751Z` SHA256:
+`835c589df634a5c73059bd96245ff778f5ea78f86caa2f9a3331e977269cd43d`.
+
+That extended read-only run passed widgets and binding comparison, but its outer
+desktop/state snapshot differed: one stream's params/serial/props, ports/links and
+saved stream-properties changed. Cause is unknown. Preserve the mismatch; do not
+overwrite foreign settings or claim exact restoration for that run. The preceding
+shorter native visual run `linx-console-preview-20261015T141401Z` matched exactly.
+
+The final source also passed `linx-console-private-20261015T141816Z`: two actual
+mpv applications were selected/renamed using native widgets and assigned to private
+pairs 1/4. Their aliases filled the Console wells. Automatic connection, blue private
+status across a theme change, Pause and owned cleanup were verified. The runner's
+outer private-core teardown and full desktop/settings/state/binding comparisons
+matched exactly; the intermediate deferred-teardown flag remains in the journal.
+Catalog journal SHA256:
+`1a4735a509a837a6cb7a628502ccf2e2bb790fe2725dbcb82191ac29445013ca`.
+GUI process receipt SHA256:
+`6a74d898c2cbed5444dbe081e384f5a59dd9ece2fba96be83d32f4bd49556cd1`.
+The examples ran on an owned Xvfb/private D-Bus display without using the owner's
+mouse. No USB protocol I/O, physical audio or new hardware acceptance occurred.
+
+The earlier cards/list screenshots of owner-heard Firefox playback establish the
+backend checkpoint, not design acceptance. The ignored local review landing page
+now links versioned native Console captures and labels those old images historical.
 
 Kit buttons/inputs supply focus, keyboard editing and interaction behavior. All
 name/selection commands still pass through the existing conservative wire-name

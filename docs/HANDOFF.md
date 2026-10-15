@@ -1,6 +1,49 @@
 # LinX continuation handoff
 Updated 2026-10-15 UTC. Resume development; do not restart the investigation.
 
+## Latest checkpoint: approved Console ported to native GPUI
+
+Read [gpui-interface.md](gpui-interface.md#native-console-qualification-2026-10-15).
+The owner correctly rejected a link to old utility-layout screenshots. The approved
+01 Console is now the actual native interface: 788x568, four contiguous strips,
+live application wells, expanding selection/Appearance drawers, Light/Dark and five
+palettes. Below 600 pixels the strips reflow to two columns. Appearance is currently
+in memory. Faders/Mute remain disabled, dB reads a dash and meter rails are unlit;
+no gain/mute/meter backend was invented. Shared status colors remain unchanged.
+Matrix/Mini remain concepts. The ignored review landing page now links versioned
+native captures and explicitly marks the earlier cards/list images historical.
+
+Exact compiled source `beacn-native-source-20261015T141718Z` passed offline cached
+root and GPUI example builds. Console private GUI run `141816Z` used two actual mpv
+processes, aliases, automatic connection, actual assignments 1/4, theme switching
+and Pause. Outer private-core teardown and full desktop/settings/state/binding
+matched exactly. Catalog journal SHA256:
+`1a4735a509a837a6cb7a628502ccf2e2bb790fe2725dbcb82191ac29445013ca`.
+No USB protocol I/O or physical playback was performed; no fresh attended test was
+requested. Normal Desktop startup remains gated.
+
+Read-only visual run `141751Z` passed all actual theme/palette/drawer/selection and
+narrow-layout widgets, but its outer desktop/state comparison differed. One stream
+changed identity/params/props, ports/links and saved stream-properties; cause is
+unknown. Preserve raw evidence; do not overwrite foreign settings to match. The
+preceding shorter visual run `141401Z` matched exactly. Later private-run equality
+does not erase the earlier mismatch. Complete evidence and image provenance are
+copied/hashed privately outside Git.
+The final read-only audit matches the post-visual-run desktop/state snapshot,
+finds both physical PCMs closed and no owned test process. Receipt SHA256:
+`65c1888dc26370a42cb1b979c051ea4f08f7d065f99406dcc875fefc424df296`.
+
+Before the cached builds, the laptop had about 1.77 GB free. With active-process,
+resolved path/inode/owner guards, only this project's inactive incremental compiler
+objects were removed, recovering 5.56 GB. Source, lockfiles, frozen binaries and
+evidence were preserved; recovery snapshots matched exactly. This did not resume
+Windows C: cleanup. Latest free space is about 3.63 GB; avoid redundant heavy builds.
+
+Next: owner review of the actual Console captures, then fresh-readiness-gated desktop
+GUI Resume/failure and longer-session hardware qualification. No installed app,
+managed physical session, durable assignments, hotplug or new hardware support was
+added. Keep Actions disabled and checkpoints local with [skip ci].
+
 ## Latest checkpoint: desktop publication, GUI assignment and Pause heard
 
 Read [native-desktop-session.md](native-desktop-session.md). An opt-in sealed

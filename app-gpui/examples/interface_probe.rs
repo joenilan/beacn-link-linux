@@ -53,6 +53,7 @@ fn main() {
             studio: false,
             managed,
             native_playback: false,
+            console: std::env::var("LINX_CONSOLE_GUI_TEST").as_deref() == Ok("1"),
             desktop: false,
             studio_recovery: false,
         },

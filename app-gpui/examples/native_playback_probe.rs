@@ -55,6 +55,7 @@ fn main() {
             studio: false,
             managed: false,
             native_playback: true,
+            console: false,
             desktop: false,
             studio_recovery: std::env::var("LINX_STUDIO_RECOVERY_GUI_TEST").as_deref() == Ok("1"),
         },

@@ -7,17 +7,19 @@ the owner-selected Console default, with a routing matrix and compact utility
 alternative. All three support Light/Dark and five accent palettes.
 Its [image-based research](design/linx-concept/directions/README.md) compares
 published BEACN, Wave Link, Sonar and UAD interfaces. The proposals target the
-existing Rust/GPUI Kit app; all controls/data are fictional and change no audio
-or production routing. Future Linux gain and remote BEACN mix controls remain
-separate capabilities.
+existing Rust/GPUI Kit app; the HTML concepts use fictional data. Console is now
+implemented in native GPUI with actual application discovery/assignment wells,
+Light/Dark and five palettes. Its gain/mute controls remain disabled and meters
+unlit. Future Linux gain and remote BEACN mix controls remain separate capabilities.
 
 The primary [LinX interface](docs/gpui-interface.md) now uses GPUI Kit: a compact
-window, responsive channel cards, expandable application details and a shared
+788x568 Console, responsive channel strips, expanding application controls and a shared
 lynx status icon/tray. Real widgets and private-session routing/cleanup pass native
 Linux checks. The normal GUI keeps USB/device connection and desktop apply disabled.
 The [explicit Studio GUI check](docs/native-studio-gui.md) now passes owner-heard
-first-pair output and clean release on an owned test core; standalone playback
-and ordinary desktop routing remain unfinished.
+first-pair output and clean release on an owned test core; subsequent native and
+desktop checks below extend that evidence. The Console port separately passes
+two-app private routing, themes and Pause; it has no new physical acceptance.
 An optional [native Rust/C playback owner](docs/native-playback-owner.md) now
 passes all four virtual mappings, native failure/release checks and GUI
 Pause/reconnect/Quit. Its [first physical Studio pair](docs/native-playback-startup.md)

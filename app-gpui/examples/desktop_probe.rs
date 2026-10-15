@@ -40,6 +40,7 @@ fn main() {
             managed: false,
             native_playback: false,
             studio_recovery: false,
+            console: false,
             desktop: true,
         },
     );

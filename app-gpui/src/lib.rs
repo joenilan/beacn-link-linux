@@ -1,3 +1,4 @@
+mod appearance;
 pub mod ui;
 mod window_icon;
 

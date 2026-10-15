@@ -74,6 +74,7 @@ fn main() {
             studio: true,
             managed: false,
             native_playback: false,
+            console: false,
             desktop: false,
             studio_recovery: recovery,
         },

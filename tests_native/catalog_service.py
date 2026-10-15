@@ -74,6 +74,7 @@ def verify(binary, root, runtime, remote, env, dump, first_pid, media, propertie
             owner.save(root/'gui-process.json',{'exit':result.returncode,'stdout':result.stdout,'stderr':result.stderr,'binary_sha256':hashlib.sha256(Path(gui).read_bytes()).hexdigest()})
             evidence=root/'gui/result.txt'
             expected = ('managed=true cycles_at_least=96 applications=2 pause_held=true explicit_resume=true selection_loss_stopped=true quit_release=verified configs_removed=true' if managed_gui else 'widgets_selected=2 renamed=true removed=true worker_stopped=true session_started_stopped_restarted=true lifecycle_release_verified=true owned_configs_remaining=0 failed=false')
+            if env.get('LINX_CONSOLE_GUI_TEST')=='1':expected='console_native=true applications=2 assignments=1,4 automatic=true pause=true owned_cleanup=verified usb=false'
             if env.get('LINX_NATIVE_PLAYBACK_GUI_TEST')=='1':expected='native_playback=true usb=false pause_resume_quit=verified'
             if env.get('LINX_STUDIO_RECOVERY_GUI_TEST')=='1':
                 expected='sessions=2 pause_held=true explicit_resume=true quit_while_running=true route_release=verified transport_release=verified'

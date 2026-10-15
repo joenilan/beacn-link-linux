@@ -17,6 +17,7 @@ pub struct Configuration {
     pub native_playback: bool,
     pub studio_recovery: bool,
     pub desktop: bool,
+    pub console: bool,
 }
 pub struct Probe {
     config: Configuration,
@@ -47,6 +48,9 @@ impl Probe {
         }
     }
     pub fn next(&mut self, snapshot: &Snapshot) -> Option<Action> {
+        if self.config.console {
+            return self.next_console(snapshot);
+        }
         if self.config.desktop {
             return self.next_desktop(snapshot);
         }
@@ -186,6 +190,138 @@ impl Probe {
     }
 }
 impl Probe {
+    fn next_console(&mut self, snapshot: &Snapshot) -> Option<Action> {
+        if !self.config.second.is_empty() {
+            return self.next_console_private(snapshot);
+        }
+        if self.start.elapsed() > Duration::from_secs(35) {
+            return Some(Action::Fail(
+                self.config.root.clone(),
+                format!("Console stage={} {:?}", self.stage, snapshot.message),
+            ));
+        }
+        if self.pause.elapsed() < Duration::from_millis(450) {
+            return None;
+        }
+        let action = match self.stage {
+            0 if snapshot.connected => Action::Click(format!("select-{}", self.config.first)),
+            1 if snapshot.selected.len() == 1 => Action::Click("applications".into()),
+            2 => Action::Capture("console-dark.ppm"),
+            3 => Action::Click("settings".into()),
+            4 => Action::Click("theme-light".into()),
+            5 => Action::Click("settings".into()),
+            6 => Action::Capture("console-light.ppm"),
+            7 => Action::Click("settings".into()),
+            8 => Action::Click("accent-violet".into()),
+            9 => Action::Click("settings".into()),
+            10 => Action::Capture("console-light-violet.ppm"),
+            11 => Action::Click("settings".into()),
+            12 => Action::Click("theme-dark".into()),
+            13 => Action::Click("settings".into()),
+            14 => Action::Capture("console-dark-violet.ppm"),
+            15 => Action::Click("settings".into()),
+            16 => Action::Click("accent-blue".into()),
+            17 => Action::Click("settings".into()),
+            18 => Action::Capture("console-dark-blue.ppm"),
+            19 => Action::Click("settings".into()),
+            20 => Action::Click("accent-amber".into()),
+            21 => Action::Click("settings".into()),
+            22 => Action::Capture("console-dark-amber.ppm"),
+            23 => Action::Click("settings".into()),
+            24 => Action::Click("accent-rose".into()),
+            25 => Action::Click("settings".into()),
+            26 => Action::Capture("console-dark-rose.ppm"),
+            27 => Action::Click("settings".into()),
+            28 => Action::Click("accent-mint".into()),
+            29 => Action::Click("settings".into()),
+            30 => Action::Click("applications".into()),
+            31 => Action::Capture("console-applications.ppm"),
+            32 => Action::Click("applications".into()),
+            33 => Action::Resize(480., 568.),
+            34 => Action::Capture("console-narrow.ppm"),
+            35 => Action::Resize(788., 568.),
+            36 => Action::Click("settings".into()),
+            37 => Action::Capture("console-settings.ppm"),
+            38 => Action::Click("settings".into()),
+            39 => Action::Finish(self.config.root.clone()),
+            _ => return None,
+        };
+        assert_ne!(
+            snapshot.link.phase,
+            Phase::Running,
+            "read-only console must never start audio"
+        );
+        assert!(snapshot.routing.assignments.is_empty());
+        self.stage += 1;
+        self.pause = Instant::now();
+        Some(action)
+    }
+    fn next_console_private(&mut self, snapshot: &Snapshot) -> Option<Action> {
+        if self.start.elapsed() > Duration::from_secs(35)
+            || snapshot.link.error.is_some()
+            || snapshot.link.phase == Phase::NeedsReview
+        {
+            return Some(Action::Fail(
+                self.config.root.clone(),
+                format!(
+                    "Console private stage={} {:?}",
+                    self.stage, snapshot.message
+                ),
+            ));
+        }
+        if self.pause.elapsed() < Duration::from_millis(300) {
+            return None;
+        }
+        let action = match self.stage {
+            0 if snapshot.connected => Action::Resize(788., 850.),
+            1 => Action::Click(format!("details-{}", self.config.first)),
+            2 => Action::Name(self.config.first.clone(), "Media Player".into()),
+            3 if snapshot.selected.len() == 1 => {
+                Action::Click(format!("details-{}", self.config.first))
+            }
+            4 => Action::Click(format!("details-{}", self.config.second)),
+            5 => Action::Name(self.config.second.clone(), "Other Player".into()),
+            6 if snapshot.selected.len() == 2 => {
+                Action::Click(format!("details-{}", self.config.second))
+            }
+            7 => Action::Click("applications".into()),
+            8 => Action::Resize(788., 568.),
+            9 => Action::Click("auto-connect".into()),
+            10 if snapshot.link.phase == Phase::Running && snapshot.link.completed_cycles >= 2 => {
+                assert_eq!(snapshot.routing.assignments.len(), 2);
+                assert!(snapshot.routing.assignments.values().any(|v| *v == 1));
+                assert!(snapshot.routing.assignments.values().any(|v| *v == 4));
+                assert_eq!(
+                    beacn_linx_core::icon::Status::from_snapshot(snapshot),
+                    beacn_linx_core::icon::Status::PrivateTest
+                );
+                Action::Capture("console-private-running.ppm")
+            }
+            11 => Action::Click("settings".into()),
+            12 => Action::Click("theme-light".into()),
+            13 => Action::Click("settings".into()),
+            14 => Action::Capture("console-private-light.ppm"),
+            15 => Action::Click("session".into()),
+            16 if snapshot.link.phase == Phase::Stopped
+                && snapshot.startup == beacn_linx_core::startup::State::Paused =>
+            {
+                assert!(snapshot.routing.cleanup.as_ref().is_some_and(Result::is_ok));
+                assert!(
+                    snapshot
+                        .link
+                        .transport_cleanup
+                        .as_ref()
+                        .is_some_and(Result::is_ok)
+                );
+                Action::Capture("console-private-paused.ppm")
+            }
+            17 => Action::Finish(self.config.root.clone()),
+            _ => return None,
+        };
+        self.stage += 1;
+        self.pause = Instant::now();
+        Some(action)
+    }
     fn next_desktop(&mut self, snapshot: &Snapshot) -> Option<Action> {
         if snapshot.link.error.is_some()
             || snapshot.link.phase == Phase::NeedsReview
@@ -511,6 +647,27 @@ impl Probe {
         Some(action)
     }
     pub fn on_quit(&self, snapshot: &Snapshot) {
+        if self.config.console {
+            if self.stage == 40 && self.config.second.is_empty() {
+                assert_ne!(snapshot.link.phase, Phase::Running);
+                assert!(snapshot.routing.assignments.is_empty());
+                std::fs::write(self.config.root.join("console-result.txt"),"native_console=true read_only=true themes=true accents=true application_selection=true compact_layout=true\n").unwrap();
+            }
+            if self.stage == 18 && !self.config.second.is_empty() {
+                assert_eq!(snapshot.link.phase, Phase::Stopped);
+                assert!(snapshot.routing.cleanup.as_ref().is_some_and(Result::is_ok));
+                assert!(
+                    snapshot
+                        .link
+                        .transport_cleanup
+                        .as_ref()
+                        .is_some_and(Result::is_ok)
+                );
+                std::fs::write(self.config.root.join("result.txt"),"console_native=true applications=2 assignments=1,4 automatic=true pause=true owned_cleanup=verified usb=false\n").unwrap();
+            }
+            return;
+        }
+
         if self.config.desktop {
             if self.stage == 7 {
                 assert_eq!(snapshot.link.phase, Phase::Stopped);
