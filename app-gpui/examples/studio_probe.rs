@@ -9,7 +9,12 @@ fn main() {
     assert_eq!(std::env::var("LINX_STUDIO_GUI_TEST").as_deref(), Ok("1"));
     let args: Vec<_> = std::env::args().skip(1).collect();
     assert_eq!(args.len(), 16);
-    assert_eq!(args[0], "--authorize-bounded-studio-gui");
+    let playback = match args[0].as_str() {
+        "--authorize-bounded-studio-gui" => studio_session::Playback::Supervisor,
+        #[cfg(feature = "native-playback-test")]
+        "--authorize-bounded-native-studio-gui" => studio_session::Playback::NativeStudio,
+        _ => panic!("requires explicit bounded Studio backend authority"),
+    };
     let root = PathBuf::from(&args[1]);
     std::fs::create_dir(&root).expect("exclusive GUI evidence");
     let mut expected = Vec::new();
@@ -38,6 +43,7 @@ fn main() {
         expected,
         pair: args[5].parse().unwrap(),
         physical: true,
+        playback,
         routing: private_session::Configuration {
             runtime: PathBuf::from(&args[7]),
             core: args[8].clone(),
@@ -60,6 +66,7 @@ fn main() {
             root,
             studio: true,
             managed: false,
+            native_playback: false,
         },
     );
 }

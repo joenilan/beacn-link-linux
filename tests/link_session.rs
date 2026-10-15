@@ -420,3 +420,51 @@ fn managed_invalid_options_do_not_construct_owners_and_do_not_change_bounded_pol
     invalid.applications[1].advertised_name = invalid.applications[0].advertised_name.clone();
     assert!(Publication::managed_selected(&invalid, PollPolicy::Strict).is_err());
 }
+
+#[test]
+fn playback_owner_abort_preserves_error_releases_both_owners_and_blocks_unverified_restart() {
+    for bad_cleanup in [false, true] {
+        let (service, baseline, destinations, ownership) = setup();
+        let (backend, state) = backend(baseline, ownership);
+        let (peer, log) = ScriptedPeer::new(vec![reply(1, 4)]).unwrap();
+        state.borrow_mut().cleanup_fails = bad_cleanup;
+        let mut session = LinkSession::default();
+        session
+            .start(
+                &service,
+                destinations.clone(),
+                options(4),
+                || Ok(backend),
+                |i, o| open(peer, i, o),
+            )
+            .unwrap();
+        assert!(session
+            .abort("native playback owner failed".into())
+            .is_err());
+        assert_eq!(
+            session.status().error.as_deref(),
+            Some("native playback owner failed")
+        );
+        assert_eq!(
+            session.status().phase,
+            if bad_cleanup {
+                Phase::NeedsReview
+            } else {
+                Phase::Stopped
+            }
+        );
+        assert_eq!(state.borrow().stops, 1);
+        assert_eq!(log.borrow().releases, 1);
+        if bad_cleanup {
+            assert!(session
+                .start(
+                    &service,
+                    destinations,
+                    options(4),
+                    || panic!("reopened routes"),
+                    |_, _| panic!("reopened transport")
+                )
+                .is_err());
+        }
+    }
+}

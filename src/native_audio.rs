@@ -67,6 +67,8 @@ fn pcm(status: &str, params: &str, pid: u32) -> Result<u64, Failure> {
 }
 
 pub(crate) struct PinnedPlayback {
+    #[cfg(feature = "native-playback")]
+    card: u32,
     pid: u32,
     start: u64,
     device: PathBuf,
@@ -119,6 +121,8 @@ impl PinnedPlayback {
             return Err(());
         }
         Ok(Self {
+            #[cfg(feature = "native-playback")]
+            card,
             pid,
             start,
             device,
@@ -186,6 +190,21 @@ impl PinnedPlayback {
             .ok_or(())?;
         Ok(())
     }
+    #[cfg(feature = "native-playback")]
+    pub(crate) fn card(&self) -> u32 {
+        self.card
+    }
+    #[cfg(feature = "native-playback")]
+    pub(crate) fn closed(&self) -> Result<(), Failure> {
+        if generation(self.pid)? != self.start
+            || identity(&self.device)? != self.stamp
+            || text(&self.pcm.join("status"))?.trim() != "closed"
+            || text(&self.capture)?.trim() != "closed"
+        {
+            return Err(());
+        }
+        Ok(())
+    }
     pub(crate) fn stats(&self) -> (u32, u64) {
         (
             self.checks,
@@ -223,6 +242,8 @@ mod tests {
         let held = File::open("/dev/zero").unwrap(); // Metadata/FD proof only; no reads.
         let device = PathBuf::from("/dev/zero");
         let mut proof = PinnedPlayback {
+            #[cfg(feature = "native-playback")]
+            card: 0,
             pid,
             start: generation(pid).unwrap(),
             stamp: identity(&device).unwrap(),

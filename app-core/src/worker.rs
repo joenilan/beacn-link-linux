@@ -24,6 +24,8 @@ pub enum Connection {
     ManagedPrivateSession(crate::private_session::Configuration),
     #[cfg(all(feature = "studio-session-test", target_os = "linux"))]
     StudioSession(crate::studio_session::Configuration),
+    #[cfg(all(feature = "native-playback-test", target_os = "linux"))]
+    NativePlaybackSession(crate::studio_session::Configuration),
 }
 pub struct Worker {
     tx: SyncSender<Request>,
@@ -74,6 +76,16 @@ impl Worker {
             let mut retry_at = std::time::Instant::now();
             let mut next_tick = std::time::Instant::now() + Duration::from_millis(500);
             while !ending.load(Ordering::Acquire) {
+                #[cfg(all(feature = "native-playback-test", target_os = "linux"))]
+                if matches!(&connection,Connection::StudioSession(config)
+                    if config.playback==crate::studio_session::Playback::NativeStudio)
+                    && crate::studio_session::native_supervisor_closed()
+                {
+                    model.notice(
+                        "Native qualification supervisor ended; releasing owned playback.".into(),
+                    );
+                    break;
+                }
                 #[cfg(all(feature = "native-catalog", target_os = "linux"))]
                 let observation = (|| {
                     use beacn_link_protocol::native_catalog::NativeCatalog;
@@ -93,6 +105,11 @@ impl Worker {
                             }
                             #[cfg(feature = "studio-session-test")]
                             Connection::StudioSession(config) => NativeCatalog::connect(
+                                &config.routing.runtime,
+                                &config.routing.core,
+                            )?,
+                            #[cfg(feature = "native-playback-test")]
+                            Connection::NativePlaybackSession(config) => NativeCatalog::connect(
                                 &config.routing.runtime,
                                 &config.routing.core,
                             )?,

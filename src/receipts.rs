@@ -49,6 +49,48 @@ pub fn verify_release(
     })
 }
 
+/// Receipts for a created eight-channel sink and its two retained monitor links.
+/// This is comparison data only; native proxy handles remain deletion authority.
+#[derive(Debug, Clone)]
+pub struct SinkReceipt {
+    pub node: ObjectRef,
+    pub ports: BTreeSet<ObjectRef>,
+    pub ownership: Ownership,
+}
+pub fn verify_sink_release(
+    before: &GraphSnapshot,
+    after: &GraphSnapshot,
+    receipt: &SinkReceipt,
+) -> Result<ReleaseReport, String> {
+    validate_graph(before).map_err(|e| e.to_string())?;
+    validate_graph(after).map_err(|e| e.to_string())?;
+    if receipt.node.id == 0
+        || receipt.node.serial == 0
+        || receipt.ports.len() != 8
+        || receipt.ownership.links.len() != 2
+        || before
+            .ports
+            .iter()
+            .any(|p| receipt.ports.contains(&p.object) && p.node != receipt.node)
+    {
+        return Err("invalid sink release receipt".into());
+    }
+    // Reuse the link receipt rules, including same-tag foreign preservation.
+    let mut links_released = before.clone();
+    links_released
+        .links
+        .retain(|l| !receipt.ownership.links.contains(&l.object));
+    let report = verify_release(before, &links_released, &receipt.ownership)?;
+    links_released.nodes.retain(|n| *n != receipt.node);
+    links_released
+        .ports
+        .retain(|p| !receipt.ports.contains(&p.object));
+    if &links_released != after {
+        return Err("sink release could not verify every foreign object exactly".into());
+    }
+    Ok(report)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Acknowledgment {
     Disconnected(ObjectRef),

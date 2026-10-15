@@ -11,6 +11,9 @@ use std::collections::{BTreeMap, BTreeSet};
 pub struct VerifiedRoutePublication {
     inventory: Inventory,
     records: Vec<Record>,
+    destinations: Vec<Destination>,
+    ownership: Ownership,
+    core: String,
 }
 impl VerifiedRoutePublication {
     /// Pure verification over trusted caller observations/receipt ledger. This
@@ -151,6 +154,9 @@ impl VerifiedRoutePublication {
         Ok(Self {
             inventory: inventory.clone(),
             records,
+            destinations: destinations.to_vec(),
+            ownership: ownership.clone(),
+            core: observed.graph.core_id.clone(),
         })
     }
     pub fn inventory(&self) -> &Inventory {
@@ -158,5 +164,38 @@ impl VerifiedRoutePublication {
     }
     pub fn records(&self) -> &[Record] {
         &self.records
+    }
+    /// Revalidate the same fully verified assignments against a fresh native
+    /// observation, without extending its inventory generation or authority.
+    pub fn verify_observation(&self, observed: &Observation) -> Result<(), String> {
+        if observed.inventory != self.inventory || observed.graph.core_id != self.core {
+            return Err("playback route inventory changed".into());
+        }
+        let assignments = self
+            .inventory
+            .applications
+            .iter()
+            .map(|app| {
+                let record = self
+                    .records
+                    .iter()
+                    .find(|r| r.name == app.advertised_name)
+                    .ok_or("verified publication record absent")?;
+                Ok((app.id.clone(), record.assignment.byte()))
+            })
+            .collect::<Result<BTreeMap<_, _>, String>>()?;
+        Self::verify_selected(
+            observed,
+            observed,
+            &self.destinations,
+            &self.ownership,
+            &assignments,
+        )?;
+        Ok(())
+    }
+    pub fn destination(&self, assignment: u8) -> Option<&Destination> {
+        self.destinations
+            .iter()
+            .find(|d| d.assignment == assignment)
     }
 }

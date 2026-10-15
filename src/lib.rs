@@ -330,5 +330,7 @@ pub mod native_catalog;
 #[cfg(all(feature = "native-pipewire", target_os = "linux"))]
 pub mod native_pipewire;
 
+#[cfg(all(feature = "native-playback", target_os = "linux"))]
+pub mod native_playback;
 #[cfg(all(feature = "native-pipewire", target_os = "linux"))]
 pub mod native_routing_lease;

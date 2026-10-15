@@ -215,6 +215,9 @@ def main():
     parser.add_argument('--session-control-check', help='native start/stop/source-exit qualification binary; requires catalog-service-check and no USB')
     parser.add_argument('--gui-check', help='native egui isolated-window qualification binary; requires catalog-service-check and no USB')
     parser.add_argument('--studio-gui-check', help='explicit native GUI hardware qualification binary; requires bounded ordinary-app physical mode')
+    parser.add_argument('--playback-owner-check', help='native eight-channel sink owner qualification; no-USB catalog-service scope only')
+    parser.add_argument('--virtual-monitors', action='store_true', help='monitor ports on retained virtual destinations for no-USB playback qualification')
+    parser.add_argument('--native-studio-playback', action='store_true', help='explicit Studio GUI native playback owner; Python is metadata witness only')
     parser.add_argument("--authorize-studio-first-pair-silence", action="store_true",
                         help="native-only assignment-1 physical stage; pauses USB until owned audio cleanup")
     parser.add_argument("--authorize-studio-first-pair-tone", action="store_true")
@@ -237,6 +240,8 @@ def main():
         import gui_studio
         try:gui_studio.validate(args.stage,args.application_mpv,physical_requested,args.continuous_studio_first_pair,args.cycles,args.catalog_service_check,args.probe_source_exit)
         except RuntimeError as error:parser.error(str(error))
+    if args.native_studio_playback and not args.studio_gui_check:
+        parser.error('native Studio playback requires the explicit bounded Studio GUI check')
     audible = args.audible_first_pair or args.audible_studio_pair
     if args.continuous_studio_first_pair and not physical_requested:
         parser.error("continuous physical mode requires explicit silence/tone authority")
@@ -255,6 +260,10 @@ def main():
         parser.error('session control qualification requires the no-USB Rust catalog/service check')
     if args.gui_check and not args.catalog_service_check:
         parser.error('GUI qualification requires the no-USB Rust catalog/service check')
+    if args.playback_owner_check and (not args.catalog_service_check or args.gui_check or args.session_control_check or args.multi_app_check):
+        parser.error('native playback owner requires its separate no-USB Rust catalog/service check')
+    if args.virtual_monitors and (not routing_probe or not args.catalog_service_check or not (args.playback_owner_check or args.gui_check)):
+        parser.error('virtual monitors require an explicit no-USB playback or graphical qualification')
     if args.probe_source_exit and not (routing_probe and args.application_mpv and args.cycles == 5):
         parser.error('source exit injection requires the five-cycle ordinary no-USB routing probe')
     if args.application_mpv and (not args.private_routing or args.stage not in ('run', 'routing-probe') or args.single_publication_hold):
@@ -396,6 +405,7 @@ def main():
     result["continuous_first_pair_requested"] = args.continuous_studio_first_pair
     result['selected_pair'] = args.studio_pair
     continuous_job = None
+    native_observer = None
     application = None
 
     def start(name, command, child_env, stdin=None):
@@ -451,7 +461,7 @@ def main():
                 cp = base.inventory.properties(client)
                 if int(cp.get("pipewire.sec.pid", cp.get("application.process.id", 0))) != controller.pid or p.get("device.id") is not None or p.get("media.class") != "Audio/Sink" or p.get("node.virtual") is not True:
                     raise RuntimeError("private destination ownership/layout refused")
-                node_config = {**port_config, "monitor": physical_before is not None and node is ordered[args.studio_pair - 1]}
+                node_config = {**port_config, "monitor": args.virtual_monitors or (physical_before is not None and node is ordered[args.studio_pair - 1])}
                 controller.stdin.write(("set-param " + str(node["id"]) + " PortConfig " + json.dumps(node_config) + "\n").encode())
                 controller.stdin.flush()
             end = time.monotonic() + 4
@@ -515,7 +525,8 @@ def main():
             result['catalog_service']=catalog_service.verify(Path(args.catalog_service_check).resolve(strict=True),root/'catalog-service',runtime,remote,env,dump,playback.pid,media,app_props,rate,
                 multi_app=Path(args.multi_app_check).resolve(strict=True) if args.multi_app_check else None, native_arguments=native_arguments,
                 session_control=Path(args.session_control_check).resolve(strict=True) if args.session_control_check else None,
-                gui=Path(args.gui_check).resolve(strict=True) if args.gui_check else None)
+                gui=Path(args.gui_check).resolve(strict=True) if args.gui_check else None,
+                playback_owner=Path(args.playback_owner_check).resolve(strict=True) if args.playback_owner_check else None)
         # Confirm the same owned source immediately before the single native child.
         _, objects = dump()
         if application is not None:application.validate(objects)
@@ -530,6 +541,7 @@ def main():
                     raise RuntimeError("owned source/core exited")
                 raw, current_objects = dump()
                 if continuous_job is not None:current_objects = continuous_job.filtered(current_objects)
+                if native_observer is not None:current_objects = native_observer.filtered(current_objects,native_observer.native)
                 if args.probe_source_exit and request == 4:
                     result['source_exit_injected'] = True
                     result['source_exit_process_stopped'] = stop_owned(playback)
@@ -565,11 +577,15 @@ def main():
                 return continuous_job.stop() if continuous_job is not None else True
             def pulse():
                 if continuous_job is not None:continuous_job.check()
+                if native_observer is not None:native_observer.sample()
             if args.studio_gui_check:
+                if args.native_studio_playback:
+                    from native_playback_observer import Observer
+                    native_observer=Observer(selected,physical_before,root/'native-physical-observation',dump,server,controller,playback,ordered[args.studio_pair-1],token,args.studio_pair)
                 result['studio_gui_binary_sha256']=hashlib.sha256(Path(args.studio_gui_check).read_bytes()).hexdigest()
                 base.save(root/'studio-gui-binary.json',{'sha256':result['studio_gui_binary_sha256']})
                 result.update(gui_studio.execute(Path(args.studio_gui_check).resolve(strict=True),root/'studio-gui',selected,pinned,
-                    inventory['applications'][0]['application_id'],args.studio_pair,args.cycles,native_arguments,fresh,concurrent_stage,pulse))
+                    inventory['applications'][0]['application_id'],args.studio_pair,args.cycles,native_arguments,fresh,concurrent_stage,pulse,observer=native_observer))
             else:
                 result.update(execute_periodic(command, fresh, args.cycles, timeout=90 if args.private_routing else 50,
                                            physical=physical_stage if physical_before is not None and not args.continuous_studio_first_pair else None,

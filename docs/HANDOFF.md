@@ -1,6 +1,43 @@
 # LinX continuation handoff
 Updated 2026-10-15 UTC. Resume development; do not restart the investigation.
 
+## Current checkpoint: native playback owner and GUI pass unattended
+
+Owner asked to finish everything possible while asleep. Optional Rust/C playback
+now owns an eight-channel sink/two monitor links in-process, with fresh verified
+routes, pinned generations, native PCM metadata proof, latched failure and exact
+release comparison. Native Studio remains bounded to 40 cycles/4096 PCM checks;
+normal physical/desktop apply stays disabled. No USB I/O, physical PCM open,
+Windows change, capture or owner mouse input occurred in this batch.
+
+Read [native-playback-owner.md](native-playback-owner.md). Exact native-qualified
+source `beacn-native-source-20261015T035526Z`; native run
+`beacn-native-playback-20261015T035622Z`, result SHA256
+`20912f49c3b71213a946f678b7cc3d57651c1435390892a452b8ad04e0bfa4af`;
+GUI run `beacn-native-playback-gui-20261015T035801Z`, result SHA256
+`e3cdf1376a28cdfa093929e5090c61d4fbc3139c69fd551b68f0f384c0ece923`.
+All four virtual mappings, 128 refreshes/64.417 seconds, four native failure
+boundaries, Drop/source-exit release and actual GUI Pause/held pause/reconnect/
+Quit pass. Original private core, full laptop settings/state, configs/processes
+and connected USB binding match; blue/gray screenshots inspected. 71 Linux root,
+17 changed Windows, 39 Linux Python, twelve core and eight reference checks pass.
+Native and production builds pass; source/evidence limits are in the report.
+
+First physical native-owner check is **built but unrun**. Native Studio artifact
+SHA256 `c95827ee62245e545c8745745a7f6ce9bc95b72aff8468bb72602618375c0a1d`.
+Use existing private native-playback ready/checkpoint state for its exact artifact
+and pending launcher. Python is a metadata-only witness in that explicit mode.
+Do not substitute earlier accepted supervisor evidence for native acceptance.
+When owner is awake, finish preflight, explain Applications/all Link In boxes
+and first-pair listening, wait for fresh **start now**, then run immediately.
+Next qualify physical pause/failure/reconnect and ordinary desktop integration.
+No test is running. Keep Actions disabled and local checkpoints [skip ci].
+
+Build disk is below 25 GB (about 14 GB after preserving compiled artifacts).
+Owner notified; avoid repeated heavy full builds/staging and never delete
+evidence/source/running artifacts. Cached native targets and immutable executables
+were used. No dependencies/toolchains/drivers installed in this batch.
+
 ## Current checkpoint: managed session lifetime passes native private GUI
 
 `LinkSession::start_managed` and `Publication::managed_selected` now explicitly

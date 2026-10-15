@@ -52,6 +52,7 @@ fn main() {
             root,
             studio: false,
             managed,
+            native_playback: false,
         },
     );
 }

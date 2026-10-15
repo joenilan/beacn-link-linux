@@ -116,3 +116,26 @@ fn unlinked_publication_requires_exact_binding_and_stereo_ports() {
     o.graph.ports[0].channel = Channel::Other;
     assert!(VerifiedRoutePublication::verify(&o, &o, &d, &own, 0).is_err());
 }
+
+#[test]
+fn playback_revalidation_keeps_original_core_inventory_destinations_and_receipts() {
+    let (observed, destinations, ownership) = fixture(1);
+    let proof =
+        VerifiedRoutePublication::verify(&observed, &observed, &destinations, &ownership, 1)
+            .unwrap();
+    assert_eq!(proof.destination(1), Some(&destinations[0]));
+    assert!(proof.verify_observation(&observed).is_ok());
+    for kind in 0..5 {
+        let mut changed = observed.clone();
+        match kind {
+            0 => changed.graph.core_id = "different-core".into(),
+            1 => changed.inventory.snapshot_id += 1,
+            2 => {
+                changed.graph.links.pop();
+            }
+            3 => changed.graph.links[0].owner = Some("same-ID-foreign-owner".into()),
+            _ => changed.inventory.applications[0].advertised_name = b"replacement".to_vec(),
+        }
+        assert!(proof.verify_observation(&changed).is_err());
+    }
+}

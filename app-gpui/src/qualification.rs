@@ -14,6 +14,7 @@ pub struct Configuration {
     pub root: PathBuf,
     pub studio: bool,
     pub managed: bool,
+    pub native_playback: bool,
 }
 pub struct Probe {
     config: Configuration,
@@ -44,6 +45,9 @@ impl Probe {
         }
     }
     pub fn next(&mut self, snapshot: &Snapshot) -> Option<Action> {
+        if self.config.native_playback {
+            return self.next_native_playback(snapshot);
+        }
         if self.config.studio {
             return self.next_studio(snapshot);
         }
@@ -168,6 +172,57 @@ impl Probe {
     }
 }
 impl Probe {
+    fn next_native_playback(&mut self, snapshot: &Snapshot) -> Option<Action> {
+        if snapshot.link.error.is_some()
+            || snapshot.link.phase == Phase::NeedsReview
+            || self.start.elapsed() > Duration::from_secs(35)
+        {
+            return Some(Action::Fail(
+                self.config.root.clone(),
+                format!(
+                    "native playback stage={} message={:?}",
+                    self.stage, snapshot.message
+                ),
+            ));
+        }
+        if self.pause.elapsed() < Duration::from_millis(220) {
+            return None;
+        }
+        let action = match self.stage {
+            0 if snapshot.connected => Action::Click(format!("select-{}", self.config.first)),
+            1 if snapshot.selected.len() == 1 => Action::Click("auto-connect".into()),
+            2 if snapshot.link.phase == Phase::Running && snapshot.link.completed_cycles >= 4 => {
+                assert!(snapshot.private_session);
+                assert_eq!(snapshot.routing.assignments.values().next(), Some(&1));
+                assert_eq!(
+                    beacn_linx_core::icon::Status::from_snapshot(snapshot),
+                    beacn_linx_core::icon::Status::PrivateTest
+                );
+                Action::Capture("native-playback-running.ppm")
+            }
+            3 => Action::Click("session".into()),
+            4 if snapshot.link.phase == Phase::Stopped
+                && self.pause.elapsed() > Duration::from_millis(1200) =>
+            {
+                assert_eq!(snapshot.startup, beacn_linx_core::startup::State::Paused);
+                assert!(snapshot
+                    .link
+                    .transport_cleanup
+                    .as_ref()
+                    .is_some_and(Result::is_ok));
+                assert!(snapshot.routing.cleanup.as_ref().is_some_and(Result::is_ok));
+                Action::Capture("native-playback-paused.ppm")
+            }
+            5 => Action::Click("session".into()),
+            6 if snapshot.link.phase == Phase::Running && snapshot.link.completed_cycles >= 4 => {
+                Action::Finish(self.config.root.clone())
+            }
+            _ => return None,
+        };
+        self.stage += 1;
+        self.pause = Instant::now();
+        Some(action)
+    }
     fn next_managed(&mut self, snapshot: &Snapshot) -> Option<Action> {
         if snapshot.link.phase == Phase::NeedsReview
             || (snapshot.link.error.is_some()
@@ -314,6 +369,23 @@ impl Probe {
         Some(action)
     }
     pub fn on_quit(&self, snapshot: &Snapshot) {
+        if self.config.native_playback {
+            if self.stage == 7 {
+                assert_eq!(snapshot.link.phase, Phase::Stopped);
+                assert!(snapshot
+                    .link
+                    .transport_cleanup
+                    .as_ref()
+                    .is_some_and(Result::is_ok));
+                assert!(snapshot.routing.cleanup.as_ref().is_some_and(Result::is_ok));
+                std::fs::write(
+                    self.config.root.join("result.txt"),
+                    "native_playback=true usb=false pause_resume_quit=verified\n",
+                )
+                .unwrap();
+            }
+            return;
+        }
         if self.config.managed {
             if self.stage == 14 {
                 assert_eq!(snapshot.link.phase, Phase::Stopped);

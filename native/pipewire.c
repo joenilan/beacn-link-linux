@@ -53,6 +53,9 @@ struct session {
   uint32_t cookie;
   char name[129];
   int seq, done;
+#ifdef BCL_NATIVE_PLAYBACK
+  int playback_fault;
+#endif
 #ifdef BCL_TEST_FAULTS
   int test_fault;
   uint64_t test_submissions, test_withheld, test_rejected;
@@ -836,4 +839,8 @@ int bcl_catalog_test_mutation_refused(struct session *s) {
     return 0;
   return bcl_perform(s, 0, NULL, NULL, NULL, NULL, NULL) == 1;
 }
+#endif
+
+#ifdef BCL_NATIVE_PLAYBACK
+#include "playback.inc"
 #endif

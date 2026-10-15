@@ -57,7 +57,7 @@ class NativeChild:
 
 
 def execute(binary, root, selected, cache, app_id, pair, cycles, native_arguments,
-            fresh, concurrent, pulse):
+            fresh, concurrent, pulse, observer=None):
     """Own Xvfb/bus + direct Rust child PID; exact bounded physical IPC only."""
     root.mkdir(mode=0o700)
     owned = []
@@ -94,7 +94,7 @@ def execute(binary, root, selected, cache, app_id, pair, cycles, native_argument
         if not software_icd.is_file():raise RuntimeError('isolated GUI software renderer unavailable')
         env.update(LIBGL_ALWAYS_SOFTWARE='1', WINIT_UNIX_BACKEND='x11', LINX_STUDIO_GUI_TEST='1', LIBUSB_DEBUG='0',
                    VK_DRIVER_FILES=str(software_icd),VK_ICD_FILENAMES=str(software_icd))
-        command = ['xvfb-run','-a','-s','-screen 0 1280x900x24','dbus-run-session','--',str(binary), '--authorize-bounded-studio-gui', str(root/'gui'),str(selected),str(cache),
+        command = ['xvfb-run','-a','-s','-screen 0 1280x900x24','dbus-run-session','--',str(binary), '--authorize-bounded-native-studio-gui' if observer is not None else '--authorize-bounded-studio-gui', str(root/'gui'),str(selected),str(cache),
                    app_id,str(pair),str(cycles),*native_arguments]
         child = subprocess.Popen(command,env=env,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         owned.append(child);result['private_child_pid']=child.pid
@@ -124,6 +124,7 @@ def execute(binary, root, selected, cache, app_id, pair, cycles, native_argument
                         if raw.startswith(b'STUDIO OWNER '):
                             if native is not None:raise RuntimeError('duplicate native GUI owner')
                             native=NativeChild(int(raw.decode('ascii').split()[2]),child,binary)
+                            if observer is not None:observer.native=native
                         elif raw.startswith(b'STUDIO CYCLE '):
                             fields=raw.decode('ascii').split()
                             count=int(fields[2])
@@ -133,6 +134,7 @@ def execute(binary, root, selected, cache, app_id, pair, cycles, native_argument
                             if assignment not in range(5):raise RuntimeError('invalid verified assignment')
                             if assignment:verified_routes+=1
                         elif raw.startswith(b'PHYSICAL'):
+                            if observer is not None:raise RuntimeError('external physical bridge refused in native-owner mode')
                             starting=physical_request(raw,pair,observed,cycles,started,active)
                             if native is None or concurrent('start' if starting else 'stop',native) is not True:raise RuntimeError('physical state unconfirmed')
                             active=starting;started|=starting
@@ -140,18 +142,29 @@ def execute(binary, root, selected, cache, app_id, pair, cycles, native_argument
                             message=f'PHYSICAL {"ACTIVE" if starting else "COMPLETE"} {pair}\n'.encode()
                             if os.write(child.stdin.fileno(),message)!=len(message):raise RuntimeError('partial GUI physical delivery')
                             if not starting:result['physical_stage_completed']=True
+                        elif raw.startswith(b'NATIVE PLAYBACK'):
+                            if observer is None:raise RuntimeError('native playback marker without explicit mode')
+                            expected_start=raw.startswith(b'NATIVE PLAYBACK ACTIVE ')
+                            physical_request(f'PHYSICAL {"START" if expected_start else "STOP"} {pair}'.encode(),pair,observed,cycles,started,active)
+                            starting=observer.event(raw,native)
+                            if starting!=expected_start:raise RuntimeError('native playback marker mismatch')
+                            active=starting;started|=starting
+                            result['physical_requests']+=int(starting)
+                            if not starting:result['physical_stage_completed']=True
                     if len(pending)>4096:raise RuntimeError('Studio GUI line exceeds bound')
             child.wait(timeout=max(.01,deadline-time.monotonic()))
         evidence=root/'gui/studio-result.txt'
         result['gui_hardware_verified']=child.returncode==0 and observed==cycles and evidence.is_file() and evidence.read_text()==f'hardware_session=true cycles={cycles} route_release=verified transport_release=verified\n' and not (root/'gui/failure.txt').exists()
         if not result['gui_hardware_verified']:raise RuntimeError('Studio GUI session proof failed')
-    except (OSError,ValueError,RuntimeError,subprocess.TimeoutExpired) as error:
+        if observer is not None and not observer.complete:raise RuntimeError('native playback observer proof incomplete')
+    except (OSError,ValueError,RuntimeError,KeyError,TypeError,IndexError,StopIteration,subprocess.TimeoutExpired) as error:
         result['supervisor_error']=type(error).__name__+': '+str(error)
+        if observer is not None:observer.fail(error)
         if child is not None:
             try:concurrent('abort',native if native is not None else child)
             except (OSError,ValueError,RuntimeError):pass
             child.stdin.close()
-            try:child.wait(timeout=4)
+            try:child.wait(timeout=12 if observer is not None else 4)
             except subprocess.TimeoutExpired:pass
     finally:
         native_stopped=native.close() if native is not None else True

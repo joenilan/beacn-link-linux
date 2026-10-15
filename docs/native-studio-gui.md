@@ -7,6 +7,12 @@ The successful run followed the owner's **start now** reply. Future watched test
 need another clear handoff after all builds/checks are finished. No further
 hardware test is running or automatically scheduled.
 
+An explicit [Rust/C playback owner](native-playback-owner.md) now also passes
+unattended virtual pair/failure/GUI lifecycle checks and is wired into this
+adapter. Its physical Studio path is built but unrun. The owner-heard evidence
+and external-supervisor implementation below describe the earlier accepted path;
+they do not establish physical acceptance of the new native owner.
+
 ## Implementation
 
 The explicit `studio-session-test` feature supplies a native GUI session through

@@ -111,6 +111,10 @@ impl Drop for NativePipeWire {
     }
 }
 impl NativePipeWire {
+    #[cfg(feature = "native-playback")]
+    pub(crate) fn playback_session(&mut self) -> *mut c_void {
+        self.session
+    }
     #[cfg(feature = "native-test-faults")]
     pub fn test_fault_stats(&self) -> [u64; 3] {
         let mut stats = [0; 3];

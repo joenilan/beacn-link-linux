@@ -11,7 +11,7 @@ import application_source
 import usb_handshake as owner
 
 
-def verify(binary, root, runtime, remote, env, dump, first_pid, media, properties, rate, multi_app=None, native_arguments=None, session_control=None, gui=None):
+def verify(binary, root, runtime, remote, env, dump, first_pid, media, properties, rate, multi_app=None, native_arguments=None, session_control=None, gui=None, playback_owner=None):
     root.mkdir(mode=0o700, exist_ok=False)
     _, before = dump()
     baseline = owner.core.filtered(before)
@@ -61,7 +61,7 @@ def verify(binary, root, runtime, remote, env, dump, first_pid, media, propertie
 
     try:
         log=(root/'service.stderr').open('xb');logs.append(log)
-        service=subprocess.Popen([str(binary),'service','120' if managed_gui else '60','--private-runtime',str(runtime),'--core',remote],
+        service=subprocess.Popen([str(binary),'service','120' if managed_gui or playback_owner is not None else '60','--private-runtime',str(runtime),'--core',remote],
                                  env=clean_env,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=log)
         processes.append(service)
         status(1,0);first=find_app(first_pid)
@@ -74,6 +74,7 @@ def verify(binary, root, runtime, remote, env, dump, first_pid, media, propertie
             owner.save(root/'gui-process.json',{'exit':result.returncode,'stdout':result.stdout,'stderr':result.stderr,'binary_sha256':hashlib.sha256(Path(gui).read_bytes()).hexdigest()})
             evidence=root/'gui/result.txt'
             expected = ('managed=true cycles_at_least=96 applications=2 pause_held=true explicit_resume=true selection_loss_stopped=true quit_release=verified configs_removed=true' if managed_gui else 'widgets_selected=2 renamed=true removed=true worker_stopped=true session_started_stopped_restarted=true lifecycle_release_verified=true owned_configs_remaining=0 failed=false')
+            if env.get('LINX_NATIVE_PLAYBACK_GUI_TEST')=='1':expected='native_playback=true usb=false pause_resume_quit=verified'
             proof['gui_widgets_verified']=result.returncode==0 and evidence.is_file() and evidence.read_text().strip()==expected and not (root/'gui/failure.txt').exists()
             proof['gui_managed_session']=managed_gui
             if not proof['gui_widgets_verified']:raise RuntimeError('native graphical qualification failed; inspect GUI evidence')
@@ -102,6 +103,9 @@ def verify(binary, root, runtime, remote, env, dump, first_pid, media, propertie
         if session_control is not None:
             import session_control as control_check
             proof['session_control']=control_check.verify(session_control,root/'session-control',native_arguments,first,second_id,lambda:stop(second),env,dump)
+        if playback_owner is not None:
+            import native_playback_check
+            proof['playback_owner']=native_playback_check.verify(playback_owner,root/'native-playback',native_arguments,first,second_id,lambda:stop(second),clean_env)
         stop(second);status(1,1)
         proof['departed_selection_revoked']=True
         reopened=launch('reopened');status(2,1);reopened_id=find_app(reopened.pid)
@@ -147,7 +151,7 @@ def verify(binary, root, runtime, remote, env, dump, first_pid, media, propertie
         # these retained disposable nodes. Preserve the exact intermediate
         # comparison (including false); the enclosing owner must destroy every
         # owned source/destination and require its original whole-core baseline.
-        proof['private_graph_teardown_deferred']=multi_app is not None or session_control is not None or gui is not None
+        proof['private_graph_teardown_deferred']=multi_app is not None or session_control is not None or gui is not None or playback_owner is not None
         proof['desktop_exact_equal']=owner.snapshot()==desktop
         proof['private_configs_removed']=set(Path('/tmp').glob('beacn-linx-catalog-*'))==configs
         proof['all_owned_processes_stopped']=all(p.poll() is not None for p in processes)
@@ -157,6 +161,7 @@ def verify(binary, root, runtime, remote, env, dump, first_pid, media, propertie
     if multi_app is not None:required+=['multi_app_native_verified','multi_app_routes_released']
     if session_control is not None:required+=['session_control']
     if gui is not None:required+=['gui_widgets_verified']
+    if playback_owner is not None:required+=['playback_owner']
     if proof['error'] or not all(proof.get(k) for k in required):
         raise RuntimeError('Rust catalog/service qualification failed; inspect journal')
     return proof

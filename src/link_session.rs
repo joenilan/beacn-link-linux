@@ -116,6 +116,23 @@ impl<B: OwnedRoutingBackend, T: OwnedControlTransport> LinkSession<B, T> {
     pub fn status(&self) -> &Status {
         &self.status
     }
+    /// A playback owner's failure stops the joined owners and remains visible.
+    pub fn abort(&mut self, error: String) -> Result<(), String> {
+        self.fail(error)
+    }
+    /// Fresh native proof for a playback owner; never a desired assignment map.
+    pub fn verify_routes(
+        &mut self,
+        service: &ApplicationService,
+    ) -> Result<crate::route_publication::VerifiedRoutePublication, String> {
+        if self.status.phase != Phase::Running {
+            return Err("link session is not running".into());
+        }
+        match self.routing.verify(service) {
+            Ok(proof) => Ok(proof),
+            Err(error) => self.fail(error),
+        }
+    }
     pub fn start(
         &mut self,
         service: &ApplicationService,

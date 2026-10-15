@@ -12,6 +12,7 @@ status-tray = ["beacn-linx-core/status-tray"]
 private-session-test = ["native-catalog", "beacn-linx-core/private-session-test"]
 ui-qualification = ["private-session-test", "gpui-kit/test-support"]
 studio-session-test = ["ui-qualification", "beacn-linx-core/studio-session-test"]
+native-playback-test = ["studio-session-test", "beacn-linx-core/native-playback-test"]
 
 [dependencies]
 beacn-linx-core = { path = "../app-core" }

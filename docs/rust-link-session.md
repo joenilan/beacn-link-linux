@@ -2,6 +2,10 @@
 
 Updated 2026-10-14 (qualification continued into 2026-10-15 UTC).
 
+The optional [native playback owner](native-playback-owner.md) is now implemented
+and passes real private-core sink/link lifecycle and GUI checks. Its first
+physical test remains pending; default desktop apply remains disabled.
+
 ## Managed lifetime
 
 `LinkSession::start_managed` takes explicit `ManagedOptions` and the same retained

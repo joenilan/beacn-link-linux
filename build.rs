@@ -19,6 +19,7 @@ fn main() {
         );
     }
     println!("cargo:rerun-if-changed=native/pipewire.c");
+    println!("cargo:rerun-if-changed=native/playback.inc");
     if env::var_os("CARGO_FEATURE_NATIVE_PIPEWIRE").is_none() {
         return;
     }
@@ -50,6 +51,9 @@ fn main() {
     .arg(&object);
     if env::var_os("CARGO_FEATURE_NATIVE_TEST_FAULTS").is_some() {
         cc.arg("-DBCL_TEST_FAULTS");
+    }
+    if env::var_os("CARGO_FEATURE_NATIVE_PLAYBACK").is_some() {
+        cc.arg("-DBCL_NATIVE_PLAYBACK");
     }
     if let Some(root) = env::var_os("BEACN_PIPEWIRE_SYSROOT") {
         let root = PathBuf::from(root);

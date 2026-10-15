@@ -13,6 +13,10 @@ pub enum Owner {
     ),
     #[cfg(feature = "studio-session-test")]
     Studio(crate::studio_session::Session),
+    #[cfg(feature = "native-playback-test")]
+    NativePlayback(
+        crate::studio_session::Session<beacn_link_protocol::scripted_peer::ScriptedPeer>,
+    ),
 }
 impl Owner {
     pub fn new(connection: &Connection) -> Self {
@@ -27,6 +31,10 @@ impl Owner {
             Connection::StudioSession(config) => {
                 Self::Studio(crate::studio_session::Session::new(config.clone()))
             }
+            #[cfg(feature = "native-playback-test")]
+            Connection::NativePlaybackSession(config) => {
+                Self::NativePlayback(crate::studio_session::Session::new(config.clone()))
+            }
             _ => Self::Disabled(Default::default()),
         }
     }
@@ -34,6 +42,10 @@ impl Owner {
         !matches!(self, Self::Disabled(_))
     }
     pub fn private(&self) -> bool {
+        #[cfg(feature = "native-playback-test")]
+        if matches!(self, Self::NativePlayback(_)) {
+            return true;
+        }
         matches!(self, Self::Private(..))
     }
     pub fn status(&self) -> &Status {
@@ -42,6 +54,8 @@ impl Owner {
             Self::Private(_, link, _) => link.status(),
             #[cfg(feature = "studio-session-test")]
             Self::Studio(link) => link.status(),
+            #[cfg(feature = "native-playback-test")]
+            Self::NativePlayback(link) => link.status(),
         }
     }
     pub fn start(&mut self, service: &ApplicationService) -> Result<(), String> {
@@ -53,6 +67,8 @@ impl Owner {
             Self::Private(config, link, false) => private_session::start(link, service, config),
             #[cfg(feature = "studio-session-test")]
             Self::Studio(link) => link.start(service),
+            #[cfg(feature = "native-playback-test")]
+            Self::NativePlayback(link) => link.start_synthetic(service),
         }
     }
     pub fn check(&mut self, service: &ApplicationService) -> Result<(), String> {
@@ -61,6 +77,8 @@ impl Owner {
             Self::Private(_, link, _) => link.check(service),
             #[cfg(feature = "studio-session-test")]
             Self::Studio(link) => link.check(service),
+            #[cfg(feature = "native-playback-test")]
+            Self::NativePlayback(link) => link.check(service),
         }
     }
     pub fn tick(&mut self, service: &ApplicationService) -> Result<(), String> {
@@ -69,6 +87,8 @@ impl Owner {
             Self::Private(_, link, _) => link.tick(service),
             #[cfg(feature = "studio-session-test")]
             Self::Studio(link) => link.tick(service),
+            #[cfg(feature = "native-playback-test")]
+            Self::NativePlayback(link) => link.tick(service),
         }
     }
     pub fn stop(&mut self, reason: StopReason) -> Result<(), String> {
@@ -77,6 +97,8 @@ impl Owner {
             Self::Private(_, link, _) => link.stop(reason),
             #[cfg(feature = "studio-session-test")]
             Self::Studio(link) => link.stop(reason),
+            #[cfg(feature = "native-playback-test")]
+            Self::NativePlayback(link) => link.stop(reason),
         }
     }
 }
