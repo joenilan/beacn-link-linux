@@ -1,7 +1,40 @@
 # Beacn LinX — continuation handoff
 Updated 2026-10-14. Resume development; do not restart the investigation.
 
-## Current checkpoint: Rust start/stop/status and native lifecycle cleanup pass
+## Current checkpoint: Rust graphical discovery/selection preview works
+
+The owner remains live streaming. No USB, hardware/audio, Windows app changes or
+desktop route application. The first Rust GUI uses egui/eframe 0.33.3 in the separate
+`app/` package; root core dependencies/default features are unchanged. See
+[rust-interface.md](rust-interface.md), including normal Linux run instructions.
+
+Actual native application discovery runs off the render thread. Search,
+Select/Remove and published-name editing use the existing ApplicationService.
+An eight-command queue is nonblocking; fresh native observations precede commands.
+Queued actions pin the displayed domain/application/streams, so replacements are
+refused. Core/stale/departure changes revoke selections and failure disables the
+last list with an explanation. Selections are in-memory; no automatic reconnect.
+
+The window clearly shows routing off, disabled Start link and inactive channel
+cards. It has no routing backend factory/native-usb feature. RoutingControl is
+still separate verified core API; the GUI does not yet make apps visible on Windows.
+Five egui/model checks pass plus the focused root checks and 31 Linux Python checks.
+On an isolated Xvfb display, actual window widgets select two real mpv processes,
+edit distinct names, rename, remove and close with owned configs removed. Rendered
+screenshot inspected privately; complete graph/desktop/settings/state cleanup exact.
+Production no-test-feature GUI also opens the normal read-only desktop catalog and
+closes normally on its own isolated WM_DELETE_WINDOW, with exact settings/state.
+No owner's mouse/desktop interaction. Only Xvfb was installed, no upgrades/removals.
+Qualified source `beacn-native-source-20261015T002307Z`; complete qualification
+SHA256 `77910484eccb37256e9ec35a7f6e991a632fd4665b0b258f4d983c1d4f804036`.
+205 private evidence/provenance files were copied/hashed before final provenance.
+
+Next: connect the graphical controls to RoutingControl/session state and guarded
+transport, keeping desktop apply disabled until qualified. Multi-app hardware,
+unaffected-app continuity, durable reconnect and installation remain open. Keep
+Actions disabled, hardware closed while live, and local [skip ci] commits only.
+
+## Previous checkpoint: Rust start/stop/status and native lifecycle cleanup pass
 
 The owner remains live streaming. Continue software/private-core tests only: no
 USB/physical audio, Windows app/routing changes or desktop apply. See

@@ -213,6 +213,7 @@ def main():
     parser.add_argument('--catalog-service-check', help='read-only Rust service binary; ordinary no-USB routing probe only')
     parser.add_argument('--multi-app-check', help='native two-app private executor qualification binary; requires catalog-service-check and no USB')
     parser.add_argument('--session-control-check', help='native start/stop/source-exit qualification binary; requires catalog-service-check and no USB')
+    parser.add_argument('--gui-check', help='native egui isolated-window qualification binary; requires catalog-service-check and no USB')
     parser.add_argument("--authorize-studio-first-pair-silence", action="store_true",
                         help="native-only assignment-1 physical stage; pauses USB until owned audio cleanup")
     parser.add_argument("--authorize-studio-first-pair-tone", action="store_true")
@@ -247,6 +248,8 @@ def main():
         parser.error('multi-app qualification requires the no-USB Rust catalog/service check')
     if args.session_control_check and not args.catalog_service_check:
         parser.error('session control qualification requires the no-USB Rust catalog/service check')
+    if args.gui_check and not args.catalog_service_check:
+        parser.error('GUI qualification requires the no-USB Rust catalog/service check')
     if args.probe_source_exit and not (routing_probe and args.application_mpv and args.cycles == 5):
         parser.error('source exit injection requires the five-cycle ordinary no-USB routing probe')
     if args.application_mpv and (not args.private_routing or args.stage not in ('run', 'routing-probe') or args.single_publication_hold):
@@ -506,7 +509,8 @@ def main():
             import catalog_service
             result['catalog_service']=catalog_service.verify(Path(args.catalog_service_check).resolve(strict=True),root/'catalog-service',runtime,remote,env,dump,playback.pid,media,app_props,rate,
                 multi_app=Path(args.multi_app_check).resolve(strict=True) if args.multi_app_check else None, native_arguments=native_arguments,
-                session_control=Path(args.session_control_check).resolve(strict=True) if args.session_control_check else None)
+                session_control=Path(args.session_control_check).resolve(strict=True) if args.session_control_check else None,
+                gui=Path(args.gui_check).resolve(strict=True) if args.gui_check else None)
         # Confirm the same owned source immediately before the single native child.
         _, objects = dump()
         if application is not None:application.validate(objects)

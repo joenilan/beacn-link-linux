@@ -11,7 +11,7 @@ import application_source
 import usb_handshake as owner
 
 
-def verify(binary, root, runtime, remote, env, dump, first_pid, media, properties, rate, multi_app=None, native_arguments=None, session_control=None):
+def verify(binary, root, runtime, remote, env, dump, first_pid, media, properties, rate, multi_app=None, native_arguments=None, session_control=None, gui=None):
     root.mkdir(mode=0o700, exist_ok=False)
     _, before = dump()
     baseline = owner.core.filtered(before)
@@ -67,6 +67,13 @@ def verify(binary, root, runtime, remote, env, dump, first_pid, media, propertie
         send('select '+first+'=Media Player');status(1,1)
         second=launch('second');status(2,1);second_id=find_app(second.pid)
         send('select '+second_id+'=Other Player');status(2,2)
+        if gui is not None:
+            command=['xvfb-run','-a','-s','-screen 0 1280x900x24',str(gui),str(runtime),remote,first,second_id,str(root/'gui')]
+            result=subprocess.run(command,env={**clean_env,'LIBGL_ALWAYS_SOFTWARE':'1','WINIT_UNIX_BACKEND':'x11'},capture_output=True,text=True,timeout=22)
+            owner.save(root/'gui-process.json',{'exit':result.returncode,'stdout':result.stdout,'stderr':result.stderr,'binary_sha256':hashlib.sha256(Path(gui).read_bytes()).hexdigest()})
+            evidence=root/'gui/result.txt'
+            proof['gui_widgets_verified']=result.returncode==0 and evidence.is_file() and evidence.read_text().strip()=='widgets_selected=2 renamed=true removed=true worker_stopped=true owned_configs_remaining=0 failed=false' and not (root/'gui/failure.txt').exists()
+            if not proof['gui_widgets_verified']:raise RuntimeError('native graphical qualification failed; inspect GUI evidence')
         if multi_app is not None:
             _, route_before = dump()
             owner.save(root/'multi-app-before.json', route_before)
@@ -146,6 +153,7 @@ def verify(binary, root, runtime, remote, env, dump, first_pid, media, propertie
     if not proof['private_graph_teardown_deferred']:required+=['private_graph_restored']
     if multi_app is not None:required+=['multi_app_native_verified','multi_app_routes_released']
     if session_control is not None:required+=['session_control']
+    if gui is not None:required+=['gui_widgets_verified']
     if proof['error'] or not all(proof.get(k) for k in required):
         raise RuntimeError('Rust catalog/service qualification failed; inspect journal')
     return proof

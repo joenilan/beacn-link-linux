@@ -12,7 +12,12 @@ The [Rust Beacn LinX application/service](docs/rust-application-service.md) now
 provides native read-only application discovery, explicit multi-app selections,
 identity/lifecycle tracking and a bounded foreground command loop. Same-core real
 application exit/reopen, selection revocation and exact cleanup pass. USB publication
-and desktop routing are not yet connected to this service; a GUI is next-stage work.
+and desktop routing are not yet connected to this service.
+
+The [Rust graphical preview](docs/rust-interface.md) now provides native discovery,
+search, explicit selection and published-name editing. Its real window/widgets
+pass isolated Linux tests with two actual apps and exact settings/state cleanup.
+Routing is visibly off; session/transport integration remains next.
 
 The [multi-app integration](docs/multi-app-publication.md) now connects selection,
 reply planning, native private routing and verified publication data. Two real mpv
@@ -22,7 +27,8 @@ disposable core. Multi-app USB/physical interoperability remains untested.
 [Rust routing controls](docs/rust-routing-control.md) now provide start/stop/status
 and verified lifecycle cleanup. On the private core, closing one of two real apps
 released the owned routes while preserving a foreign link with the same owner tag.
-The foreground application remains read-only; a graphical Rust interface is next.
+The foreground application remains read-only; the graphical interface is implemented
+and routing/session integration is next.
 
 The owner placed the Linux test application in the streaming PC's first Link In
 channel. Linux received assignment 1, applied its private stereo route and

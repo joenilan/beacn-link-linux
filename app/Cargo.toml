@@ -1,0 +1,21 @@
+[package]
+name = "beacn-linx-app"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+publish = false
+description = "Beacn LinX Rust application interface"
+
+[features]
+default = []
+native-catalog = ["beacn-link-protocol/native-pipewire"]
+ui-qualification = []
+
+[dependencies]
+beacn-link-protocol = { path = ".." }
+eframe = { version = "=0.33.3", default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
+
+[workspace]
+
+[profile.dev]
+debug = 1
