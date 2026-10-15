@@ -9,7 +9,48 @@ use beacn_link_protocol::{
     session::{PollPolicy, ReceivedNamePolicy},
     usb_handshake::{self, Handshake, Publication},
 };
+use beacn_link_protocol::{link_session::Phase, planner::Application};
 use std::path::PathBuf;
+
+#[derive(Clone)]
+struct ResumeIntent {
+    core: String,
+    selection_revision: u64,
+    applications: Vec<Application>,
+    pair: u8,
+}
+impl ResumeIntent {
+    fn verified(
+        service: &ApplicationService,
+        phase: Phase,
+        assignment: Option<u8>,
+    ) -> Option<Self> {
+        if phase != Phase::Running {
+            return None;
+        }
+        let pair = assignment.filter(|pair| (1..=4).contains(pair))?;
+        let core = service.current()?.core.clone();
+        let applications = service.inventory()?.applications.clone();
+        if applications.len() != 1 || applications[0].streams.len() != 1 {
+            return None;
+        }
+        Some(Self {
+            core,
+            selection_revision: service.selection_revision(),
+            applications,
+            pair,
+        })
+    }
+
+    fn matches(&self, service: &ApplicationService) -> bool {
+        service.current().map(|catalog| catalog.core.as_str()) == Some(self.core.as_str())
+            && service.selection_revision() == self.selection_revision
+            && service
+                .inventory()
+                .is_some_and(|inventory| inventory.applications == self.applications)
+    }
+}
+
 #[derive(Clone)]
 pub struct Configuration {
     pub sysfs: PathBuf,
@@ -22,6 +63,7 @@ pub struct Session {
     owner: DesktopLinkSession<StudioDesktopLease, Handshake<NativeUsb>>,
     status: Status,
     pub physical_stats: Option<(u32, u64)>,
+    resume_intent: Option<ResumeIntent>,
 }
 impl Session {
     pub fn new(config: Configuration) -> Self {
@@ -30,6 +72,7 @@ impl Session {
             owner: Default::default(),
             status: Default::default(),
             physical_stats: None,
+            resume_intent: None,
         }
     }
     pub fn managed() -> Self {
@@ -38,6 +81,7 @@ impl Session {
             owner: Default::default(),
             status: Default::default(),
             physical_stats: None,
+            resume_intent: None,
         }
     }
     pub fn status(&self) -> &Status {
@@ -84,15 +128,50 @@ impl Session {
                     .collect(),
             },
         };
+        if let Some(service) = service {
+            if self
+                .resume_intent
+                .as_ref()
+                .is_some_and(|intent| !intent.matches(service))
+            {
+                self.resume_intent = None;
+            }
+            if let Some(intent) = ResumeIntent::verified(service, self.status.phase, s.assignment) {
+                self.resume_intent = Some(intent);
+            }
+        }
     }
     pub fn start(&mut self, service: &ApplicationService) -> Result<(), String> {
+        self.start_with_resume(service, true)
+    }
+    pub fn start_for_assignment(&mut self, service: &ApplicationService) -> Result<(), String> {
+        // An explicit new assignment supersedes the previous pair. Do not
+        // briefly route to the remembered pair before applying the new request.
+        self.start_with_resume(service, false)
+    }
+    fn start_with_resume(
+        &mut self,
+        service: &ApplicationService,
+        resume: bool,
+    ) -> Result<(), String> {
+        if !resume {
+            self.resume_intent = None;
+        }
         let Some(c) = self.config.clone() else {
+            let resume_pair = match self.resume_intent.as_ref() {
+                Some(intent) if intent.matches(service) => Some(intent.pair),
+                Some(_) => {
+                    self.resume_intent = None;
+                    None
+                }
+                None => None,
+            };
             let options = ManagedOptions {
                 poll_policy: PollPolicy::ReportRejectedMarker,
                 names: ReceivedNamePolicy::WindowsCString,
                 initialization_timeout: usb_handshake::DIAGNOSTIC_INITIALIZATION_TIMEOUT,
             };
-            let result = self.owner.start_managed(
+            let mut result = self.owner.start_managed(
                 service,
                 options,
                 || StudioDesktopLease::discover(service),
@@ -106,6 +185,11 @@ impl Session {
                     open_control(routes, publication)
                 },
             );
+            if result.is_ok() {
+                if let Some(pair) = resume_pair {
+                    result = self.owner.assign(service, pair);
+                }
+            }
             self.update(Some(service), None);
             return result;
         };
@@ -193,4 +277,95 @@ fn open_control(
         },
         message: e.to_string(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ResumeIntent;
+    use beacn_link_protocol::{
+        catalog::{self, ApplicationService},
+        link_session::Phase,
+        planner::ApplicationId,
+    };
+
+    fn service(generation: u64, core: &str, stream: u64) -> ApplicationService {
+        let catalog = catalog::parse(
+            generation,
+            &format!(
+                "catalog\t1\t2\t{core}\napp\t3\t4\t{stream}\tlive\t46697265666f78\t46697265666f78\n"
+            ),
+        )
+        .unwrap();
+        let mut service = ApplicationService::default();
+        service.update(catalog).unwrap();
+        service
+            .select(&ApplicationId("pw-client:3:pid:4".into()), "Firefox")
+            .unwrap();
+        service
+    }
+
+    fn intent(service: &ApplicationService) -> ResumeIntent {
+        ResumeIntent::verified(service, Phase::Running, Some(2)).unwrap()
+    }
+
+    #[test]
+    fn verified_intent_allows_new_snapshot_version_for_same_route() {
+        let original = service(1, "74657374", 5);
+        let intent = intent(&original);
+        let mut refreshed = service(2, "74657374", 5);
+        refreshed
+            .update(
+                catalog::parse(
+                    3,
+                    "catalog\t1\t2\t74657374\napp\t3\t4\t5\tlive\t46697265666f78\t46697265666f78\n",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        assert_ne!(original.revision(), refreshed.revision());
+        assert_eq!(
+            original.selection_revision(),
+            refreshed.selection_revision()
+        );
+        assert!(intent.matches(&refreshed));
+        assert_eq!(intent.pair, 2);
+    }
+
+    #[test]
+    fn verified_intent_rejects_stream_core_alias_and_reselection_changes() {
+        let original = service(1, "74657374", 5);
+        let intent = intent(&original);
+
+        let changed_stream = service(2, "74657374", 6);
+        assert!(!intent.matches(&changed_stream));
+
+        let changed_core = service(2, "636f726532", 5);
+        assert!(!intent.matches(&changed_core));
+
+        let mut changed_alias = service(2, "74657374", 5);
+        let id = ApplicationId("pw-client:3:pid:4".into());
+        changed_alias.select(&id, "Firefox Alias").unwrap();
+        assert!(!intent.matches(&changed_alias));
+
+        let mut reselected = service(2, "74657374", 5);
+        reselected.unselect(&id).unwrap();
+        reselected.select(&id, "Firefox").unwrap();
+        assert_eq!(
+            original.inventory().unwrap().applications,
+            reselected.inventory().unwrap().applications
+        );
+        assert_ne!(
+            original.selection_revision(),
+            reselected.selection_revision()
+        );
+        assert!(!intent.matches(&reselected));
+    }
+
+    #[test]
+    fn only_verified_running_link_pair_can_be_remembered() {
+        let service = service(1, "74657374", 5);
+        assert!(ResumeIntent::verified(&service, Phase::Stopped, Some(2)).is_none());
+        assert!(ResumeIntent::verified(&service, Phase::Running, Some(0)).is_none());
+        assert!(ResumeIntent::verified(&service, Phase::Running, Some(5)).is_none());
+    }
 }

@@ -97,6 +97,13 @@ impl Owner {
             _ => Err("Local assignment is available only for a desktop Studio session.".into()),
         }
     }
+    #[cfg(feature = "desktop-session-test")]
+    pub fn start_for_assignment(&mut self, service: &ApplicationService) -> Result<(), String> {
+        match self {
+            Self::Desktop(link) => link.start_for_assignment(service),
+            _ => Err("Local assignment is available only for a desktop Studio session.".into()),
+        }
+    }
     pub fn check(&mut self, service: &ApplicationService) -> Result<(), String> {
         match self {
             #[cfg(feature = "desktop-session-test")]

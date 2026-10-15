@@ -1,147 +1,107 @@
 # LinX
 
-Independent, unofficial Linux compatibility research; not affiliated with BEACN.
+### Unofficial BEACN Link app for Linux
 
-A [visual design comparison](design/linx-concept/directions/index.html) now uses
-the owner-selected Console default, with a routing matrix and compact utility
-alternative. All three support Light/Dark and five accent palettes.
-Its [image-based research](design/linx-concept/directions/README.md) compares
-published BEACN, Wave Link, Sonar and UAD interfaces. The proposals target the
-existing Rust/GPUI Kit app; the HTML concepts use fictional data. Console is now
-implemented in native GPUI with actual application discovery/assignment wells,
-Light/Dark and five palettes. Its gain/mute controls remain disabled and meters
-unlit. Future Linux gain and remote BEACN mix controls remain separate capabilities.
+LinX is an independent Linux desktop app for routing a live stereo application
+through BEACN Studio to one of four Link In channels. BEACN App remains on the
+Windows streaming PC, where you can see the incoming application and its
+assignment.
 
-The primary [LinX interface](docs/gpui-interface.md) now uses GPUI Kit: a compact
-788x568 Console, responsive channel strips, expanding application controls and a shared
-lynx status icon/tray. Real widgets and private-session routing/cleanup pass native
-Linux checks. The normal GUI keeps USB/device connection and desktop apply disabled.
-The [explicit Studio GUI check](docs/native-studio-gui.md) now passes owner-heard
-first-pair output and clean release on an owned test core; subsequent native and
-desktop checks below extend that evidence. The Console port separately passes
-two-app private routing, themes and Pause; it has no new physical acceptance.
-An optional [native Rust/C playback owner](docs/native-playback-owner.md) now
-passes all four virtual mappings, native failure/release checks and GUI
-Pause/reconnect/Quit. Its [first physical Studio pair](docs/native-playback-startup.md)
-also passes with owner-heard mpv output and exact immediate/late laptop settings
-comparisons. A subsequent [Pause/reconnect qualification](docs/native-studio-recovery.md)
-passes with two owner-heard native playback runs and exact immediate cleanup.
-Reassignment was needed after Pause; a later Firefox desktop volume/state
-comparison differed. An opt-in [desktop stream lease](docs/native-desktop-target.md) now also passes
-owner-heard video from an already-running Firefox stream through the first Studio
-pair, with original-output restoration. An explicit [desktop publication and GUI check](docs/native-desktop-session.md)
-also passes real desktop Firefox assignment, audio, automatic connection and Pause
-with restored output/state. Normal startup remains gated; broader desktop support,
-assignment continuity and an installed standalone app remain unfinished.
-An explicit `studio` build of the actual GPUI executable now provides `--studio`:
-native device discovery, one selected stereo desktop app, Link In 1–4 and a
-session retained until Pause/Quit/failure. It has been built and opened on Debian
-for direct owner testing; actual native local assignment and switching have now
-passed for all four wells. See [the current handoff](docs/HANDOFF.md). Default startup stays
-read-only; multi-app support and automatic hotplug remain unfinished. The new
-[local native component interface](docs/native-control.md) lets a development
-controller inspect and drive the actual app without taking the desktop cursor.
-The owner also confirmed Firefox moved through all four Link In slots in BEACN
-App with visible audio activity during an announced 15-second-per-pair run.
-Direct listening and longer stability/reconnect checks remain separate.
-The earlier egui preview remains available for comparison. The primary UI also has
-a saved Connect automatically toggle, waiting/paused states and read-only discovery
-recovery. Automatic session tests use owned private cores; physical GUI connection
-and launch-at-login installation remain future work.
+LinX is **unofficial and not affiliated with BEACN**. It is experimental
+compatibility software, not a BEACN product or a replacement for BEACN App on
+Windows.
 
-Status: offline Rust codec/CLI, planner, lifecycle and graph/inventory owners,
-an optional native PipeWire executor restricted to disposable private cores,
-and a guarded Linux libusb transport. Native private-core routing, acknowledgments,
-partial-failure recovery and owned cleanup are verified. Ordinary desktop apply
-remains disabled.
+![LinX native Console with a live application assigned to Link In 4](assets/screenshots/linx-console.png)
 
-The [Rust LinX application/service](docs/rust-application-service.md) now
-provides native read-only application discovery, explicit multi-app selections,
-identity/lifecycle tracking and a bounded foreground command loop. Same-core real
-application exit/reopen, selection revocation and exact cleanup pass. USB publication
-and desktop routing are not yet connected to this service.
+Actual native app capture. Faders, mute buttons and meters are not wired yet.
 
-The [Rust graphical preview](docs/rust-interface.md) now provides native discovery,
-search, explicit selection and published-name editing. Its real window/widgets
-pass isolated Linux tests with two actual apps and exact settings/state cleanup.
-A status-aware lynx icon is shared by the window and optional Linux tray.
-[Start/stop/session integration](docs/rust-link-session.md) passes actual private-core
-GUI tests with a scripted protocol peer; normal desktop routing stays disabled.
+<details>
+<summary>Light theme</summary>
 
-The [multi-app integration](docs/multi-app-publication.md) now connects selection,
-reply planning, native private routing and verified publication data. Two real mpv
-processes simultaneously routed separate pairs, moved and recovered safely on a
-disposable core. Multi-app USB/physical interoperability remains untested.
+![LinX native Console paused in the light theme](assets/screenshots/linx-console-light.png)
 
-[Rust routing controls](docs/rust-routing-control.md) now provide start/stop/status
-and verified lifecycle cleanup. On the private core, closing one of two real apps
-released the owned routes while preserving a foreign link with the same owner tag.
-The foreground application remains read-only; the graphical interface is implemented
-and private-session GUI integration is qualified. Physical/desktop integration is next.
+</details>
 
-The owner placed the Linux test application in the streaming PC's first Link In
-channel. Linux received assignment 1, applied its private stereo route and
-published freshly verified assignment 1 through forty hardware cycles. This
-establishes assignment/publication integration with virtual destinations.
+## What works today
 
-The physical playback probe now verifies all four Studio stereo split pairs and
-the complete internal hardware graph. The VM uses USB 2.0 EHCI. Native initialization
-passes, but silent physical PCM stalls even with the vendor claim held open.
-Owned cleanup and connected comparisons pass; reboot-wide state differences are
-recorded separately. A separate Debian 13 laptop now completes four seconds of
-96-kHz direct-ALSA silence with queue progress, natural exit and unchanged settings.
-The native programs build there, and private A-to-B routing/partial-failure recovery
-passes after explicitly configuring the test's stereo DSP ports. The owner heard
-the quiet first-pair direct-ALSA tone. An explicitly selected private PipeWire
-bridge also drove Studio's first pair with validated 96-kHz silent queue progress,
-then passed A-to-B routing and partial-failure recovery with settings preserved.
-Native laptop USB initialization passes. After reopening the streaming PC's
-BEACN App, the owner assigned the Linux test into Link In; Linux applied its
-private stereo route and published verified assignment 1 through cycle 40.
-A combined native run now receives assignment 1, verifies that route, drives
-Studio's physical first pair through PipeWire, and resumes verified USB publication
-after owned audio cleanup. The owner heard the quiet tones and saw the test in
-Link In. This is bounded first-pair acceptance with an owned test source.
-A subsequent [continuous native test](docs/native-continuous-studio.md) kept
-first-pair audio active while publication and polling continued through 40 cycles.
-The owner heard repeating tones and confirmed the app stayed in Link In after
-assignment. Exact laptop settings and owned cleanup comparisons passed.
-A subsequent [real-application test](docs/native-application-routing.md) routed
-unmodified mpv through each of Studio's four pairs. The owner heard every pair;
-concurrent control and exact laptop cleanup passed. A no-USB source-exit check
-stopped safely, and a fresh isolated session routed all four destinations.
-The shared-desktop routing, multi-app hardware control, physical GUI integration and
-long-lived recovery still need integration.
-Read the current handoff and playback report before another test.
-Windows Link stays closed during hardware tests.
+- Native Rust and GPUI desktop application with PipeWire application discovery.
+- One selected live stereo application at a time.
+- Local assignment to Link In 1, 2, 3, or 4, verified by the native route owner.
+- Pause and Quit release LinX-owned audio and device resources.
+- Light and dark themes, with five accent palettes.
 
-Goal: a Linux gaming PC connected through BEACN Studio while the Windows
-streaming PC retains BEACN App and Mix Create. First prove that one Linux
-application can appear in Windows App and be routed from it.
+The owner confirmed that all four assignments appeared in BEACN App with
+incoming meter activity during a native run. Direct listening acceptance for
+the current app build is still pending. See the [current handoff](docs/HANDOFF.md)
+for exact runtime evidence and its limits.
+A twenty-minute silent physical-path run also passed repeated pair switching
+and exact desktop/saved-state cleanup.
 
-- [Verified inventory](docs/inventory.md)
-- [Static findings](docs/static-analysis.md)
-- [Protocol evidence](docs/protocol.md)
-- [Protocol session, focused static findings and validation](docs/protocol-session.md)
-- [USB descriptor validator and VM-first hardware plan](docs/usb-descriptor-validation.md)
-- [First physical descriptor observation and return comparison](docs/usb-descriptor-observation.md)
-- [Native USB handshake implementation and proposed test](docs/native-usb-handshake.md)
-- [Native USB publication, assignment polling and visibility test](docs/native-usb-publication.md)
-- [Verified native assignment/publication integration](docs/native-assignment-publication.md)
-- [Selected physical playback probe and remaining clock failure](docs/native-studio-playback.md)
-- [Offline codec and usage](docs/offline-codec.md)
-- [Offline routing planner](docs/offline-planner.md)
-- [Offline routing preparation](docs/offline-executor.md)
-- [Native private-core executor and validation](docs/native-executor.md)
-- [Offline inventory lifecycle](docs/offline-lifecycle.md)
-- [Read-only PipeWire inventory](docs/pipewire-inventory.md)
-- [Read-only graph projection and receipts](docs/pipewire-graph.md)
-- [Controlled virtual routing evidence](docs/controlled-virtual-routing.md)
-- [Linux offline validation](docs/linux-validation.md)
+## Current limits
+
+LinX currently routes one stereo application at a time. Multi-application
+desktop routing, Linux gain and mute controls, live meters, Mini mode, remote
+volume controls, installers, and launch-at-login support are not implemented.
+Faders and mute buttons are disabled; meters are unlit. Assignment continuity
+after application restart and broader hotplug recovery still need work.
+Pausing media can end the current session; resume playback and assign the
+application again. LinX does not silently adopt a recreated audio stream.
+The current native backend requires a scoped WirePlumber 0.5.8 integration to
+keep temporary LinX routes out of saved application targets. Other WirePlumber
+versions are not supported yet. This is not yet ready for regular use.
+
+## Try the native Studio mode
+
+This is a development build path, not an installer. Use a Linux desktop with
+PipeWire/WirePlumber, connect BEACN Studio to the Linux PC, and run BEACN App on
+the Windows streaming PC. The GPUI app uses the Rust 1.99.0 toolchain pinned in
+`app-gpui/rust-toolchain.toml`. The native Linux build needs PipeWire/SPA
+development headers 1.0 or newer and libusb 1.0.27 or newer; see the
+[PipeWire build notes](docs/native-executor.md) and
+[USB requirements](docs/native-usb-handshake.md).
+
+Before enabling Studio mode, install and verify the
+[WirePlumber target-cache guard](docs/wireplumber-integration.md). Follow its
+stock-source hash check and per-user installation steps at a safe point with
+LinX paused. LinX refuses desktop routing when that guard is missing.
+
+From the repository root:
+
+```sh
+cd app-gpui
+cargo run --features studio -- --studio
+```
+
+Start audio in an application, click a channel's **Choose application** box, and
+use **Assign to Link In** (or Link 2/3/4 In) beside that application. LinX connects
+and fills the well after verifying the route. Pause or quit to release the session.
+Launching without `--studio` stays in the
+read-only discovery mode. See [native desktop session details](docs/native-desktop-session.md),
+the [optional developer control interface](docs/native-control.md), and the
+[GPUI interface notes](docs/gpui-interface.md).
+
+## Screenshots
+
+The screenshot is taken from LinX's own native window and framed with the
+standalone [screenshot helper](scripts/frame_screenshot.py). See
+[the screenshot guide](docs/screenshots.md) for capture and review steps.
+
+## Project status and license
+
+Copyright © 2026 LinX contributors.
+
+LinX is licensed under [GNU GPL version 3 only](LICENSE). Third-party
+components retain their respective copyright and license notices.
+
+LinX is an independent working name, not a trademark-clearance result. BEACN
+and BEACN Link are referenced only to identify the compatibility target.
+
+## Further reading
+
+- [Current handoff and runtime evidence](docs/HANDOFF.md)
+- [Contributing](CONTRIBUTING.md)
+- [Release preparation](docs/releasing.md)
+- [Native GPUI interface](docs/gpui-interface.md)
+- [Native desktop session](docs/native-desktop-session.md)
+- [Protocol and compatibility research](docs/protocol.md)
 - [Phased research plan](docs/research-plan.md)
-- [REA prerequisites](docs/toolchain.md)
-
-Keep proprietary binaries, raw captures, secrets, device serial numbers and
-machine-specific endpoint GUIDs outside Git. Protocol identifiers and the
-inspected executable hash are documented for reproducibility.
-GitHub Actions must remain disabled; no workflow files are included.

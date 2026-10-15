@@ -101,7 +101,9 @@ pub(crate) struct PinnedPlayback {
 }
 impl PinnedPlayback {
     #[cfg(feature = "native-desktop-target")]
-    pub(crate) fn manage_until_stop(&mut self) { self.managed = true; }
+    pub(crate) fn manage_until_stop(&mut self) {
+        self.managed = true;
+    }
     pub(crate) fn pin(sysfs: &Path, pid: u32) -> Result<Self, Failure> {
         if pid == 0 {
             return Err(());
@@ -210,7 +212,10 @@ impl PinnedPlayback {
                 return Err("server FD inventory exceeds limit");
             }
             let entry = entry.map_err(|_| "server FD enumeration failed")?;
-            found |= identity(&entry.path()).is_ok_and(|stamp| stamp == self.stamp);
+            if identity(&entry.path()).is_ok_and(|stamp| stamp == self.stamp) {
+                found = true;
+                break;
+            }
         }
         let last = sample().map_err(|_| "second PCM state, owner, format, or pointer invalid")?;
         if !found
@@ -405,13 +410,46 @@ mod tests {
                 "startup cannot be reentered"
             );
         }
-        assert!(proof.validate().is_ok());
+        let unrelated_fds = (0..300)
+            .map(|_| File::open("/dev/null").unwrap())
+            .collect::<Vec<_>>();
+        assert!(
+            proof.validate().is_ok(),
+            "an early held PCM FD remains valid even when the process has over 256 FDs"
+        );
+        let mut missing = PinnedPlayback {
+            #[cfg(feature = "native-playback")]
+            card: 0,
+            pid,
+            start: proof.start,
+            device: PathBuf::from("/dev/full"),
+            stamp: identity(Path::new("/dev/full")).unwrap(),
+            pcm: folder.clone(),
+            capture: capture.clone(),
+            last: None,
+            first: None,
+            checks: 0,
+            managed: false,
+            rejection: None,
+        };
+        assert!(
+            missing.validate().is_err(),
+            "an unmatched PCM FD remains bounded"
+        );
+        assert_eq!(missing.rejection, Some("server FD inventory exceeds limit"));
+        drop(unrelated_fds);
         #[cfg(feature = "native-desktop-target")]
         {
             proof.checks = 4096;
-            assert!(proof.validate().is_err(), "bounded PCM observation fuse stays enforced");
+            assert!(
+                proof.validate().is_err(),
+                "bounded PCM observation fuse stays enforced"
+            );
             proof.manage_until_stop();
-            assert!(proof.validate().is_ok(), "explicit app lifetime can pass the test fuse");
+            assert!(
+                proof.validate().is_ok(),
+                "explicit app lifetime can pass the test fuse"
+            );
             assert_eq!(proof.checks, 4097);
         }
         #[cfg(feature = "native-playback")]

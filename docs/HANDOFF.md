@@ -1,6 +1,81 @@
 # LinX continuation handoff
 Updated 2026-10-15 UTC. Resume development; do not restart the investigation.
 
+## Latest checkpoint: native recovery, saved-target protection and release prep
+
+The owner approved **GPLv3**. LinX now declares `GPL-3.0-only` in all three
+Cargo packages and includes the full license. The public-facing README describes
+**LinX - unofficial BEACN Link app for Linux**, with real native dark/light
+Console screenshots, build/use instructions and explicit feature limits.
+Screenshot capture uses the opt-in native control socket; framing is standalone,
+with no review server or Python application runtime. Contribution and release
+preparation guides are included. No GitHub release or visibility change was made.
+
+Actual native work fixed same-stream Pause/Connect intent, idle-source route
+restoration, closed-source cleanup and a false PCM descriptor-limit failure.
+See [native desktop recovery](native-desktop-recovery.md) for the exact identity
+and proof boundaries. Recreated-stream resume remains explicit reassignment;
+do not claim general automatic restart/hotplug recovery.
+
+A first Firefox sustained run stopped after about 200 seconds on source departure.
+Native cleanup succeeded, but WirePlumber had cached the temporary LinX sink as
+Firefox's saved target. This was caught by persistent-state comparison and was
+not counted as a successful soak. A separate volume change was preserved.
+
+The current native backend therefore requires the scoped
+[WirePlumber 0.5.8 target-cache guard](wireplumber-integration.md) before opening
+USB. Its source reverses to the pinned installed upstream digest; other versions
+require review/rebase. A missing guard was refused in the actual GUI at zero
+cycles with exact state preservation. New sinks use random per-lease names.
+The test laptop's old cached Firefox target alone was repaired with WirePlumber
+stopped and exact prior-run evidence; other saved fields/volumes were retained.
+That machine-specific repair is not part of the integration installer.
+
+All five integration fixtures executed on Debian. Focused checks passed for
+three core resume cases, ten native target cases and three PCM cases. Luna's
+bounded source review found no concrete issue in these recovery paths. A native
+GUI silent-source exit run then verified unchanged saved state while assigned,
+clean closure of both native owners, and exact pre-launch desktop/state/binding
+restoration. The source itself did not disable target persistence.
+
+The dependency-notice candidate uses locked offline Linux Cargo metadata, with
+566 components. Exact upstream commit/text hashes fill 26 missing package texts;
+six packages and embedded-asset inventory remain release review items. Generated
+notices and provenance remain private. No paid security scan ran.
+
+The existing source tree, cache and normal desktop app were reused. Keep Actions
+disabled, use `[skip ci]`, and preserve the fixed private receipts and snapshots.
+The physical output checks below remain distinct from offline and silent tests.
+
+The subsequent actual-GUI silent-source soak completed **1,200 seconds** across
+all four pairs: 1,195 observed completed cycles, 4,784 native owned PCM checks,
+and hardware pointer progress 115,806,762. The final source-exit cleanup succeeded;
+desktop snapshot, persistent-state bytes/hashes and connected binding matched
+the pre-launch baseline exactly. The selected source did not disable target
+persistence. RSS ranged from 185.8 to 190.4 MiB; sampled CPU was about 3.4% of one
+core. This is a silent physical-path stability check, not owner listening proof
+or a multi-hour soak. Binary SHA256:
+`62fdb91006f3a3a59cd953d93af62d4b8b5c75939e816e1ecf6d395990f11803`.
+Private receipt: `owned-stability.json`, mode `soak`.
+
+After Rust formatting, the exact final native tree built in the existing cache
+in 2.5 seconds. Final executable SHA256:
+`062a54772f160b343188cdad5b99aa59c780c2e66a89d0cd6f0f190e2d3db6cf`.
+Its actual GUI lifecycle check resumed the same stream on pair 4 after Pause,
+explicitly switched to pair 3, then joined Quit while active. The process and
+owned control socket exited; device binding was unchanged. The strict raw
+comparison did not pass: stock WirePlumber created an empty `media.role:Test`
+entry for the disposable source, and the local sink retained its negotiated
+48-kHz Format cache. No volume/mute or saved-target value changed. With the app
+closed, only that proven new empty entry was removed while WirePlumber was
+stopped. After restart all saved values match the lifecycle baseline; the only
+remaining persistent byte difference is JSON serialization in `default-routes`.
+Do not describe this lifecycle run as byte-exact desktop/state restoration.
+Full receipts: `owned-stability.json` mode `lifecycle`, and `owned-cleanup.json`.
+LinX is reopened on the normal desktop and left **Paused**, without selections
+or an active Studio session. Next owner check: real Firefox playback, local
+assignment/switching and heard output, then ordinary-use lifecycle acceptance.
+
 ## Latest checkpoint: actual local assignment and live switching passed
 
 The owner remotely observed the announced four-pair run and confirmed that Firefox

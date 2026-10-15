@@ -14,6 +14,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     ffi::{c_char, c_int, c_void, CString},
     fs,
+    io::Read,
     marker::PhantomData,
     os::unix::{
         fs::{FileTypeExt, MetadataExt},
@@ -103,6 +104,7 @@ unsafe extern "C" {
     ) -> *mut c_void;
     fn bcl_snapshot(session: *mut c_void, buffer: *mut c_char, size: usize) -> c_int;
     fn bcl_desktop_sink(session: *mut c_void, owner: *const c_char, result: *mut Receipt) -> c_int;
+    fn bcl_desktop_cache_guard(session: *mut c_void) -> c_int;
     fn bcl_desktop_move(
         session: *mut c_void,
         source: *const Receipt,
@@ -213,6 +215,27 @@ fn foreign(mut graph: GraphSnapshot, source: ObjectRef, sink: Option<ObjectRef>)
     graph.links.sort_by_key(|l| l.object);
     graph.streams.sort_by_key(|s| s.node);
     graph
+}
+
+/// Remove only a confirmed closed source generation from the expected graph.
+/// Replacements (even at the same numeric ID) and unrelated changes remain visible.
+fn without_closed_source(mut baseline: GraphSnapshot, source: ObjectRef) -> GraphSnapshot {
+    baseline.nodes.retain(|n| *n != source);
+    baseline.ports.retain(|p| p.node != source);
+    baseline.streams.retain(|s| s.node != source);
+    baseline
+}
+
+fn lease_token() -> Result<CString, String> {
+    // WirePlumber may cache a target name after its stream disappears. Never
+    // let that stale name resolve to a subsequent lease in this process.
+    let mut nonce = [0u8; 16];
+    fs::File::open("/dev/urandom")
+        .and_then(|mut source| source.read_exact(&mut nonce))
+        .map_err(|_| "Desktop lease identity entropy unavailable.")?;
+    let suffix = nonce.iter().map(|b| format!("{b:02x}")).collect::<String>();
+    CString::new(format!("linx-desktop-{}-{suffix}", std::process::id()))
+        .map_err(|_| "Invalid desktop lease identity.".into())
 }
 
 pub struct DesktopTarget {
@@ -441,6 +464,9 @@ impl DesktopTarget {
             proof_epoch: Rc::new(Cell::new(0)),
             _single_thread: PhantomData,
         };
+        if unsafe { bcl_desktop_cache_guard(owner.session) } != 1 {
+            return Err("LinX's WirePlumber target-cache guard is missing or inactive. See docs/wireplumber-integration.md.".into());
+        }
         let observed = owner.observe()?;
         if observed.inventory.applications != owner.expected_apps {
             return Err("Desktop stream roster changed before connection.".into());
@@ -460,6 +486,9 @@ impl DesktopTarget {
         Ok(owner)
     }
     fn observe(&mut self) -> Result<Observation, String> {
+        self.observe_with_bindings(true)
+    }
+    fn observe_with_bindings(&mut self, require_selected: bool) -> Result<Observation, String> {
         self.generation = self
             .generation
             .checked_add(1)
@@ -473,9 +502,22 @@ impl DesktopTarget {
             .position(|b| *b == 0)
             .ok_or("Unterminated desktop graph.")?;
         let raw = std::str::from_utf8(&buf[..len]).map_err(|_| "Invalid native graph text.")?;
-        parse_observation(raw, &self.bindings, "linx-desktop-target", self.generation)
+        let empty = BTreeMap::new();
+        parse_observation(
+            raw,
+            if require_selected {
+                &self.bindings
+            } else {
+                &empty
+            },
+            "linx-desktop-target",
+            self.generation,
+        )
     }
     fn conserved(&self, graph: &GraphSnapshot) -> Result<(), String> {
+        self.conserved_after_stop(graph, false)
+    }
+    fn conserved_after_stop(&self, graph: &GraphSnapshot, source_gone: bool) -> Result<(), String> {
         let mut observed = graph.clone();
         observed
             .links
@@ -484,7 +526,14 @@ impl DesktopTarget {
             observed.nodes.retain(|n| *n != adapter);
             observed.ports.retain(|p| p.node != adapter);
         }
-        if self.baseline.as_ref() != Some(&foreign(observed, self.source, self.sink)) {
+        let baseline = self.baseline.as_ref().map(|g| {
+            if source_gone {
+                without_closed_source(g.clone(), self.source)
+            } else {
+                g.clone()
+            }
+        });
+        if baseline != Some(foreign(observed, self.source, self.sink)) {
             return Err("Foreign desktop graph changed; target lease stopped.".into());
         }
         Ok(())
@@ -496,7 +545,7 @@ impl DesktopTarget {
         }
         self.failed = true; // every partial start remains latched unless fully verified
         let mut sink = Receipt::default();
-        let token = CString::new(format!("linx-desktop-{}", std::process::id())).unwrap();
+        let token = lease_token()?;
         if unsafe { bcl_desktop_sink(self.session, token.as_ptr(), &mut sink) } != 0 {
             return Err("Owned desktop sink creation failed.".into());
         }
@@ -785,9 +834,13 @@ impl DesktopTarget {
         }
         self.failed = true;
         let result = (|| {
-            if unsafe { bcl_desktop_stop(self.session) } != 0 {
-                return Err("Desktop original target restoration unverified.".into());
-            }
+            let source_gone = match unsafe { bcl_desktop_stop(self.session) } {
+                0 => false,
+                // C confirmed the exact source and both pinned ports disappeared,
+                // and removed owned bridges without writing to a reused subject.
+                1 => true,
+                _ => return Err("Desktop original target restoration unverified.".into()),
+            };
             if let Some(physical) = &self.physical {
                 let deadline = Instant::now() + Duration::from_secs(8);
                 loop {
@@ -804,9 +857,9 @@ impl DesktopTarget {
             if self.sink.is_some() && unsafe { bcl_desktop_release_sink(self.session) } != 0 {
                 return Err("Owned desktop sink release unverified.".into());
             }
-            let observed = self.observe()?;
-            self.conserved(&observed.graph)?;
-            if stereo_target(&observed.graph, self.source)? != self.original {
+            let observed = self.observe_with_bindings(!source_gone)?;
+            self.conserved_after_stop(&observed.graph, source_gone)?;
+            if !source_gone && stereo_target(&observed.graph, self.source)? != self.original {
                 return Err("Original stereo route not restored.".into());
             }
             Ok(())
@@ -959,6 +1012,35 @@ mod tests {
             owner: Some("linx-desktop-target".into()),
         });
         assert_ne!(baseline, foreign(changed, r(1), None));
+    }
+    #[test]
+    fn closed_source_cleanup_excludes_only_the_exact_retired_generation() {
+        let baseline = foreign(fixture(), r(1), None);
+        let expected = without_closed_source(baseline.clone(), r(1));
+        assert_eq!(expected.nodes, vec![r(2), r(3)]);
+        assert!(expected.ports.iter().all(|p| p.node != r(1)));
+        let mut gone = fixture();
+        gone.nodes.retain(|n| *n != r(1));
+        gone.ports.retain(|p| p.node != r(1));
+        gone.links.clear();
+        assert_eq!(expected, foreign(gone.clone(), r(1), None));
+        let mut replacement = gone.clone();
+        replacement.nodes.push(ObjectRef { id: 1, serial: 999 });
+        assert_ne!(expected, foreign(replacement, r(1), None));
+        let mut unrelated = gone;
+        unrelated.nodes[0].serial += 1;
+        assert_ne!(expected, foreign(unrelated, r(1), None));
+        assert_ne!(expected, baseline);
+    }
+    #[test]
+    fn consecutive_leases_do_not_reuse_a_cached_target_name() {
+        let first = lease_token().unwrap();
+        let second = lease_token().unwrap();
+        assert_ne!(first, second);
+        let name = first.to_str().unwrap();
+        assert!(name.starts_with("linx-desktop-"));
+        assert_eq!(name.rsplit('-').next().unwrap().len(), 32);
+        assert!(name.len() < 80);
     }
     #[test]
     fn missing_authority_refuses_before_connection() {

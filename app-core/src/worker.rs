@@ -247,7 +247,7 @@ impl Worker {
                                                 if link.status().phase
                                                     != beacn_link_protocol::link_session::Phase::Running
                                                 {
-                                                    link.start(model.service())?;
+                                                    link.start_for_assignment(model.service())?;
                                                     just_started = true;
                                                 }
                                                 let assigned = link.assign(model.service(), pair);

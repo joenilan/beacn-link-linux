@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.88"
 publish = false
-description = "Beacn LinX: independent Linux BEACN Link compatibility and native routing"
+description = "LinX: unofficial BEACN Link app for Linux"
+license = "GPL-3.0-only"
 
 [features]
 default = []

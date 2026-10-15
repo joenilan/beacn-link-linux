@@ -18,7 +18,7 @@ struct desktop_target {
   char owner[129];
   struct created *switch_bridge[2];
   struct receipt source_ports[2];
-  bool active, conflict, stopping, expected_present;
+  bool active, conflict, stopping, expected_present, source_removed, cache_guard;
   char expected_type[33], expected[129];
   struct created *bridge[2];
   struct receipt hardware;
@@ -34,14 +34,33 @@ static struct desktop_target *desktop_new(void) {
   return calloc(1, sizeof(struct desktop_target));
 }
 static void desktop_removed(struct session *s, uint32_t id) {
-  if (s->desktop->metadata && s->desktop->metadata_ref.id == id)
+  struct desktop_target *d = s->desktop;
+  if (d->metadata && d->metadata_ref.id == id)
     s->fatal = true;
+  /* global_remove is delivered before the generic object ledger marks the
+   * record absent. Only the pinned old source generation establishes this
+   * flag; a numerically reused node is never accepted as its replacement. */
+  if (d->source.serial && d->source.id == id)
+    for (size_t i = 0; i < s->count; i++) {
+      struct object *o = s->objects[i];
+      if (o->kind == NODE && o->id == d->source.id && o->present &&
+          serial(o) == d->source.serial) {
+        d->source_removed = true;
+        break;
+      }
+    }
 }
 static struct dt_entry *dt_entry(struct desktop_target *d, uint32_t subject) {
   for (size_t i = 0; i < d->count; i++)
     if (d->entries[i].subject == subject)
       return &d->entries[i];
   return NULL;
+}
+static bool dt_subject_present(struct session *s, uint32_t subject) {
+  for (size_t i = 0; i < s->count; i++)
+    if (s->objects[i]->present && s->objects[i]->id == subject)
+      return true;
+  return false;
 }
 static bool dt_equal(struct dt_entry *e, bool present, const char *type, const char *value) {
   return (!e || !e->present) ? !present : present &&
@@ -51,7 +70,22 @@ static int dt_property(void *data, uint32_t subject, const char *key,
                        const char *type, const char *value) {
   struct session *s = data;
   struct desktop_target *d = s->desktop;
-  if (!key) { s->fatal = true; return 0; }
+  if (!key) {
+    /* PipeWire can emit a subject-clear after the exact source generation was
+     * removed. Ignore only that narrow stale-source clear, never a clear for a
+     * live replacement or any other metadata subject. */
+    if (d->active && subject == d->source.id && d->source_removed &&
+        !dt_subject_present(s, subject))
+      return 0;
+    fprintf(stderr, "desktop metadata clear refused: source_subject=%d source_removed=%d subject_present=%d\n",
+            subject == d->source.id, d->source_removed, dt_subject_present(s, subject));
+    s->fatal = true;
+    return 0;
+  }
+  if (subject == 0 && spa_streq(key, "linx.target-cache-guard")) {
+    d->cache_guard = type && value && spa_streq(type, "Spa:String") && spa_streq(value, "1");
+    return 0;
+  }
   if (d->active && ((subject == 0 && strstr(key, "default.") == key) ||
        (subject == d->source.id && spa_streq(key, "target.node"))))
     d->conflict = true;
@@ -118,6 +152,25 @@ uint32_t bcl_desktop_daemon_pid(struct session *s) {
 static bool dt_ref(struct object *o, struct receipt r) {
   return o && o->info && o->present && serial(o) == r.serial && o->id == r.id;
 }
+static bool dt_receipt_present(struct session *s, struct receipt r, uint32_t kind) {
+  for (size_t i = 0; i < s->count; i++) {
+    struct object *o = s->objects[i];
+    if (o->present && o->id == r.id && o->kind == kind && serial(o) == r.serial)
+      return true;
+  }
+  return false;
+}
+static bool dt_source_gone_confirmed(struct session *s) {
+  struct desktop_target *d = s ? s->desktop : NULL;
+  if (!d || !d->source_removed || !d->source.serial ||
+      dt_receipt_present(s, d->source, NODE))
+    return false;
+  for (int i = 0; i < 2; i++)
+    if (!d->source_ports[i].serial ||
+        dt_receipt_present(s, d->source_ports[i], PORT))
+      return false;
+  return true;
+}
 static int dt_pair_index(unsigned pair, unsigned side) {
   if (pair < 1 || pair > 4 || side > 1) return -1;
   return (int)((pair - 1) * 2 + side);
@@ -181,10 +234,21 @@ static bool dt_source(struct session *s) {
       return false;
   return true;
 }
-static bool dt_route(struct session *s, struct receipt sink) {
+static bool dt_link_state_allowed(int node_state, int link_state,
+                                  bool cleanup_idle) {
+  if (link_state == PW_LINK_STATE_ACTIVE) return true;
+  /* WirePlumber reconnects an idle stream with INIT links until it wakes.
+   * This is restored target intent only, never a live playback proof. */
+  return cleanup_idle &&
+      (link_state == PW_LINK_STATE_PAUSED || link_state == PW_LINK_STATE_INIT) &&
+      (node_state == PW_NODE_STATE_IDLE || node_state == PW_NODE_STATE_SUSPENDED);
+}
+static bool dt_route_mode(struct session *s, struct receipt sink,
+                          bool cleanup_idle) {
   struct desktop_target *d = s->desktop;
+  struct object *source = find(s, d->source.id, NODE);
   struct object *n = find(s, sink.id, NODE), *out[2], *in[2];
-  if (!dt_source(s) || !dt_ref(n, sink) ||
+  if (!dt_source(s) || !source || !dt_ref(n, sink) ||
       !spa_streq(prop(n, PW_KEY_MEDIA_CLASS), "Audio/Sink") ||
       !dt_ports(s, d->source, PW_DIRECTION_OUTPUT, out) ||
       !dt_ports(s, sink, PW_DIRECTION_INPUT, in))
@@ -196,25 +260,36 @@ static bool dt_route(struct session *s, struct receipt sink) {
       continue;
     int side = l->out_port == out[0]->id ? 0 : l->out_port == out[1]->id ? 1 : -1;
     if (!l->info || !serial(l) || side < 0 || l->in_node != sink.id ||
-        l->in_port != in[side]->id || l->state != PW_LINK_STATE_ACTIVE)
+        l->in_port != in[side]->id ||
+        !dt_link_state_allowed(source->state, l->state, cleanup_idle))
       return false;
     counts[side]++;
   }
   return counts[0] == 1 && counts[1] == 1;
 }
-static int dt_wait(struct session *s, struct receipt sink) {
+static bool dt_route(struct session *s, struct receipt sink) {
+  return dt_route_mode(s, sink, false);
+}
+static int dt_wait_mode(struct session *s, struct receipt sink,
+                        bool cleanup_idle) {
   int64_t deadline = millis() + 5000;
   do {
     if (barrier(s) < 0 || barrier(s) < 0 || s->desktop->conflict || !dt_source(s)) {
       fprintf(stderr, "desktop route wait refused: fatal=%d conflict=%d source=%d\n", s->fatal, s->desktop->conflict, dt_source(s));
       return -1;
     }
-    if (dt_route(s, sink))
+    if (dt_route_mode(s, sink, cleanup_idle))
       return 0;
     if (pw_loop_iterate(pw_main_loop_get_loop(s->loop), 20) < 0)
       return -1;
   } while (millis() < deadline);
   return -1;
+}
+static int dt_wait(struct session *s, struct receipt sink) {
+  return dt_wait_mode(s, sink, false);
+}
+static int dt_wait_cleanup(struct session *s, struct receipt sink) {
+  return dt_wait_mode(s, sink, true);
 }
 static int dt_set(struct session *s, bool present, const char *type, const char *value) {
   struct desktop_target *d = s->desktop;
@@ -239,15 +314,20 @@ static int dt_set(struct session *s, bool present, const char *type, const char 
   fprintf(stderr, "desktop metadata echo deadline exceeded\n");
   return -1;
 }
+int bcl_desktop_cache_guard(struct session *s) {
+  if (!s || !s->desktop || barrier(s) < 0 || barrier(s) < 0) return -1;
+  return s->desktop->cache_guard ? 1 : 0;
+}
 int bcl_desktop_sink(struct session *s, const char *owner, struct receipt *result) {
   if (!s || !s->desktop || s->desktop->sink.serial || s->created || !label(owner) ||
       barrier(s) < 0)
     return -1;
-  char name[80]; snprintf(name, sizeof(name), "linx-desktop-%u", (unsigned)getpid());
+  if (!s->desktop->cache_guard) return -2;
   struct pw_properties *p = pw_properties_new("factory.name", "support.null-audio-sink",
-      PW_KEY_NODE_NAME, name, PW_KEY_NODE_DESCRIPTION, "LinX desktop routing check",
+      PW_KEY_NODE_NAME, owner, PW_KEY_NODE_DESCRIPTION, "LinX desktop routing check",
       PW_KEY_MEDIA_CLASS, "Audio/Sink", PW_KEY_OBJECT_LINGER, "false",
       PW_KEY_NODE_AUTOCONNECT, "false", "node.virtual", "true", "node.driver", "true",
+      "linx.temporary-target", "1",
       "state.restore-props", "false", "state.restore-target", "false",
       "priority.session", "0", "audio.rate", "48000", "audio.channels", "2",
       "audio.position", "[ FL FR ]", OWNER, owner,
@@ -274,6 +354,7 @@ int bcl_desktop_move(struct session *s, const struct receipt *source,
       !s->desktop->sink.serial || s->desktop->active || s->desktop->stopping ||
       barrier(s) < 0 || barrier(s) < 0)
     return -1;
+  if (!s->desktop->cache_guard) return -1;
   struct desktop_target *d = s->desktop;
   struct object *node = find(s, source->id, NODE);
   uint64_t cid = node ? num(prop(node, PW_KEY_CLIENT_ID)) : 0;
@@ -305,7 +386,7 @@ int bcl_desktop_move(struct session *s, const struct receipt *source,
 }
 int bcl_desktop_check(struct session *s) {
   if (!s || !s->desktop || !s->desktop->active || barrier(s) < 0 || barrier(s) < 0 ||
-      s->desktop->conflict ||
+      !s->desktop->cache_guard || s->desktop->conflict ||
       !dt_equal(dt_entry(s->desktop, s->desktop->source.id), true,
                  s->desktop->expected_type, s->desktop->expected) ||
       !dt_route(s, s->desktop->sink))
@@ -317,16 +398,39 @@ int bcl_desktop_stop(struct session *s) {
   struct desktop_target *d = s->desktop;
   if (d->stopping) return -1;
   d->stopping = true;
-  if (bcl_desktop_unbridge(s) < 0) return -1;
-  if (s->fatal || d->conflict || !dt_source(s) || !dt_ref(find(s, d->original.id, NODE), d->original))
+  int unbridged=bcl_desktop_unbridge(s);
+  if (unbridged < 0 || s->fatal || d->conflict ||
+      barrier(s) < 0 || barrier(s) < 0) {
+    fprintf(stderr,"desktop stop preflight refused: unbridge=%d fatal=%d conflict=%d source_removed=%d source_gone=%d\n",
+            unbridged,s->fatal,d->conflict,d->source_removed,dt_source_gone_confirmed(s));
     return -1;
+  }
+  if (s->fatal || d->conflict ||
+      !dt_ref(find(s, d->original.id, NODE), d->original))
+    return -1;
+  /* A closed selected stream has no subject on which its previous target can
+   * be restored. The exact old node and both old ports must be gone after the
+   * unbridge barrier. Do not write metadata to a reused numeric subject. */
+  if (dt_source_gone_confirmed(s)) {
+    d->active = false;
+    return 1;
+  }
+  if (!dt_source(s)) return -1;
   char target[32]; snprintf(target, sizeof(target), "%" PRIu64, d->original.serial);
-  if (dt_set(s, true, "Spa:Id", target) < 0 || dt_wait(s, d->original) < 0 ||
+  if (dt_set(s, true, "Spa:Id", target) < 0 || dt_wait_cleanup(s, d->original) < 0 ||
       dt_set(s, d->prior.present, d->prior.type, d->prior.value) < 0 ||
-      dt_wait(s, d->original) < 0)
+      dt_wait_cleanup(s, d->original) < 0)
     return -1;
   d->active = false;
   return 0;
+}
+/* 1 means the pinned source generation and both pinned output ports are
+ * confirmed absent; 0 means it is still present or removal is incomplete. */
+int bcl_desktop_source_gone(struct session *s) {
+  if (!s || !s->desktop || !s->desktop->active || s->fatal ||
+      barrier(s) < 0 || barrier(s) < 0 || s->fatal)
+    return -1;
+  return dt_source_gone_confirmed(s) ? 1 : 0;
 }
 int bcl_desktop_release_sink(struct session *s) {
   if (!s || !s->desktop || s->desktop->active || !s->desktop->sink.serial)
@@ -627,6 +731,118 @@ fail:
 fail_freed:
   return -1;
 }
+static int bcl_desktop_test_source_gone(void) {
+  struct desktop_target desktop={0};
+  struct session s={.desktop=&desktop};
+  struct object objects[5]={0};
+  desktop.source=(struct receipt){7,70};
+  desktop.source_ports[0]=(struct receipt){8,80};
+  desktop.source_ports[1]=(struct receipt){9,90};
+  desktop.source_removed=true;
+  const uint32_t ids[]={7,8,9,7,8};
+  const uint64_t serials[]={70,80,90,71,81};
+  const int kinds[]={NODE,PORT,PORT,NODE,PORT};
+  int checks=0;
+  for (int i=0;i<5;i++) {
+    char serial_text[16];
+    snprintf(serial_text,sizeof(serial_text),"%" PRIu64,serials[i]);
+    objects[i].id=ids[i]; objects[i].kind=kinds[i]; objects[i].present=true;
+    objects[i].props=pw_properties_new(PW_KEY_OBJECT_SERIAL,serial_text,NULL);
+    if (!objects[i].props) goto fail;
+    s.objects[s.count++]=&objects[i];
+  }
+  /* A retained old node is not gone, even when its ports are absent. */
+  objects[1].present=false; objects[2].present=false;
+  if (dt_source_gone_confirmed(&s)) goto fail;
+  checks++;
+  /* Old node disappearance alone is insufficient while either old port lives. */
+  objects[0].present=false; objects[1].present=true;
+  if (dt_source_gone_confirmed(&s)) goto fail;
+  checks++;
+  objects[1].present=false;
+  if (!dt_source_gone_confirmed(&s)) goto fail;
+  checks++;
+  desktop.source_removed=false;
+  if (dt_source_gone_confirmed(&s)) goto fail;
+  desktop.source_removed=true;
+  checks++;
+  /* Numeric-ID reuse is not the pinned old generation, but its subject clear
+   * must remain fatal and therefore cannot be mistaken for stale cleanup. */
+  desktop.active=true;
+  dt_property(&s,7,NULL,NULL,NULL);
+  if (!s.fatal) goto fail;
+  checks++;
+  s.fatal=false;
+  objects[3].present=false;
+  /* Once the exact source and ports are gone and no replacement subject is
+   * present, the corresponding stale subject-clear is harmless. */
+  dt_property(&s,7,NULL,NULL,NULL);
+  if (s.fatal) goto fail;
+  checks++;
+  /* The exemption never applies to another subject. */
+  dt_property(&s,0,NULL,NULL,NULL);
+  if (!s.fatal) goto fail;
+  checks++;
+  for (int i=0;i<5;i++) pw_properties_free(objects[i].props);
+  return checks;
+fail:
+  for (int i=0;i<5;i++) if (objects[i].props) pw_properties_free(objects[i].props);
+  return -1;
+}
+static int bcl_desktop_test_cleanup_link_states(void) {
+  int checks=0;
+  if (!dt_link_state_allowed(PW_NODE_STATE_RUNNING, PW_LINK_STATE_ACTIVE, false) ||
+      !dt_link_state_allowed(PW_NODE_STATE_RUNNING, PW_LINK_STATE_ACTIVE, true))
+    return -1;
+  checks++;
+  if (!dt_link_state_allowed(PW_NODE_STATE_IDLE, PW_LINK_STATE_ACTIVE, false))
+    return -1;
+  checks++;
+  if (dt_link_state_allowed(PW_NODE_STATE_IDLE, PW_LINK_STATE_PAUSED, false) ||
+      !dt_link_state_allowed(PW_NODE_STATE_IDLE, PW_LINK_STATE_PAUSED, true))
+    return -1;
+  checks++;
+  if (!dt_link_state_allowed(PW_NODE_STATE_SUSPENDED, PW_LINK_STATE_PAUSED, true))
+    return -1;
+  checks++;
+  if (dt_link_state_allowed(PW_NODE_STATE_RUNNING, PW_LINK_STATE_PAUSED, true))
+    return -1;
+  checks++;
+  if (dt_link_state_allowed(PW_NODE_STATE_ERROR, PW_LINK_STATE_PAUSED, true))
+    return -1;
+  checks++;
+  if (dt_link_state_allowed(PW_NODE_STATE_IDLE, PW_LINK_STATE_NEGOTIATING, true))
+    return -1;
+  checks++;
+  if (dt_link_state_allowed(PW_NODE_STATE_IDLE, PW_LINK_STATE_ERROR, true))
+    return -1;
+  checks++;
+  if (!dt_link_state_allowed(PW_NODE_STATE_IDLE, PW_LINK_STATE_INIT, true) ||
+      dt_link_state_allowed(PW_NODE_STATE_RUNNING, PW_LINK_STATE_INIT, true) ||
+      dt_link_state_allowed(PW_NODE_STATE_IDLE, PW_LINK_STATE_INIT, false))
+    return -1;
+  checks++;
+  return checks;
+}
+static int bcl_desktop_test_cache_guard(void) {
+  struct session s={0}; s.desktop=desktop_new();
+  if (!s.desktop) return -1;
+  struct desktop_target *d=s.desktop;
+  bool ok=!d->cache_guard;
+  dt_property(&s,0,"linx.target-cache-guard","Spa:String","1");
+  ok=ok && d->cache_guard && !d->conflict && !s.fatal;
+  dt_property(&s,7,"linx.target-cache-guard","Spa:String","0");
+  ok=ok && d->cache_guard;
+  dt_property(&s,0,"linx.target-cache-guard","Spa:String","2");
+  ok=ok && !d->cache_guard;
+  dt_property(&s,0,"linx.target-cache-guard","Spa:Id","1");
+  ok=ok && !d->cache_guard;
+  dt_property(&s,0,"linx.target-cache-guard","Spa:String","1");
+  dt_property(&s,0,"linx.target-cache-guard",NULL,NULL);
+  ok=ok && !d->cache_guard && !d->conflict && !s.fatal;
+  free(d);
+  return ok ? 0 : -1;
+}
 static bool dt_test_port_fixture(const char **channels, const char **monitors,
                                 const char **controls, size_t count, bool monitor) {
   if (count > 4) return false;
@@ -692,7 +908,10 @@ static int bcl_desktop_test_port_monitor_modes(void) {
   return checks;
 }
 int bcl_desktop_test_pair_mapping(void) {
+  if (bcl_desktop_test_cache_guard()!=0) return -1;
   if (bcl_desktop_test_ledger_retirement()!=5) return -1;
+  if (bcl_desktop_test_source_gone()!=7) return -1;
+  if (bcl_desktop_test_cleanup_link_states()!=9) return -1;
   if (bcl_desktop_test_port_monitor_modes()!=7) return -1;
   int checks=0;
   for (unsigned pair=1;pair<=4;pair++) {
