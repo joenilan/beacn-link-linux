@@ -49,7 +49,7 @@ impl eframe::App for App {
 fn main() -> eframe::Result {
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args == ["--help"] {
-        println!("Beacn LinX · Rust application preview\nDefault: read-only desktop application discovery\nOptional isolated test core: --private-runtime PATH --core NAME\nNo USB, route application, persistence or automatic reconnect.");
+        println!("LinX · Rust application preview\nDefault: read-only desktop application discovery\nOptional isolated test core: --private-runtime PATH --core NAME\nNo USB, route application, persistence or automatic reconnect.");
         return Ok(());
     }
     let connection = match args.as_slice() {
@@ -64,7 +64,7 @@ fn main() -> eframe::Result {
         }
     };
     eframe::run_native(
-        "Beacn LinX",
+        "LinX",
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
                 .with_icon(beacn_linx_app::icon::raster(

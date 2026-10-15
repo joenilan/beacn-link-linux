@@ -1,0 +1,16 @@
+[package]
+name = "beacn-linx-core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+publish = false
+[features]
+default = []
+native-catalog = ["beacn-link-protocol/native-pipewire"]
+private-session-test = ["native-catalog", "beacn-link-protocol/qualification-peer"]
+status-tray = ["dep:ksni"]
+[dependencies]
+beacn-link-protocol = { path = ".." }
+[target.'cfg(target_os = "linux")'.dependencies]
+ksni = { version = "=0.3.6", optional = true, features = ["blocking"] }
+[workspace]

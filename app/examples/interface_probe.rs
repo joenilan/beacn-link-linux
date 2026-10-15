@@ -272,7 +272,7 @@ fn main() -> eframe::Result {
         cycles: 12,
     });
     eframe::run_native(
-        "Beacn LinX · isolated interface qualification",
+        "LinX · isolated interface qualification",
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default().with_inner_size([1060., 760.]),
             renderer: eframe::Renderer::Glow,

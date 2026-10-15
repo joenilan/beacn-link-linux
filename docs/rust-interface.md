@@ -1,5 +1,10 @@
 # Beacn LinX Rust interface
 
+Historical egui preview, retained for comparison. The owner has now selected
+GPUI Kit and the independent working name **LinX**. See the current
+[GPUI interface](gpui-interface.md). Model, worker, session, icon and tray owners
+are shared through `app-core/`; this preview no longer owns copies of them.
+
 Updated 2026-10-14 (native qualification continued into 2026-10-15 UTC). The first
 graphical application is implemented in Rust using egui/eframe 0.33.3, pinned with
 a separate application lockfile. This version supports the existing Rust 1.88

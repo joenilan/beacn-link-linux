@@ -23,7 +23,7 @@ impl ksni::Tray for Item {
         "beacn-linx".into()
     }
     fn title(&self) -> String {
-        format!("Beacn LinX · {}", self.view.status.label())
+        format!("LinX · {}", self.view.status.label())
     }
     fn status(&self) -> ksni::Status {
         if self.view.status == Status::Error {
@@ -52,7 +52,7 @@ impl ksni::Tray for Item {
     }
     fn tool_tip(&self) -> ksni::ToolTip {
         ksni::ToolTip {
-            title: "Beacn LinX".into(),
+            title: "LinX".into(),
             description: self.view.status.label().into(),
             ..Default::default()
         }
@@ -73,7 +73,7 @@ impl ksni::Tray for Item {
             }
             .into(),
             StandardItem {
-                label: "Open Beacn LinX".into(),
+                label: "Open LinX".into(),
                 activate: Box::new(|item: &mut Self| {
                     item.actions.fetch_or(SHOW, Ordering::Release);
                 }),

@@ -60,7 +60,7 @@ def verify(binary, root, runtime, remote, env, dump, first_pid, media, propertie
 
     try:
         log=(root/'service.stderr').open('xb');logs.append(log)
-        service=subprocess.Popen([str(binary),'service','30','--private-runtime',str(runtime),'--core',remote],
+        service=subprocess.Popen([str(binary),'service','60','--private-runtime',str(runtime),'--core',remote],
                                  env=clean_env,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=log)
         processes.append(service)
         status(1,0);first=find_app(first_pid)
@@ -68,8 +68,8 @@ def verify(binary, root, runtime, remote, env, dump, first_pid, media, propertie
         second=launch('second');status(2,1);second_id=find_app(second.pid)
         send('select '+second_id+'=Other Player');status(2,2)
         if gui is not None:
-            command=['xvfb-run','-a','-s','-screen 0 1280x900x24',str(gui),str(runtime),remote,first,second_id,str(root/'gui'),*native_arguments]
-            result=subprocess.run(command,env={**clean_env,'LIBGL_ALWAYS_SOFTWARE':'1','WINIT_UNIX_BACKEND':'x11'},capture_output=True,text=True,timeout=22)
+            command=['xvfb-run','-a','-s','-screen 0 1280x900x24','dbus-run-session','--',str(gui),str(runtime),remote,first,second_id,str(root/'gui'),*native_arguments]
+            result=subprocess.run(command,env={**{k:v for k,v in clean_env.items() if k not in ('WAYLAND_DISPLAY','XDG_SESSION_TYPE')},'LINX_PRIVATE_GUI_TEST':'1','LIBGL_ALWAYS_SOFTWARE':'1','WINIT_UNIX_BACKEND':'x11'},capture_output=True,text=True,timeout=40)
             owner.save(root/'gui-process.json',{'exit':result.returncode,'stdout':result.stdout,'stderr':result.stderr,'binary_sha256':hashlib.sha256(Path(gui).read_bytes()).hexdigest()})
             evidence=root/'gui/result.txt'
             proof['gui_widgets_verified']=result.returncode==0 and evidence.is_file() and evidence.read_text().strip()=='widgets_selected=2 renamed=true removed=true worker_stopped=true session_started_stopped_restarted=true lifecycle_release_verified=true owned_configs_remaining=0 failed=false' and not (root/'gui/failure.txt').exists()

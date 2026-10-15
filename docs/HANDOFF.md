@@ -1,7 +1,57 @@
 # Beacn LinX — continuation handoff
 Updated 2026-10-14. Resume development; do not restart the investigation.
 
-## Current checkpoint: GUI sessions and status-aware lynx icon
+## Current checkpoint: LinX GPUI Kit frontend works
+
+The owner chose GPUI Kit (used in their other apps), compact/expanding layout and
+the independent working name **LinX**. No trademark clearance is claimed. Keep
+historical evidence/repository identifiers stable. See
+[gpui-interface.md](gpui-interface.md) for build/run commands and full acceptance.
+
+`app-gpui/` is now the primary UI, pinned GPUI Kit 0.7.3 with Rust 1.99.0. The
+original 1.88 backend toolchain/default remains intact. Discovery, model, worker,
+private session, icon geometry/state and Linux tray moved to `app-core/`; the old
+egui reference under `app/` reexports those owners and its eight checks still pass.
+Root dependencies/default gates remain unchanged. No JS shell/webview/speech.
+
+Default window 720x520; four channel cards wrap to two rows at narrow widths.
+Per-app details and info expand on demand, and short views scroll instead of
+clipping controls. Search includes aliases. Kit inputs/buttons use actual keyboard
+and pointer dispatch. A saved unchanged alias is disabled/no-op, avoiding an
+unnecessary fixed-roster stop. The lynx status/tray rules remain truthful; normal
+discovery is gray, scripted private sessions blue, and default Start stays disabled.
+
+Two real mpv apps pass native GPUI selection/naming/search, 720x520/440x520/
+900x640/440x380 rendering, small-window scroll/reachable controls, pairs 1/4,
+stop/restart, unchanged-save continuity, selection-change stop and quit while
+running. The app-quit hook verifies both route and transport release, plus config
+removal. Complete private-core teardown and relevant desktop/settings/state hashes
+match. The production build omits qualification features and independently passes
+read-only desktop discovery, actual gray X11 icon and normal WM_DELETE_WINDOW.
+Shared tray private-bus five-state/menu/fallback/release checks pass. No real
+desktop-panel visibility, Wayland dynamic taskbar icon or release performance claim.
+
+Idle redraws now depend on visible changes, not catalog revision increments.
+Discovery still observes every 500 ms and before commands. An isolated debug/Xvfb
+sample fell from .350 to .070 CPU seconds per 2.001 seconds; about 205 MiB RSS.
+No speculative build flags. 74 focused root, 31 runner and eight shared-model/egui
+checks pass. GPUI's 1.92/1.94 documentation mismatch and first screenshot helper's
+32-bit-depth refusal remain recorded privately. 38 new development packages,
+no upgrades/removals; setup/settings comparison exact. No driver/service changes.
+
+Qualified source `beacn-native-source-20261015T012848Z`; complete native result
+SHA256 `d95f9c3d259fceecbf344320f9e9909b413784d36b1ef80d0e0408e078e05398`.
+Production journal SHA256
+`6f449886d7d74c7ea4b1548044015ea28b6f4461663da9455d22746c688988b0`.
+Build/runtime logs, source hashes and inspected screenshots are preserved privately.
+
+The owner remains live streaming: no USB, physical audio, Windows changes, desktop
+apply, OS mouse/computer-use or REA. Next supply the physical transport/playback
+owner for the shared session and qualify actual multi-app GUI/hardware after the
+stream. Shared-desktop apply, unaffected-app continuity, durable reconnect and
+packaging remain open. Keep Actions disabled and local [skip ci] checkpoints.
+
+## Previous checkpoint: GUI sessions and status-aware lynx icon
 
 The owner remains live streaming: software/private-core qualification only. No
 USB, physical audio, Windows changes, desktop route apply or mouse automation.

@@ -71,7 +71,7 @@ impl Interface {
                         ui.label("Your Linux audio, connected.");
                     });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(RichText::new(status.label()).color(status.color()));
+                        ui.label(RichText::new(status.label()).color(crate::icon::color(status)));
                         if let Some((_, texture)) = &self.icon {
                             ui.add(
                                 egui::Image::new(texture).fit_to_exact_size(egui::vec2(30., 30.)),
@@ -176,7 +176,7 @@ impl Interface {
                 egui::Frame::new().fill(CARD).corner_radius(10).inner_margin(24).show(ui,|ui|{
                     ui.set_min_width((ui.available_width()-48.).max(100.));
                     ui.heading(if !snapshot.connected{"Application discovery is unavailable"}else if count==0{"No audio applications yet"}else{"No matching applications"});
-                    ui.label(RichText::new(if !snapshot.connected{"Reopen Beacn LinX after your Linux audio session is available."}else if count==0{"Play audio in a game, browser or media player. It will appear here automatically."}else{"Try another application name or clear your search."}).color(MUTED));
+                    ui.label(RichText::new(if !snapshot.connected{"Reopen LinX after your Linux audio session is available."}else if count==0{"Play audio in a game, browser or media player. It will appear here automatically."}else{"Try another application name or clear your search."}).color(MUTED));
                 });
             }
             egui::ScrollArea::vertical().auto_shrink([false,false]).show(ui,|ui|{

@@ -1,8 +1,8 @@
 pub mod icon;
-pub mod model;
+pub use beacn_linx_core::model;
 #[cfg(all(feature = "private-session-test", target_os = "linux"))]
-pub mod private_session;
+pub use beacn_linx_core::private_session;
 #[cfg(all(feature = "status-tray", target_os = "linux"))]
-pub mod tray;
+pub use beacn_linx_core::tray;
 pub mod ui;
-pub mod worker;
+pub use beacn_linx_core::worker;

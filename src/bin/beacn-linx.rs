@@ -1,5 +1,5 @@
 use std::process::ExitCode;
-const HELP:&str="Beacn LinX — Rust application service\nRead-only commands: inventory | service SECONDS (1..600)\nOptional test core: --private-runtime PATH --core NAME\nService stdin: select APP-ID=ASCII-NAME | unselect APP-ID | status | quit\nNo USB, audio capture or route application. Selections last only this process.";
+const HELP:&str="LinX — Rust application service\nRead-only commands: inventory | service SECONDS (1..600)\nOptional test core: --private-runtime PATH --core NAME\nService stdin: select APP-ID=ASCII-NAME | unselect APP-ID | status | quit\nNo USB, audio capture or route application. Selections last only this process.";
 
 #[cfg(all(feature = "native-pipewire", target_os = "linux"))]
 fn run(args: &[String]) -> Result<(), String> {
@@ -161,7 +161,7 @@ fn main() -> ExitCode {
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("Beacn LinX stopped: {error}");
+            eprintln!("LinX stopped: {error}");
             ExitCode::from(2)
         }
     }

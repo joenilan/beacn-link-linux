@@ -1,6 +1,12 @@
-# Beacn LinX
+# LinX
 
 Independent, unofficial Linux compatibility research; not affiliated with BEACN.
+
+The primary [LinX interface](docs/gpui-interface.md) now uses GPUI Kit: a compact
+window, responsive channel cards, expandable application details and a shared
+lynx status icon/tray. Real widgets and private-session routing/cleanup pass native
+Linux checks. The normal GUI keeps USB/device connection and desktop apply disabled.
+The earlier egui preview remains available for comparison.
 
 Status: offline Rust codec/CLI, planner, lifecycle and graph/inventory owners,
 an optional native PipeWire executor restricted to disposable private cores,
@@ -8,7 +14,7 @@ and a guarded Linux libusb transport. Native private-core routing, acknowledgmen
 partial-failure recovery and owned cleanup are verified. Ordinary desktop apply
 remains disabled.
 
-The [Rust Beacn LinX application/service](docs/rust-application-service.md) now
+The [Rust LinX application/service](docs/rust-application-service.md) now
 provides native read-only application discovery, explicit multi-app selections,
 identity/lifecycle tracking and a bounded foreground command loop. Same-core real
 application exit/reopen, selection revocation and exact cleanup pass. USB publication

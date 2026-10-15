@@ -149,7 +149,15 @@ name = "beacn-linx-app"
 version = "0.1.0"
 dependencies = [
  "beacn-link-protocol",
+ "beacn-linx-core",
  "eframe",
+]
+
+[[package]]
+name = "beacn-linx-core"
+version = "0.1.0"
+dependencies = [
+ "beacn-link-protocol",
  "ksni",
 ]
 
