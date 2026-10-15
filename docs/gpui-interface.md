@@ -52,6 +52,8 @@ The normal executable remains read-only discovery with Connect disabled. It cann
 construct a device or desktop routing backend. The explicit private-session test
 feature uses only guarded disposable cores and the synthetic peer, just as before.
 See [rust-link-session.md](rust-link-session.md) for route/transport ownership.
+The explicit [Studio GUI qualification](native-studio-gui.md) now supplies a real
+native transport on an owned test core; it does not enable the normal executable.
 
 ## Startup and waiting
 
@@ -177,6 +179,10 @@ The nested toolchain file also selects 1.99.0 when running Cargo from `app-gpui/
 Optional `--private-runtime PATH --core NAME` only changes discovery's target; it
 does not enable routing. Do not run this GUI as root or attach Studio while the
 owner's stream is active. Hardware/backend integration remains a separate step.
+On a Linux graphics stack that stalls during initialization, explicit
+`--software-renderer` chooses the installed Mesa CPU Vulkan manifest for this
+process only. No driver/system setting is changed; it is a fallback, not GPU or
+release-performance acceptance.
 
 Qualified source `beacn-native-source-20261015T012848Z`. Private GUI/session
 qualification `beacn-gui-20261015T012900Z` has complete-result SHA256
@@ -193,7 +199,8 @@ GPUI Kit API/requirements were checked against the
 Before release, a focused dependency/security review is recommended for the new
 GUI/platform/asset dependency tree. No paid scan was requested or run.
 
-Next connect a physical transport/playback owner after the owner's stream and
-qualify actual multi-app hardware behavior through this frontend. Keep default
+Explicit Studio qualification now passes owner-heard first-pair output through
+the native GUI session. Next implement standalone Rust physical playback and
+qualify ordinary desktop/multi-app hardware behavior. Keep default
 apply disabled, Actions disabled, private evidence outside Git and [skip ci]
 checkpoints local unless the owner asks to publish.

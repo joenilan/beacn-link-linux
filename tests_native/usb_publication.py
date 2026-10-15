@@ -214,6 +214,7 @@ def main():
     parser.add_argument('--multi-app-check', help='native two-app private executor qualification binary; requires catalog-service-check and no USB')
     parser.add_argument('--session-control-check', help='native start/stop/source-exit qualification binary; requires catalog-service-check and no USB')
     parser.add_argument('--gui-check', help='native egui isolated-window qualification binary; requires catalog-service-check and no USB')
+    parser.add_argument('--studio-gui-check', help='explicit native GUI hardware qualification binary; requires bounded ordinary-app physical mode')
     parser.add_argument("--authorize-studio-first-pair-silence", action="store_true",
                         help="native-only assignment-1 physical stage; pauses USB until owned audio cleanup")
     parser.add_argument("--authorize-studio-first-pair-tone", action="store_true")
@@ -232,6 +233,10 @@ def main():
     if args.authorize_studio_first_pair_tone != args.audible_first_pair or (args.authorize_studio_first_pair_tone and args.authorize_studio_first_pair_silence):
         parser.error("audible first pair requires its tone authorization; silence and tone are exclusive")
     physical_requested = args.authorize_studio_first_pair_silence or args.authorize_studio_first_pair_tone or args.authorize_studio_pair_tone
+    if args.studio_gui_check:
+        import gui_studio
+        try:gui_studio.validate(args.stage,args.application_mpv,physical_requested,args.continuous_studio_first_pair,args.cycles,args.catalog_service_check,args.probe_source_exit)
+        except RuntimeError as error:parser.error(str(error))
     audible = args.audible_first_pair or args.audible_studio_pair
     if args.continuous_studio_first_pair and not physical_requested:
         parser.error("continuous physical mode requires explicit silence/tone authority")
@@ -560,15 +565,20 @@ def main():
                 return continuous_job.stop() if continuous_job is not None else True
             def pulse():
                 if continuous_job is not None:continuous_job.check()
-            result.update(execute_periodic(command, fresh, args.cycles, timeout=90 if args.private_routing else 50,
+            if args.studio_gui_check:
+                result['studio_gui_binary_sha256']=hashlib.sha256(Path(args.studio_gui_check).read_bytes()).hexdigest()
+                base.save(root/'studio-gui-binary.json',{'sha256':result['studio_gui_binary_sha256']})
+                result.update(gui_studio.execute(Path(args.studio_gui_check).resolve(strict=True),root/'studio-gui',selected,pinned,
+                    inventory['applications'][0]['application_id'],args.studio_pair,args.cycles,native_arguments,fresh,concurrent_stage,pulse))
+            else:
+                result.update(execute_periodic(command, fresh, args.cycles, timeout=90 if args.private_routing else 50,
                                            physical=physical_stage if physical_before is not None and not args.continuous_studio_first_pair else None,
                                            concurrent=concurrent_stage if args.continuous_studio_first_pair else None,
                                            pulse=pulse if args.continuous_studio_first_pair else None, pair=args.studio_pair))
-            result["private_routes_verified_count"] = result.get("stdout", "").count("private_route_applied assignment=")
+            if not args.studio_gui_check:
+                result["private_routes_verified_count"] = result.get("stdout", "").count("private_route_applied assignment=")
             result["routes_applied"] = result["private_routes_verified_count"] > 0
             result["routing_scope"] = "owned_private_core" if args.private_routing else None
-            if args.continuous_studio_first_pair:
-                result.update(concurrent_proof(result.get("stderr", ""), rate))
         else:
             command = ([str(binary), "--check-inventory", str(projected), str(inventory["snapshot_id"])] if source_only else
                        [str(binary), "--authorize-publication", str(selected), str(pinned), str(projected), str(inventory["snapshot_id"])])
@@ -580,6 +590,8 @@ def main():
         else:
             if application is not None:application.validate(objects)
             result["owned_source_preserved"] = playback.poll() is None and owned_inventory(objects, playback.pid, node_name, inventory["snapshot_id"], destinations, wire_name) == inventory
+        if args.continuous_studio_first_pair:
+            result.update(concurrent_proof(result.get("stderr", ""), rate))
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
         result["runner_error"] = type(error).__name__ + ": " + str(error)
     finally:

@@ -8,6 +8,7 @@ publish = false
 default = []
 native-catalog = ["beacn-link-protocol/native-pipewire"]
 private-session-test = ["native-catalog", "beacn-link-protocol/qualification-peer"]
+studio-session-test = ["private-session-test", "beacn-link-protocol/native-usb"]
 status-tray = ["dep:ksni"]
 [dependencies]
 beacn-link-protocol = { path = ".." }

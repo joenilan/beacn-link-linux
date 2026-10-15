@@ -45,6 +45,7 @@ fn main() {
             first: args[2].clone(),
             second: args[3].clone(),
             root,
+            studio: false,
         },
     );
 }

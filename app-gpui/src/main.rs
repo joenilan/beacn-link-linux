@@ -2,12 +2,19 @@ use beacn_linx_core::worker::Connection;
 use std::path::PathBuf;
 
 fn main() {
-    let args: Vec<_> = std::env::args().skip(1).collect();
+    let mut args: Vec<_> = std::env::args().skip(1).collect();
     if args == ["--help"] {
         println!(
-            "LinX - GPUI Kit preview\nRead-only application discovery; no USB or desktop apply.\nOptional: --private-runtime PATH --core NAME"
+            "LinX - GPUI Kit preview\nRead-only application discovery; no USB or desktop apply.\nOptional: --private-runtime PATH --core NAME\nOptional: --software-renderer (Linux; installed Mesa CPU Vulkan, this process only)"
         );
         return;
+    }
+    let software = args
+        .iter()
+        .filter(|a| a.as_str() == "--software-renderer")
+        .count();
+    if software == 1 {
+        args.retain(|a| a != "--software-renderer");
     }
     let connection = match args.as_slice() {
         [] => Connection::Desktop,
@@ -20,5 +27,31 @@ fn main() {
             std::process::exit(2);
         }
     };
+    if software == 1 {
+        #[cfg(target_os = "linux")]
+        {
+            let manifest = [
+                "/usr/share/vulkan/icd.d/lvp_icd.json",
+                "/usr/share/vulkan/icd.d/lvp_icd.x86_64.json",
+            ]
+            .into_iter()
+            .find(|path| std::path::Path::new(path).is_file());
+            let Some(manifest) = manifest else {
+                eprintln!("Installed Mesa CPU renderer is unavailable.");
+                std::process::exit(2);
+            };
+            // Select a system-installed renderer before GPUI creates threads.
+            // No driver installation, file changes or global environment edits.
+            unsafe {
+                std::env::set_var("VK_DRIVER_FILES", manifest);
+                std::env::set_var("VK_ICD_FILENAMES", manifest);
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            eprintln!("Software renderer selection is currently Linux-only.");
+            std::process::exit(2);
+        }
+    }
     beacn_linx_gpui::ui::run(connection);
 }

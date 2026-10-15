@@ -6,6 +6,9 @@ The primary [LinX interface](docs/gpui-interface.md) now uses GPUI Kit: a compac
 window, responsive channel cards, expandable application details and a shared
 lynx status icon/tray. Real widgets and private-session routing/cleanup pass native
 Linux checks. The normal GUI keeps USB/device connection and desktop apply disabled.
+The [explicit Studio GUI check](docs/native-studio-gui.md) now passes owner-heard
+first-pair output and clean release on an owned test core; standalone playback
+and ordinary desktop routing remain unfinished.
 The earlier egui preview remains available for comparison. The primary UI also has
 a saved Connect automatically toggle, waiting/paused states and read-only discovery
 recovery. Automatic session tests use owned private cores; physical GUI connection

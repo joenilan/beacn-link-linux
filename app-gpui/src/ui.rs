@@ -153,6 +153,7 @@ impl Interface {
             || next.selected != self.snapshot.selected
             || next.routing.assignments != self.snapshot.routing.assignments
             || next.private_session != self.snapshot.private_session
+            || next.session_available != self.snapshot.session_available
             || Status::from_snapshot(&next) != Status::from_snapshot(&self.snapshot)
             || next.connected != self.snapshot.connected
             || next.busy != self.snapshot.busy
@@ -449,7 +450,7 @@ impl Render for Interface {
                 ""
             }
         );
-        let start = self.snapshot.private_session
+        let start = self.snapshot.session_available
             && self.snapshot.connected
             && !self.snapshot.selected.is_empty()
             && !running
@@ -646,7 +647,7 @@ impl Render for Interface {
                     .child(format!(
                         "Link {pair}: assignments come from BEACN App on the streaming PC. {}",
                         if running {
-                            "Showing verified private-test routes."
+                            "Showing verified routes."
                         } else {
                             "No active routing session."
                         }
@@ -756,6 +757,8 @@ impl Render for Interface {
                     .child(discovery)
                     .child(if self.snapshot.private_session {
                         "Private test / no USB"
+                    } else if self.snapshot.session_available {
+                        "Studio / bounded hardware check"
                     } else {
                         "Preview / routing off"
                     }),
@@ -781,7 +784,15 @@ fn launch(
     >,
 ) {
     application().with_assets(Assets).run(move |cx| {
+        #[cfg(all(feature = "studio-session-test", target_os = "linux"))]
+        if probe.as_ref().is_some_and(|probe| probe.studio) {
+            eprintln!("STUDIO GUI runtime initialized");
+        }
         init(cx);
+        #[cfg(all(feature = "studio-session-test", target_os = "linux"))]
+        if probe.as_ref().is_some_and(|probe| probe.studio) {
+            eprintln!("STUDIO GUI components initialized");
+        }
         Theme::change(ThemeMode::Dark, None, cx);
         cx.on_window_closed(|cx, _| {
             if cx.windows().is_empty() {
@@ -806,6 +817,10 @@ fn launch(
             cx,
             |window, cx| {
                 cx.new(|cx| {
+                    #[cfg(all(feature = "studio-session-test", target_os = "linux"))]
+                    if probe.as_ref().is_some_and(|probe| probe.studio) {
+                        eprintln!("STUDIO GUI window opened");
+                    }
                     let view = Interface::new(connection, window, cx);
                     #[cfg(all(feature = "ui-qualification", target_os = "linux"))]
                     let view = {

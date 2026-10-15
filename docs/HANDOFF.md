@@ -1,5 +1,46 @@
-# Beacn LinX — continuation handoff
-Updated 2026-10-14. Resume development; do not restart the investigation.
+# LinX continuation handoff
+Updated 2026-10-15 UTC. Resume development; do not restart the investigation.
+
+## Current checkpoint: native GUI physical Link In passed
+
+The owner explicitly replied **start now**, then **Heard tones; mpv stayed in
+Link In**. The real native GUI session received assignment 1 at cycle 9, verified
+its native stereo route, started physical playback through the existing bridge,
+continued control/publication, stopped playback before cycles 39/40, and verified
+complete route/transport release after all 40 cycles.
+
+Qualified source `beacn-native-source-20261015T024631Z`; hardware evidence
+`beacn-studio-gui-20261015T024727Z`, complete-result SHA256
+`932cea339ecd87a578d4b96b3639123ea059628594da4adc52b2164a3cd5677a`.
+116 native active-PCM checks measured 1,356,890 frames of progress; 64 independent
+clock observations measured 1,436,472. Source identity was preserved, all four
+run-owned processes stopped, original private core restored, both PCMs closed,
+and complete laptop desktop/settings/routes/defaults/volumes/mutes/state and
+connected USB binding matched. Streaming-PC saved settings were not compared.
+
+The explicit `studio-session-test` feature is bounded one-app qualification, not
+normal installed-app acceptance. Session, selection, routing and USB owners are
+Rust; physical playback still uses the existing external Python test bridge.
+Default production USB/apply gates and 40-cycle budget remain unchanged. Read
+[native-studio-gui.md](native-studio-gui.md) for boundaries and earlier failures.
+
+Exact production and immutable Studio example builds pass. Five Linux Python
+ownership/protocol and all 31 runner checks pass; eleven core and eight reference
+GUI checks passed on identical core source. Native private GUI regression
+`beacn-gui-20261015T023740Z` passes. Production `--software-renderer` also passes
+real isolated window/read-only catalog/gray X11 icon/normal close and exact laptop
+settings/config/USB comparison (`beacn-gui-desktop-20261015T025113Z`). No driver,
+firmware, ACL, global renderer or Windows setting was changed.
+
+Earlier no-assignment runs lacked coordinated owner participation; do not infer
+peer/audio failure from them. Graphics-startup stalls preceded device access;
+per-process installed Mesa CPU Vulkan selection lets the test window open, with
+the exact hybrid GPU stall untraced. An SSH outage was recovered before success.
+No further hardware test is running. Finish builds/checks, give exact viewing/
+dragging instructions, then wait for fresh **start now** before another watched
+run. Leave Studio connected; no toggle is needed. Next implement standalone Rust
+physical playback/ordinary desktop routing, then qualify physical pause/failure/
+reconnect and longer operation. Keep Actions disabled and checkpoints [skip ci].
 
 ## Current checkpoint: automatic waiting and pause
 

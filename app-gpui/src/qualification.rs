@@ -12,6 +12,7 @@ pub struct Configuration {
     pub first: String,
     pub second: String,
     pub root: PathBuf,
+    pub studio: bool,
 }
 pub struct Probe {
     config: Configuration,
@@ -42,6 +43,9 @@ impl Probe {
         }
     }
     pub fn next(&mut self, snapshot: &Snapshot) -> Option<Action> {
+        if self.config.studio {
+            return self.next_studio(snapshot);
+        }
         let first = ApplicationId(self.config.first.clone());
         let second = ApplicationId(self.config.second.clone());
         if self.start.elapsed() > Duration::from_secs(30) {
@@ -166,7 +170,80 @@ impl Probe {
     }
 }
 impl Probe {
+    fn next_studio(&mut self, snapshot: &Snapshot) -> Option<Action> {
+        if snapshot.link.phase == Phase::NeedsReview || snapshot.link.error.is_some() {
+            return Some(Action::Fail(
+                self.config.root.clone(),
+                format!("studio failure: {:?}", snapshot.message),
+            ));
+        }
+        if self.start.elapsed() > Duration::from_secs(70) {
+            return Some(Action::Fail(
+                self.config.root.clone(),
+                format!("studio stage={} message={:?}", self.stage, snapshot.message),
+            ));
+        }
+        if self.pause.elapsed() < Duration::from_millis(220) {
+            return None;
+        }
+        let action = match self.stage {
+            0 if snapshot.connected => Action::Click(format!("select-{}", self.config.first)),
+            1 if snapshot.selected.len() == 1 => Action::Click("auto-connect".into()),
+            2 if snapshot.link.phase == Phase::Running && snapshot.link.completed_cycles >= 1 => {
+                assert!(!snapshot.private_session);
+                assert_eq!(
+                    beacn_linx_core::icon::Status::from_snapshot(snapshot),
+                    beacn_linx_core::icon::Status::Connected
+                );
+                Action::Capture("studio-connected.ppm")
+            }
+            3 if snapshot.link.phase == Phase::Stopped => {
+                if snapshot.link.completed_cycles != snapshot.link.cycle_limit
+                    || snapshot.link.error.is_some()
+                {
+                    return Some(Action::Fail(
+                        self.config.root.clone(),
+                        format!("studio stopped early: {:?}", snapshot.link.error),
+                    ));
+                }
+                assert!(
+                    snapshot
+                        .link
+                        .transport_cleanup
+                        .as_ref()
+                        .is_some_and(Result::is_ok)
+                );
+                assert!(snapshot.routing.cleanup.as_ref().is_some_and(Result::is_ok));
+                Action::Finish(self.config.root.clone())
+            }
+            _ => return None,
+        };
+        eprintln!(
+            "STUDIO GUI stage={} selected={} connected={}",
+            self.stage,
+            snapshot.selected.len(),
+            snapshot.connected
+        );
+        self.stage += 1;
+        self.pause = Instant::now();
+        Some(action)
+    }
     pub fn on_quit(&self, snapshot: &Snapshot) {
+        if self.config.studio {
+            if self.stage == 4 {
+                assert_eq!(snapshot.link.phase, Phase::Stopped);
+                assert!(
+                    snapshot
+                        .link
+                        .transport_cleanup
+                        .as_ref()
+                        .is_some_and(Result::is_ok)
+                );
+                assert!(snapshot.routing.cleanup.as_ref().is_some_and(Result::is_ok));
+                std::fs::write(self.config.root.join("studio-result.txt"),format!("hardware_session=true cycles={} route_release=verified transport_release=verified\n",snapshot.link.completed_cycles)).unwrap();
+            }
+            return;
+        }
         if self.stage != 40 {
             return;
         }

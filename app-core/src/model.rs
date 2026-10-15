@@ -17,6 +17,7 @@ pub struct Snapshot {
     pub routing: Status,
     pub link: beacn_link_protocol::link_session::Status,
     pub private_session: bool,
+    pub session_available: bool,
     pub auto_connect: bool,
     pub startup: crate::startup::State,
     pub preference_error: Option<String>,
@@ -111,11 +112,16 @@ impl Model {
     pub fn service(&self) -> &ApplicationService {
         &self.service
     }
-    pub fn session(&mut self, status: beacn_link_protocol::link_session::Status, available: bool) {
+    pub fn session(
+        &mut self,
+        status: beacn_link_protocol::link_session::Status,
+        available: bool,
+        private: bool,
+    ) {
         if status.phase != self.snapshot.link.phase {
             self.snapshot.message = status.error.clone().or_else(|| match status.phase {
                 beacn_link_protocol::link_session::Phase::Running => Some(
-                    if available {
+                    if private {
                         "Private test session active. Changing the selection stops this session."
                     } else {
                         "Link session active."
@@ -133,7 +139,8 @@ impl Model {
         }
         self.snapshot.routing = status.routes.clone();
         self.snapshot.link = status;
-        self.snapshot.private_session = available;
+        self.snapshot.private_session = private;
+        self.snapshot.session_available = available;
     }
     pub fn notice(&mut self, error: String) {
         self.snapshot.message = Some(error);

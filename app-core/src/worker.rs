@@ -20,6 +20,8 @@ pub enum Connection {
     },
     #[cfg(all(feature = "private-session-test", target_os = "linux"))]
     PrivateSession(crate::private_session::Configuration),
+    #[cfg(all(feature = "studio-session-test", target_os = "linux"))]
+    StudioSession(crate::studio_session::Configuration),
 }
 pub struct Worker {
     tx: SyncSender<Request>,
@@ -62,12 +64,7 @@ impl Worker {
             }
             let mut supervisor = crate::startup::Supervisor::new(automatic);
             #[cfg(all(feature = "private-session-test", target_os = "linux"))]
-            let config = match &connection {
-                Connection::PrivateSession(config) => Some(config.clone()),
-                _ => None,
-            };
-            #[cfg(all(feature = "private-session-test", target_os = "linux"))]
-            let mut link = crate::private_session::Session::default();
+            let mut link = crate::session_owner::Owner::new(&connection);
             #[cfg(all(feature = "native-catalog", target_os = "linux"))]
             let mut catalog = None;
             let mut generation = 0u64;
@@ -91,6 +88,11 @@ impl Worker {
                             Connection::PrivateSession(config) => {
                                 NativeCatalog::connect(&config.runtime, &config.core)?
                             }
+                            #[cfg(feature = "studio-session-test")]
+                            Connection::StudioSession(config) => NativeCatalog::connect(
+                                &config.routing.runtime,
+                                &config.routing.core,
+                            )?,
                         });
                     }
                     generation = generation.checked_add(1).ok_or("generation exhausted")?;
@@ -109,7 +111,7 @@ impl Worker {
                                 error.clone(),
                             ),
                         );
-                        model.session(link.status().clone(), config.is_some());
+                        model.session(link.status().clone(), link.available(), link.private());
                     }
                     #[cfg(all(feature = "native-catalog", target_os = "linux"))]
                     {
@@ -175,21 +177,9 @@ impl Worker {
                                         target_os = "linux"
                                     ))]
                                     {
-                                        match &config {
-                                            Some(config) => {
-                                                let result = crate::private_session::start(
-                                                    &mut link,
-                                                    model.service(),
-                                                    config,
-                                                );
-                                                just_started = result.is_ok();
-                                                result
-                                            }
-                                            None => Err(
-                                                "Device connection is not enabled in this preview."
-                                                    .into(),
-                                            ),
-                                        }
+                                        let result = link.start(model.service());
+                                        just_started = result.is_ok();
+                                        result
                                     }
                                     #[cfg(not(all(
                                         feature = "private-session-test",
@@ -225,24 +215,22 @@ impl Worker {
                     let view = model.snapshot();
                     if supervisor.update(
                         link.status(),
-                        config.is_some() && view.connected,
+                        link.available() && view.connected,
                         !view.selected.is_empty(),
                     ) {
-                        if let Some(config) = &config {
-                            match crate::private_session::start(&mut link, model.service(), config)
-                            {
-                                Ok(()) => just_started = true,
-                                Err(error) => model.notice(error),
-                            }
+                        match link.start(model.service()) {
+                            Ok(()) => just_started = true,
+                            Err(error) => model.notice(error),
                         }
                     }
+
                     // Refresh displayed state after an automatic start; its attempt is latched.
                     supervisor.update(
                         link.status(),
-                        config.is_some() && view.connected,
+                        link.available() && view.connected,
                         !view.selected.is_empty(),
                     );
-                    model.session(link.status().clone(), config.is_some());
+                    model.session(link.status().clone(), link.available(), link.private());
                     if just_started {
                         next_tick = std::time::Instant::now() + Duration::from_millis(500);
                     }
@@ -271,7 +259,7 @@ impl Worker {
                 {
                     model.notice(error);
                 }
-                model.session(link.status().clone(), config.is_some());
+                model.session(link.status().clone(), link.available(), link.private());
             }
             // Drop native discovery before publishing the final joined state.
             #[cfg(all(feature = "native-catalog", target_os = "linux"))]
