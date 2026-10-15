@@ -506,6 +506,20 @@ impl<L: DesktopLease, T: OwnedControlTransport> DesktopLinkSession<L, T> {
             Err(e) => format!("{error}; {e}"),
         })
     }
+    /// Drop live authority while a separately pinned application intent waits.
+    /// This never publishes an idle route or retains a playback proof.
+    pub fn suspend_idle(&mut self) -> Result<(), String> {
+        self.stop()?;
+        if self.status.phase != Phase::Stopped
+            || self.status.route_cleanup.as_ref() != Some(&Ok(()))
+            || self.status.transport_cleanup.as_ref() != Some(&Ok(()))
+        {
+            return Err("Idle suspension requires verified route and transport cleanup.".into());
+        }
+        self.status.error = None;
+        self.status.last_reply = Some("waiting for application audio");
+        Ok(())
+    }
     pub fn stop(&mut self) -> Result<(), String> {
         if let Some(mut a) = self.active.take() {
             // Physical and desktop output are restored before releasing USB.

@@ -123,6 +123,13 @@ impl Owner {
             Self::NativePlayback(link) => link.check(service),
         }
     }
+    #[cfg(feature = "desktop-session-test")]
+    pub fn suspend_idle(&mut self) -> Result<(), String> {
+        match self {
+            Self::Desktop(link) => link.suspend_idle(),
+            _ => Err("Audio waiting is available only for a desktop Studio session.".into()),
+        }
+    }
     pub fn tick(&mut self, service: &ApplicationService) -> Result<(), String> {
         match self {
             #[cfg(feature = "desktop-session-test")]

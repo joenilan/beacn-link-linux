@@ -19,9 +19,12 @@ unsafe extern "C" {
     fn getuid() -> u32;
     fn bcl_open_catalog(fd: c_int, config: *const c_char) -> *mut c_void;
     fn bcl_catalog(session: *mut c_void, buffer: *mut c_char, size: usize) -> c_int;
+    fn bcl_catalog_activity(session: *mut c_void, client_serial: u64, pid: u32) -> c_int;
     fn bcl_close(session: *mut c_void);
     #[cfg(feature = "native-test-faults")]
     fn bcl_catalog_test_mutation_refused(session: *mut c_void) -> c_int;
+    #[cfg(all(test, feature = "native-test-faults"))]
+    fn bcl_catalog_test_activity_identity() -> c_int;
 }
 pub(crate) struct PrivateConfig {
     pub(crate) directory: PathBuf,
@@ -90,6 +93,15 @@ pub struct NativeCatalog {
     session: *mut c_void,
     _config: PrivateConfig,
     _single_thread: PhantomData<Rc<()>>,
+}
+/// Current activity of one exact client generation, including a zero-stream gap.
+/// This is read-only continuity evidence, never permission to adopt a route.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Activity {
+    Running,
+    Idle,
+    Gone,
+    Ambiguous,
 }
 impl NativeCatalog {
     pub fn desktop() -> Result<Self, String> {
@@ -174,6 +186,24 @@ impl NativeCatalog {
             std::str::from_utf8(&buffer[..len]).map_err(|_| "catalog transport was not UTF-8")?,
         )
     }
+    pub fn activity(&mut self, id: &crate::planner::ApplicationId) -> Result<Activity, String> {
+        let (client, pid) =
+            id.0.strip_prefix("pw-client:")
+                .and_then(|value| value.split_once(":pid:"))
+                .ok_or("Invalid application continuity identity.")?;
+        let client: u64 = client.parse().map_err(|_| "Invalid client generation.")?;
+        let pid: u32 = pid.parse().map_err(|_| "Invalid application PID.")?;
+        if client == 0 || pid == 0 {
+            return Err("Invalid application continuity identity.".into());
+        }
+        match unsafe { bcl_catalog_activity(self.session, client, pid) } {
+            0 => Ok(Activity::Idle),
+            1 => Ok(Activity::Running),
+            2 => Ok(Activity::Gone),
+            3 => Ok(Activity::Ambiguous),
+            _ => Err("Application continuity observation failed.".into()),
+        }
+    }
     #[cfg(feature = "native-test-faults")]
     pub fn verify_mutation_refusal(&mut self) -> bool {
         // The C mode gate must refuse before dereferencing any endpoint.
@@ -183,5 +213,12 @@ impl NativeCatalog {
 impl Drop for NativeCatalog {
     fn drop(&mut self) {
         unsafe { bcl_close(self.session) };
+    }
+}
+#[cfg(all(test, feature = "native-test-faults"))]
+mod activity_tests {
+    #[test]
+    fn pinned_client_activity_rejects_pid_reuse_replacement_and_ambiguous_streams() {
+        assert_eq!(unsafe { super::bcl_catalog_test_activity_identity() }, 0);
     }
 }

@@ -61,8 +61,14 @@ The application list scrolls, as does the whole view at short window heights.
 Opening a drawer expands a compact window within the display bounds; closing it
 restores its prior size unless the owner resized it. Four equal non-wrapping strips
 remain on one row at the default width. Their 174px fader geometry stays fixed
-while drawers are open. Future controls can be added without reserving large
-empty panels. Light/
+while drawers are open. In Studio mode, each application has one Assign action
+that selects it when needed and applies it to the chosen Link In; selected rows
+retain Remove. Read-only and non-Studio selection controls remain available.
+Expanded Studio name editing also assigns and starts through that action; an
+existing selection must be removed before changing its published name.
+When its source audio is absent, the intended well shows the remembered app name
+with Waiting for audio; this intent remains separate from a verified assignment.
+Future controls can be added without reserving large empty panels. Light/
 Dark and Mint/Blue/Violet/Amber/Rose are actual native buttons; appearance currently
 stays in memory. Session/status icon colors remain independent of the palette.
 Meter bars show measured RMS/peak/hold dBFS for the selected route; unavailable

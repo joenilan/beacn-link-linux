@@ -260,6 +260,11 @@ impl Session {
         self.update(None, Some(reason));
         r
     }
+    pub fn suspend_idle(&mut self) -> Result<(), String> {
+        let result = self.owner.suspend_idle();
+        self.update(None, Some(StopReason::Owner));
+        result
+    }
 }
 
 fn open_control(

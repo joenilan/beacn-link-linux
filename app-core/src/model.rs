@@ -23,6 +23,7 @@ pub struct Snapshot {
     pub preference_error: Option<String>,
     pub desktop_cleanup: Option<Result<(), String>>,
     pub meter: Option<std::sync::Arc<beacn_link_protocol::metering::Mailbox>>,
+    pub waiting: Option<crate::continuity::Waiting>,
 }
 #[derive(Clone, Debug)]
 pub enum Command {
@@ -142,6 +143,9 @@ pub struct Model {
     snapshot: Snapshot,
 }
 impl Model {
+    pub fn waiting(&mut self, waiting: Option<crate::continuity::Waiting>) {
+        self.snapshot.waiting = waiting;
+    }
     pub fn meter(&mut self, meter: Option<std::sync::Arc<beacn_link_protocol::metering::Mailbox>>) {
         self.snapshot.meter = meter;
     }
@@ -176,7 +180,12 @@ impl Model {
                     .into(),
                 ),
                 beacn_link_protocol::link_session::Phase::Stopped => {
-                    Some("Link stopped. Owned routes released.".into())
+                    Some(if self.snapshot.waiting.is_some() {
+                        "Waiting for application audio. Channel remembered; active route released."
+                            .into()
+                    } else {
+                        "Link stopped. Owned routes released.".into()
+                    })
                 }
                 beacn_link_protocol::link_session::Phase::NeedsReview => {
                     Some("Cleanup needs review. Restart is blocked.".into())
@@ -294,6 +303,8 @@ impl Model {
         self.snapshot.connected = false;
         self.snapshot.discovery_error = true;
         self.snapshot.selected.clear();
+        self.snapshot.waiting = None;
+        self.snapshot.meter = None;
         self.snapshot.message = Some(format!(
             "Application discovery unavailable; retrying: {error}"
         ));

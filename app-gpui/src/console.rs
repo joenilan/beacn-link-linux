@@ -11,6 +11,7 @@ const FADER_HEIGHT: f32 = 174.0;
 pub fn strip(
     pair: u8,
     names: Vec<String>,
+    pending_name: Option<String>,
     empty_label: &'static str,
     light: bool,
     accent: u32,
@@ -30,7 +31,9 @@ pub fn strip(
         4 => "Browser",
         _ => "Channel",
     };
-    let route = if names.is_empty() {
+    let route = if pending_name.is_some() {
+        "Waiting for audio".to_string()
+    } else if names.is_empty() {
         "Not linked".to_string()
     } else if pair == 1 {
         "Link In".to_string()
@@ -42,9 +45,14 @@ pub fn strip(
     } else {
         format!("applications-{pair}")
     };
-    let application = names.first().cloned().unwrap_or_else(|| empty_label.into());
+    let application = names
+        .first()
+        .cloned()
+        .or_else(|| pending_name.clone())
+        .unwrap_or_else(|| empty_label.into());
     let glyph = names
         .first()
+        .or(pending_name.as_ref())
         .and_then(|name| name.chars().next())
         .map(|ch| ch.to_uppercase().to_string())
         .unwrap_or_else(|| "+".to_string());

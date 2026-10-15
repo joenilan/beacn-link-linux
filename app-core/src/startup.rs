@@ -6,6 +6,7 @@ pub enum State {
     #[default]
     Waiting,
     WaitingApplications,
+    WaitingAudio,
     Ready,
     Running,
     Paused,
@@ -16,6 +17,7 @@ impl State {
         match self {
             Self::Waiting => "Waiting for connection",
             Self::WaitingApplications => "Waiting for applications",
+            Self::WaitingAudio => "Waiting for audio",
             Self::Ready => "Ready to connect",
             Self::Running => "Link active",
             Self::Paused => "Link paused",
@@ -51,6 +53,12 @@ impl Supervisor {
     }
     pub fn pause(&mut self) {
         self.paused = true;
+    }
+    /// The route owner has released idle playback; a separate app intent waits.
+    pub fn waiting_audio(&mut self) {
+        if !self.paused && self.state != State::Attention {
+            self.state = State::WaitingAudio;
+        }
     }
     /// One attempt per availability period. Errors and bounded completion never
     /// cause an automatic restart loop. Explicit re-arm is required after either.

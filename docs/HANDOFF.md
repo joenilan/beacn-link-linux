@@ -1,6 +1,49 @@
 # LinX continuation handoff
 Updated 2026-10-15 UTC. Resume development; do not restart the investigation.
 
+## Latest checkpoint: single-action assignment and media waiting
+
+The owner reported that listening worked, then identified redundant Select/Assign
+buttons and media Pause dropping the link. Studio rows now have one Assign action
+that selects, connects and applies through the native owner. Remove and read-only
+selection remain separate where appropriate; expanded Studio alias assignment
+uses the same combined action.
+
+The native app now retains separate app/channel intent while media is idle. A
+read-only query pins the exact PipeWire client generation and reported PID on
+the same core; it never adopts by name/PID alone. After successful owned cleanup,
+the Console retains the app well, shows an amber **Waiting for audio** status and
+clears meters. One current live stream from that surviving client can trigger a
+single fresh select/start/assign. Owner Pause/Remove/selection changes and discovery
+loss cancel it. Client restart, ambiguous streams and cleanup failures do not
+silently reconnect. See [media continuity details](native-desktop-recovery.md).
+
+Seventeen focused checks passed: seven intent, eight startup/request, one native
+client-activity identity and one stop/cleanup fixture. Luna implemented/reviewed
+bounded UI and pure intent work. Independent review caught broad error recovery;
+it is now limited to a native-confirmed idle-route diagnostic. Generic route,
+physical, USB and protocol failures remain errors. A disappearing node inside the
+cycle before that proof is obtained can still require explicit reassignment.
+
+The actual native GUI passed four ten-second Firefox media pauses and automatic
+resumption on pair 1, including recreated stream generations and pauses timed
+inside the serial cycle. It then moved to pair 3, waited, obeyed LinX Pause,
+refused automatic restart on later media Play, and accepted explicit Assign.
+Native captures verified both the single-button row and waiting Console. Both
+cleanup owners succeeded. Final saved values and device binding matched; Firefox
+JSON property order changed. The graph matched except the selected source and
+its two port/link generations. Strict and normalized comparisons remain private.
+Zero-node client waiting has native/pure coverage but was not observed in this run.
+
+Final native executable SHA256:
+`dd561a01387f548999d03fa8f39053fcf42cd3285824e3bbda4991cc3159752a`.
+Built offline in the reused cache in about three seconds; current source matches.
+Private receipts: `audio-wait-checks.json/.log`, `audio-wait-runtime.json`, and
+native capture manifests/images, retained in the compact current checkpoint.
+The app is open and cleanly Paused on Debian. The earlier owner listening report
+does not count as listening acceptance of this changed executable. Actions stays
+disabled; no new review server, source tree, package install or playback runtime.
+
 ## Latest checkpoint: real native stereo meters
 
 The owner requested live meters and confirmed the repository is now public.

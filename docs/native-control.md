@@ -45,7 +45,7 @@ it is a curated inventory of controls rather than arbitrary memory inspection.
 
 | Operation | Behavior |
 | --- | --- |
-| `state`, `components` | Actual catalog/stream identities, selections, assignments, phase, startup state, errors, cleanup, completed cycles and visible component bounds |
+| `state`, `components` | Actual catalog/stream identities, selections, verified assignments, pending waiting identity/name/pair, phase, startup state, errors, cleanup, completed cycles and visible component bounds |
 | `click` with `target` | Dispatch through the named native component's GPUI handler |
 | `text` with `target`, `text` | Replace the search or an expanded published-name input, up to 1024 bytes |
 | `scroll` with `target`, `delta` | Send a bounded vertical wheel event inside the app |
@@ -57,13 +57,22 @@ it is a curated inventory of controls rather than arbitrary memory inspection.
 Typical IDs are `session`, `settings`, `applications`, `applications-2` through
 `applications-4`, `applications-settings`, `auto-connect`, `theme-light`,
 `theme-dark`, `accent-mint/blue/violet/amber/rose`, `search-input` and
-`application-list`. Application rows expose `select-<current application id>`,
-`details-<id>`, and expanded `name-<id>` / `save-<id>`. Discover IDs from `state`;
-do not bind a future process or stream by an old numeric ID or display name.
-Studio rows also expose `route-<pair>-<id>` for the currently chosen well. This
-**Assign** button starts the actual desktop owner if needed, validates current
-identity and planner intent, and reports a nonzero assignment only after a fresh
-physical route proof. It is independent of received USB assignment records.
+`application-list`. Rows expose `details-<id>` and expanded `name-<id>` /
+`save-<id>`. Read-only and non-Studio rows expose `select-<id>` for Select/Remove;
+in Studio mode, selected rows expose it for Remove, while unselected rows omit it.
+Discover IDs from `state`; do not bind a future process or stream by an old
+numeric ID or display name. Studio rows expose `route-<pair>-<id>` for the
+currently chosen well. This **Assign** action also selects the app when needed,
+starts the actual desktop owner if needed, validates current identity and planner
+intent, and reports a nonzero assignment only after a fresh physical route proof.
+It is independent of received USB assignment records. Expanded name editing uses
+Assign with name in Studio mode; it requires removing an existing selection before
+changing its published name. Read-only and non-Studio views keep Select with name /
+Save name.
+While Studio waits for source audio, `state.waiting` reports the remembered
+application/name/pair separately from verified `applications[].assignment`. The
+matching Console well shows that name with Waiting for audio. The session button
+becomes Pause and cancels the pending intent through Stop; meter state is null.
 Mini, gain and mute remain unwired. Live stereo meters now follow the verified
 pair. `state.meter` is null when unavailable, paused, invalid or stale; otherwise
 it includes `pair`, `rms_dbfs`, `peak_dbfs`, `hold_dbfs`, native `sequence`/`frames`

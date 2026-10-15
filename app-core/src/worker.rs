@@ -84,6 +84,8 @@ impl Worker {
             let mut command = None;
             let mut retry_at = std::time::Instant::now();
             let mut next_tick = std::time::Instant::now() + Duration::from_millis(500);
+            #[cfg(all(feature = "desktop-session-test", target_os = "linux"))]
+            let mut continuity = crate::continuity::Continuity::default();
             while !ending.load(Ordering::Acquire) {
                 #[cfg(all(feature = "native-playback-test", target_os = "linux"))]
                 if matches!(&connection,Connection::StudioSession(config)
@@ -137,6 +139,11 @@ impl Worker {
                     Err("This build has no Linux application discovery.".into())
                 };
                 if let Err(error) = observation {
+                    #[cfg(all(feature = "desktop-session-test", target_os = "linux"))]
+                    {
+                        continuity.clear();
+                        model.waiting(None);
+                    }
                     #[cfg(all(feature = "private-session-test", target_os = "linux"))]
                     {
                         let _ = link.stop(
@@ -161,6 +168,14 @@ impl Worker {
                 if let Some(request) = command.take() {
                     match model.accept(request) {
                         Ok(command) => {
+                            #[cfg(all(feature = "desktop-session-test", target_os = "linux"))]
+                            let pending_remove = matches!(&command, Command::Unselect(id)
+                                if continuity.waiting().as_ref().is_some_and(|w| &w.id == id));
+                            #[cfg(all(feature = "desktop-session-test", target_os = "linux"))]
+                            if !matches!(&command, Command::Refresh) {
+                                continuity.clear();
+                                model.waiting(None);
+                            }
                             let result = match command {
                                 Command::AutoConnect(enabled) => {
                                     let saved = if let Some(store) = preferences.as_mut() {
@@ -269,7 +284,25 @@ impl Worker {
                                         Err("Local assignment is not enabled in this build.".into())
                                     }
                                 }
-                                command => model.command(command),
+                                command => {
+                                    #[cfg(all(
+                                        feature = "desktop-session-test",
+                                        target_os = "linux"
+                                    ))]
+                                    let removed = pending_remove
+                                        && matches!(&command,
+                                        Command::Unselect(id) if !model.service().selected().contains_key(id));
+                                    #[cfg(not(all(
+                                        feature = "desktop-session-test",
+                                        target_os = "linux"
+                                    )))]
+                                    let removed = false;
+                                    if removed {
+                                        Ok(())
+                                    } else {
+                                        model.command(command)
+                                    }
+                                }
                             };
                             if let Err(error) = result {
                                 model.notice(error);
@@ -280,6 +313,72 @@ impl Worker {
                 }
                 #[cfg(all(feature = "private-session-test", target_os = "linux"))]
                 {
+                    #[cfg(feature = "desktop-session-test")]
+                    if matches!(&connection, Connection::Studio) {
+                        use crate::continuity::{Activity, Decision};
+                        let activity = continuity.id().cloned().map(|id| {
+                            catalog
+                                .as_mut()
+                                .ok_or("Catalog unavailable.".to_owned())?
+                                .activity(&id)
+                                .map(|a| match a {
+                                    beacn_link_protocol::native_catalog::Activity::Running => {
+                                        Activity::Running
+                                    }
+                                    beacn_link_protocol::native_catalog::Activity::Idle => {
+                                        Activity::Idle
+                                    }
+                                    beacn_link_protocol::native_catalog::Activity::Gone => {
+                                        Activity::Gone
+                                    }
+                                    beacn_link_protocol::native_catalog::Activity::Ambiguous => {
+                                        Activity::Ambiguous
+                                    }
+                                })
+                        });
+                        match activity {
+                            Some(Ok(activity)) => {
+                                match continuity.decide(model.service(), activity, link.status()) {
+                                    Decision::Suspend => match link.suspend_idle() {
+                                        Ok(()) => continuity.suspended(),
+                                        Err(error) => {
+                                            continuity.clear();
+                                            model.notice(error);
+                                        }
+                                    },
+                                    Decision::Resume(_) => {
+                                        if let Some(waiting) = continuity.take_resume() {
+                                            supervisor.manual_start();
+                                            let result = (|| {
+                                                if model.service().selected().get(&waiting.id)
+                                                    != Some(&waiting.name)
+                                                {
+                                                    model.command(Command::Select(
+                                                        waiting.id.clone(),
+                                                        waiting.name.clone(),
+                                                    ))?;
+                                                }
+                                                link.start_for_assignment(model.service())?;
+                                                link.assign(model.service(), waiting.pair)
+                                            })(
+                                            );
+                                            just_started = result.is_ok();
+                                            if let Err(error) = result {
+                                                model.notice(error);
+                                            }
+                                        }
+                                    }
+                                    Decision::Cancel => continuity.clear(),
+                                    Decision::None => {}
+                                }
+                            }
+                            Some(Err(error)) => {
+                                continuity.clear();
+                                model.notice(error);
+                            }
+                            None => {}
+                        }
+                    }
                     if let Err(error) = link.check(model.service()) {
                         model.notice(error);
                     }
@@ -291,12 +390,55 @@ impl Worker {
                             model.notice(error);
                         }
                     }
+                    // A media Pause can land inside the serial USB cycle. Retain
+                    // only app intent after fresh same-client idle observation
+                    // and successful native cleanup, never a stale route seal.
+                    #[cfg(feature = "desktop-session-test")]
+                    if matches!(&connection, Connection::Studio) {
+                        if link.status().phase == beacn_link_protocol::link_session::Phase::Stopped
+                            && link.status().error.as_deref()
+                                == Some(beacn_link_protocol::native_desktop_target::APPLICATION_AUDIO_IDLE)
+                            && continuity.waiting().is_none()
+                        {
+                            if let Some(id) = continuity.id().cloned() {
+                                if continuity.idle_matches(model.service())
+                                    && catalog.as_mut().is_some_and(|c| {
+                                        c.activity(&id)
+                                            == Ok(
+                                                beacn_link_protocol::native_catalog::Activity::Idle,
+                                            )
+                                    })
+                                {
+                                    eprintln!(
+                                        "LinX media idle after native stop: {:?}",
+                                        link.status().error
+                                    );
+                                    match link.suspend_idle() {
+                                        Ok(()) => continuity.suspended(),
+                                        Err(error) => {
+                                            continuity.clear();
+                                            model.notice(error);
+                                        }
+                                    }
+                                } else {
+                                    continuity.clear();
+                                }
+                            }
+                        }
+                        if continuity.waiting().is_none() {
+                            continuity.remember(model.service(), link.status());
+                        }
+                        model.waiting(continuity.waiting());
+                    }
                     let view = model.snapshot();
-                    if supervisor.update(
+                    let may_auto_start = supervisor.update(
                         link.status(),
                         link.available() && view.connected,
                         !view.selected.is_empty(),
-                    ) {
+                    );
+                    #[cfg(feature = "desktop-session-test")]
+                    let may_auto_start = may_auto_start && continuity.waiting().is_none();
+                    if may_auto_start {
                         match link.start(model.service()) {
                             Ok(()) => just_started = true,
                             Err(error) => model.notice(error),
@@ -309,6 +451,10 @@ impl Worker {
                         link.available() && view.connected,
                         !view.selected.is_empty(),
                     );
+                    #[cfg(feature = "desktop-session-test")]
+                    if continuity.waiting().is_some() {
+                        supervisor.waiting_audio();
+                    }
                     model.session(link.status().clone(), link.available(), link.private());
                     model.meter(link.meter());
                     #[cfg(feature = "desktop-session-test")]

@@ -191,6 +191,31 @@ fn reply(assignment: u8) -> Vec<u8> {
     crate::encode_frame(&crate::Frame::Data(payload)).unwrap()
 }
 #[test]
+fn idle_suspension_releases_authority_and_never_masks_unverified_cleanup() {
+    for failed_cleanup in [false, true] {
+        let shared = Rc::new(RefCell::new(Shared::default()));
+        let s = service();
+        let mut owner = start(shared.clone(), &s, 4);
+        owner.assign(&s, 2).unwrap();
+        shared.borrow_mut().fail_cleanup = failed_cleanup;
+        let result = owner.suspend_idle();
+        assert_eq!(result.is_err(), failed_cleanup);
+        assert_eq!(owner.status.assignment, None);
+        assert!(owner.active.is_none());
+        assert_eq!(
+            owner.status.phase,
+            if failed_cleanup {
+                Phase::NeedsReview
+            } else {
+                Phase::Stopped
+            }
+        );
+        assert!(owner.assign(&s, 2).is_err());
+        assert!(shared.borrow().frames.is_empty());
+        assert_eq!(shared.borrow().events.last(), Some(&"usb-release"));
+    }
+}
+#[test]
 fn original_output_then_applied_publication_and_opaque_zero_preserve_route() {
     let shared = Rc::new(RefCell::new(Shared::default()));
     shared

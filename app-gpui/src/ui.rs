@@ -31,6 +31,7 @@ fn icon_path(status: Status) -> &'static str {
     match status {
         Status::Disconnected => "lynx/gray.svg",
         Status::Connecting => "lynx/amber.svg",
+        Status::WaitingAudio => "lynx/amber.svg",
         Status::Connected => "lynx/teal.svg",
         Status::Error => "lynx/red.svg",
         Status::PrivateTest => "lynx/blue.svg",
@@ -56,6 +57,7 @@ impl AssetSource for Assets {
         for status in [
             Status::Disconnected,
             Status::Connecting,
+            Status::WaitingAudio,
             Status::Connected,
             Status::Error,
             Status::PrivateTest,
@@ -226,6 +228,12 @@ impl Interface {
             || next.routing.assignments != self.snapshot.routing.assignments
             || next.private_session != self.snapshot.private_session
             || next.session_available != self.snapshot.session_available
+            || next.waiting.as_ref().map(|w| (&w.id, &w.name, w.pair))
+                != self
+                    .snapshot
+                    .waiting
+                    .as_ref()
+                    .map(|w| (&w.id, &w.name, w.pair))
             || Status::from_snapshot(&next) != Status::from_snapshot(&self.snapshot)
             || next.connected != self.snapshot.connected
             || next.busy != self.snapshot.busy
@@ -236,7 +244,9 @@ impl Interface {
             || next.startup != self.snapshot.startup
             || next.preference_error != self.snapshot.preference_error;
         let now = Instant::now();
-        let pair = (next.link.phase == Phase::Running)
+        let pair = (next.link.phase == Phase::Running
+            && next.waiting.is_none()
+            && next.startup != beacn_linx_core::startup::State::WaitingAudio)
             .then(|| {
                 next.routing
                     .assignments
@@ -358,9 +368,11 @@ impl Interface {
                 {
                     let name = self
                         .snapshot
-                        .selected
-                        .get(&id)
-                        .cloned()
+                        .waiting
+                        .as_ref()
+                        .filter(|w| w.id == id)
+                        .map(|w| w.name.clone())
+                        .or_else(|| self.snapshot.selected.get(&id).cloned())
                         .unwrap_or_else(|| model::default_alias(app));
                     let input = cx.new(|cx| {
                         InputState::new(window, cx)
@@ -384,6 +396,10 @@ impl Interface {
         let palette = self.appearance.colors();
         let id = app.id.clone();
         let selected = self.snapshot.selected.contains_key(&id);
+        let waiting = self.snapshot.waiting.as_ref().filter(|w| {
+            w.id == id && self.snapshot.routing.assignments.get(&w.id) != Some(&w.pair)
+        });
+        let pending = waiting.is_some();
         let expanded = self.expanded.contains(&id);
         let live = self.snapshot.connected && model::live(app);
         let select_id = id.clone();
@@ -393,12 +409,14 @@ impl Interface {
         let target_pair = self.channel.unwrap_or(1);
         let alias = self
             .snapshot
-            .selected
-            .get(&id)
-            .cloned()
+            .waiting
+            .as_ref()
+            .filter(|w| w.id == id && self.snapshot.routing.assignments.get(&w.id) != Some(&w.pair))
+            .map(|w| w.name.clone())
+            .or_else(|| self.snapshot.selected.get(&id).cloned())
             .unwrap_or_else(|| model::default_alias(app));
         let observed_name = model::app_name(app);
-        let display_name = if selected {
+        let display_name = if selected || pending {
             alias.clone()
         } else {
             observed_name.clone()
@@ -410,19 +428,23 @@ impl Interface {
             .get(&id)
             .copied()
             .filter(|p| *p != 0);
-        let status = pair.map(|p| format!("Link {p}")).unwrap_or_else(|| {
-            if selected {
-                if self.snapshot.link.error.is_some() {
-                    "Selected · session stopped".into()
-                } else if self.snapshot.link.phase == Phase::Running {
-                    "Selected · waiting for assignment".into()
+        let status = if pending {
+            "Waiting for audio".to_owned()
+        } else {
+            pair.map(|p| format!("Link {p}")).unwrap_or_else(|| {
+                if selected {
+                    if self.snapshot.link.error.is_some() {
+                        "Selected · session stopped".into()
+                    } else if self.snapshot.link.phase == Phase::Running {
+                        "Selected · waiting for assignment".into()
+                    } else {
+                        "Selected · ready to publish".into()
+                    }
                 } else {
-                    "Selected · ready to publish".into()
+                    "Available".into()
                 }
-            } else {
-                "Available".into()
-            }
-        });
+            })
+        };
         let route_alias = alias.clone();
         let mut row = div()
             .flex()
@@ -471,7 +493,7 @@ impl Interface {
                             .child(
                                 div()
                                     .text_xs()
-                                    .text_color(rgb(if selected {
+                                    .text_color(rgb(if selected || pending {
                                         palette.channels[0]
                                     } else {
                                         palette.muted
@@ -495,30 +517,36 @@ impl Interface {
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.toggle_app(details_id.clone(), window, cx)
                             })),
-                    )
-                    .child(
-                        Button::new(SharedString::from(format!("select-{}", id.0)))
-                            .small()
-                            .label(if selected { "Remove" } else { "Select" })
-                            .disabled(
-                                !live
-                                    || (self.studio_app
-                                        && !selected
-                                        && (!self.snapshot.selected.is_empty()
-                                            || app.streams.len() != 1)),
-                            )
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.send(
-                                    if selected {
-                                        Command::Unselect(select_id.clone())
-                                    } else {
-                                        Command::Select(select_id.clone(), alias.clone())
-                                    },
-                                    cx,
-                                );
-                            })),
                     ),
             );
+        if selected || pending || !self.studio_app {
+            row = row.child(
+                Button::new(SharedString::from(format!("select-{}", id.0)))
+                    .small()
+                    .label(if selected || pending {
+                        "Remove"
+                    } else {
+                        "Select"
+                    })
+                    .disabled(
+                        (!live && !pending)
+                            || (self.studio_app
+                                && !selected
+                                && !pending
+                                && (!self.snapshot.selected.is_empty() || app.streams.len() != 1)),
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.send(
+                            if selected || pending {
+                                Command::Unselect(select_id.clone())
+                            } else {
+                                Command::Select(select_id.clone(), alias.clone())
+                            },
+                            cx,
+                        );
+                    })),
+            );
+        }
         if self.studio_app {
             row = row.child(
                 Button::new(SharedString::from(format!("route-{target_pair}-{}", id.0)))
@@ -531,6 +559,7 @@ impl Interface {
                     .disabled(
                         !live
                             || self.snapshot.link.phase == Phase::NeedsReview
+                            || self.snapshot.waiting.as_ref().is_some_and(|w| w.id != id)
                             || (!selected
                                 && (!self.snapshot.selected.is_empty() || app.streams.len() != 1)),
                     )
@@ -555,11 +584,19 @@ impl Interface {
             );
             if let Some(input) = self.names.get(&id) {
                 let name = input.clone();
+                let studio_app = self.studio_app;
+                let save_pair = target_pair;
                 let changed = self
                     .snapshot
                     .selected
                     .get(&id)
                     .is_none_or(|alias| input.read(cx).value().to_string() != *alias);
+                let studio_blocked = self.studio_app
+                    && (selected
+                        || !self.snapshot.selected.is_empty()
+                        || app.streams.len() != 1
+                        || self.snapshot.link.phase == Phase::NeedsReview
+                        || self.snapshot.waiting.as_ref().is_some_and(|w| w.id != id));
                 details = details.child(
                     div()
                         .flex()
@@ -574,18 +611,28 @@ impl Interface {
                         .child(
                             Button::new(SharedString::from(format!("save-{}", id.0)))
                                 .small()
-                                .label(if selected {
+                                .label(if self.studio_app {
+                                    if selected && changed {
+                                        "Remove to rename"
+                                    } else if selected {
+                                        "Save name"
+                                    } else {
+                                        "Assign with name"
+                                    }
+                                } else if selected {
                                     "Save name"
                                 } else {
                                     "Select with name"
                                 })
-                                .disabled(!live || !changed)
+                                .disabled(!live || !changed || studio_blocked)
                                 .on_click(cx.listener(move |this, _, _, cx| {
+                                    let name = name.read(cx).value().to_string();
                                     this.send(
-                                        Command::Select(
-                                            save_id.clone(),
-                                            name.read(cx).value().to_string(),
-                                        ),
+                                        if studio_app {
+                                            Command::Assign(save_id.clone(), name, save_pair)
+                                        } else {
+                                            Command::Select(save_id.clone(), name)
+                                        },
                                         cx,
                                     );
                                 })),
@@ -606,6 +653,8 @@ impl Render for Interface {
             self.native_icon = Some(status);
         }
         let running = self.snapshot.link.phase == Phase::Running;
+        let waiting = self.snapshot.waiting.is_some()
+            || self.snapshot.startup == beacn_linx_core::startup::State::WaitingAudio;
         let start = self.snapshot.session_available
             && self.snapshot.connected
             && !self.snapshot.selected.is_empty()
@@ -620,7 +669,8 @@ impl Render for Interface {
             .unwrap_or_default();
         apps.sort_by_key(|a| {
             (
-                !self.snapshot.selected.contains_key(&a.id),
+                !self.snapshot.selected.contains_key(&a.id)
+                    && !self.snapshot.waiting.as_ref().is_some_and(|w| w.id == a.id),
                 model::app_name(a).to_lowercase(),
                 a.id.clone(),
             )
@@ -632,6 +682,12 @@ impl Render for Interface {
                     .selected
                     .get(&a.id)
                     .is_some_and(|n| n.to_lowercase().contains(&filter))
+                || self
+                    .snapshot
+                    .waiting
+                    .as_ref()
+                    .filter(|w| w.id == a.id)
+                    .is_some_and(|w| w.name.to_lowercase().contains(&filter))
                 || a.binaries
                     .iter()
                     .any(|b| b.to_lowercase().contains(&filter))
@@ -657,10 +713,21 @@ impl Render for Interface {
                     .filter_map(|(id, _)| self.snapshot.selected.get(id))
                     .cloned()
                     .collect();
+                let pending_name = self
+                    .snapshot
+                    .waiting
+                    .as_ref()
+                    .filter(|w| {
+                        w.pair == pair
+                            && self.snapshot.routing.assignments.get(&w.id) != Some(&w.pair)
+                    })
+                    .map(|w| w.name.clone());
                 row = row.child(crate::console::strip(
                     pair,
                     names,
+                    pending_name,
                     if self.snapshot.selected.is_empty()
+                        || self.snapshot.waiting.is_some()
                         || (running
                             && self.snapshot.selected.keys().all(|id| {
                                 self.snapshot
@@ -700,7 +767,9 @@ impl Render for Interface {
             }
             bank = bank.child(row);
         }
-        let status_label = if running || status == Status::Error {
+        let status_label = if waiting {
+            beacn_linx_core::startup::State::WaitingAudio.label()
+        } else if running || status == Status::Error {
             status.label()
         } else {
             self.snapshot.startup.label()
@@ -803,7 +872,7 @@ impl Render for Interface {
                             .border_color(rgb(p.line))
                             .rounded(px(5.))
                             .text_color(rgb(tool_color))
-                            .disabled(!running && !start)
+                            .disabled(!running && !waiting && !start)
                             .child(
                                 div()
                                     .flex()
@@ -811,7 +880,7 @@ impl Render for Interface {
                                     .gap(px(6.))
                                     .child(
                                         svg()
-                                            .path(if running {
+                                            .path(if running || waiting {
                                                 "console/pause.svg"
                                             } else {
                                                 "console/play.svg"
@@ -819,7 +888,7 @@ impl Render for Interface {
                                             .size(px(13.))
                                             .text_color(rgb(tool_color)),
                                     )
-                                    .child(div().text_size(px(12.)).child(if running {
+                                    .child(div().text_size(px(12.)).child(if running || waiting {
                                         "Pause"
                                     } else {
                                         "Connect"
@@ -827,7 +896,7 @@ impl Render for Interface {
                             )
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.send(
-                                    if running {
+                                    if running || waiting {
                                         Command::Stop
                                     } else {
                                         Command::Start

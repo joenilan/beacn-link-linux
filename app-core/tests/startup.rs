@@ -89,6 +89,33 @@ fn pause_and_preference_work_without_a_catalog() {
     assert!(Request::from_view(Command::Stop, &view).is_ok());
     assert!(Request::from_view(Command::Start, &view).is_err());
 }
+#[test]
+fn waiting_for_media_does_not_override_owner_pause_or_cleanup_review() {
+    let mut supervisor = Supervisor::new(false);
+    supervisor.manual_start();
+    let stopped = Status {
+        phase: Phase::Stopped,
+        ..Status::default()
+    };
+    supervisor.update(&stopped, true, true);
+    supervisor.waiting_audio();
+    assert_eq!(supervisor.state, State::WaitingAudio);
+    supervisor.pause();
+    supervisor.update(&stopped, true, true);
+    supervisor.waiting_audio();
+    assert_eq!(supervisor.state, State::Paused);
+    supervisor.manual_start();
+    supervisor.update(
+        &Status {
+            phase: Phase::NeedsReview,
+            ..Status::default()
+        },
+        true,
+        true,
+    );
+    supervisor.waiting_audio();
+    assert_eq!(supervisor.state, State::Attention);
+}
 
 fn assignment_catalog(generation: u64, first_stream: u64) -> Catalog {
     beacn_link_protocol::catalog::parse(

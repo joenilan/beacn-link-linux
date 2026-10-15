@@ -30,6 +30,7 @@ its assigned pair; faders and mute buttons remain disabled.
 - Local assignment to Link In 1, 2, 3, or 4, verified by the native route owner.
 - Live stereo RMS bars with peak and hold markers for the selected application.
 - Pause and Quit release LinX-owned audio and device resources.
+- Media Pause remembers the channel and waits for the same application's audio.
 - Light and dark themes, with five accent palettes.
 
 The owner confirmed that all four assignments appeared in BEACN App with
@@ -49,8 +50,10 @@ selected application and are not calibrated analog VU meters or remote Windows
 mix levels; see [native meter behavior and evidence](docs/native-meters.md).
 Assignment continuity after application restart and broader hotplug recovery
 still need work.
-Pausing media can end the current session; resume playback and assign the
-application again. LinX does not silently adopt a recreated audio stream.
+Pausing media shows **Waiting for audio** and releases the active route. Playback
+can resume automatically on the remembered channel while the same PipeWire client
+remains. Restarted clients, ambiguous streams and unverified cleanup require
+attention; this is not general application-restart recovery.
 The current native backend requires a scoped WirePlumber 0.5.8 integration to
 keep temporary LinX routes out of saved application targets. Other WirePlumber
 versions are not supported yet. This is not yet ready for regular use.

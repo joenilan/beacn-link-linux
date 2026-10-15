@@ -12,6 +12,7 @@ pub enum Status {
     #[default]
     Disconnected,
     Connecting,
+    WaitingAudio,
     Connected,
     Error,
     PrivateTest,
@@ -23,6 +24,8 @@ impl Status {
             || view.link.error.is_some()
         {
             Self::Error
+        } else if view.waiting.is_some() {
+            Self::WaitingAudio
         } else if view.link.phase == Phase::Running {
             if view.private_session {
                 Self::PrivateTest
@@ -39,6 +42,7 @@ impl Status {
         match self {
             Self::Disconnected => "Link disconnected",
             Self::Connecting => "Link connecting",
+            Self::WaitingAudio => "Waiting for audio",
             Self::Connected => "Link connected",
             Self::Error => "Link needs attention",
             Self::PrivateTest => "Private test session",
@@ -48,6 +52,7 @@ impl Status {
         match self {
             Self::Disconnected => [149, 163, 183, 255],
             Self::Connecting => [246, 190, 76, 255],
+            Self::WaitingAudio => [246, 190, 76, 255],
             Self::Connected => [81, 224, 194, 255],
             Self::Error => [248, 104, 113, 255],
             Self::PrivateTest => [112, 172, 255, 255],

@@ -587,6 +587,78 @@ int bcl_catalog(struct session *s, char *buf, size_t left) {
   }
   return 0;
 }
+/* Observe only the pinned client serial/PID on this already authenticated core.
+ * Never match a replacement client by PID/name, and never write a node property.
+ * 0 idle/zero nodes, 1 one running node, 2 client gone, 3 ambiguous/invalid node. */
+static int catalog_activity_observed(struct session *s, uint64_t client_serial, uint32_t pid) {
+  struct object *client=NULL;
+  for (size_t i=0;i<s->count;i++) {
+    struct object *c=s->objects[i];
+    if (!c->present || c->kind!=CLIENT || serial(c)!=client_serial) continue;
+    if (client || !c->info || num(prop(c,PW_KEY_APP_PROCESS_ID))!=pid) return 2;
+    client=c;
+  }
+  if (!client) return 2;
+  unsigned nodes=0;int activity=0;
+  for (size_t i=0;i<s->count;i++) {
+    struct object *n=s->objects[i];
+    if (!n->present || n->kind!=NODE || num(prop(n,PW_KEY_CLIENT_ID))!=client->id ||
+        !spa_streq(prop(n,PW_KEY_MEDIA_CLASS),"Stream/Output/Audio")) continue;
+    if (++nodes>1 || !n->info || !serial(n)) return 3;
+    const char *reported=prop(n,PW_KEY_APP_PROCESS_ID);
+    if (reported && num(reported)!=pid) return 3;
+    if (n->state==PW_NODE_STATE_RUNNING) activity=1;
+    else if (n->state!=PW_NODE_STATE_IDLE && n->state!=PW_NODE_STATE_SUSPENDED)
+      return 3;
+  }
+  return activity;
+}
+int bcl_catalog_activity(struct session *s, uint64_t client_serial, uint32_t pid) {
+  if (!s || !s->catalog_only || !client_serial || !pid ||
+      barrier(s)<0 || barrier(s)<0) return -1;
+  return catalog_activity_observed(s,client_serial,pid);
+}
+#ifdef BCL_TEST_FAULTS
+int bcl_catalog_test_activity_identity(void) {
+  struct session *s=calloc(1,sizeof(*s));
+  if (!s) return -1;
+  struct object client={.id=10,.kind=CLIENT,.present=true,.info=true,
+      .props=pw_properties_new(PW_KEY_OBJECT_SERIAL,"100",PW_KEY_APP_PROCESS_ID,"200",NULL)};
+  struct object node={.id=11,.kind=NODE,.present=true,.info=true,.state=PW_NODE_STATE_RUNNING,
+      .props=pw_properties_new(PW_KEY_OBJECT_SERIAL,"101",PW_KEY_CLIENT_ID,"10",
+          PW_KEY_MEDIA_CLASS,"Stream/Output/Audio",PW_KEY_APP_PROCESS_ID,"200",NULL)};
+  struct object other={.id=12,.kind=NODE,.present=true,.info=true,.state=PW_NODE_STATE_RUNNING,
+      .props=pw_properties_new(PW_KEY_OBJECT_SERIAL,"102",PW_KEY_CLIENT_ID,"10",
+          PW_KEY_MEDIA_CLASS,"Stream/Output/Audio",NULL)};
+  int result=-1;
+  if (!client.props || !node.props || !other.props) goto out;
+  s->objects[0]=&client;s->count=1;
+  if (catalog_activity_observed(s,100,200)!=0 || catalog_activity_observed(s,999,200)!=2 ||
+      catalog_activity_observed(s,100,201)!=2) goto out;
+  s->objects[1]=&node;s->count=2;
+  if (catalog_activity_observed(s,100,200)!=1) goto out;
+  node.state=PW_NODE_STATE_IDLE;
+  if (catalog_activity_observed(s,100,200)!=0) goto out;
+  node.state=PW_NODE_STATE_SUSPENDED;
+  if (catalog_activity_observed(s,100,200)!=0) goto out;
+  node.state=PW_NODE_STATE_ERROR;
+  if (catalog_activity_observed(s,100,200)!=3) goto out;
+  node.state=PW_NODE_STATE_RUNNING;s->objects[2]=&other;s->count=3;
+  if (catalog_activity_observed(s,100,200)!=3) goto out;
+  other.present=false;
+  pw_properties_set(client.props,PW_KEY_OBJECT_SERIAL,"103");
+  if (catalog_activity_observed(s,100,200)!=2) goto out;
+  pw_properties_set(client.props,PW_KEY_OBJECT_SERIAL,"100");
+  pw_properties_set(node.props,PW_KEY_APP_PROCESS_ID,"201");
+  if (catalog_activity_observed(s,100,200)!=3) goto out;
+  result=0;
+out:
+  if (client.props) pw_properties_free(client.props);
+  if (node.props) pw_properties_free(node.props);
+  if (other.props) pw_properties_free(other.props);
+  free(s);return result;
+}
+#endif
 int bcl_snapshot(struct session *s, char *buf, size_t left) {
   if (s->catalog_only || barrier(s) < 0 || barrier(s) < 0) {
     fprintf(stderr, "native snapshot: barrier failed\n");

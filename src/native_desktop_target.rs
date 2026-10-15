@@ -29,6 +29,10 @@ use std::{
     time::{Duration, Instant},
 };
 const DESKTOP_CLIENT_CONFIG: &str = "context.properties = { support.dbus = false context.num-data-loops = 1 }\ncontext.modules = [ { name = libpipewire-module-protocol-native } { name = libpipewire-module-metadata } { name = libpipewire-module-client-node } ]\ncontext.objects = []\ncontext.exec = []\n";
+/// A recognized lifecycle outcome emitted only after exact native source,
+/// metadata and idle stereo-route checks; it never denotes successful playback.
+pub const APPLICATION_AUDIO_IDLE: &str =
+    "The verified application route is idle; waiting for audio.";
 
 /// Sealed proof from a live desktop lease, distinct from private link receipts.
 /// Zero means the original desktop destination; one means verified Studio output.
@@ -121,6 +125,7 @@ unsafe extern "C" {
         original: *const Receipt,
     ) -> c_int;
     fn bcl_desktop_check(session: *mut c_void) -> c_int;
+    fn bcl_desktop_route_activity(session: *mut c_void) -> c_int;
     fn bcl_desktop_stop(session: *mut c_void) -> c_int;
     fn bcl_desktop_release_sink(session: *mut c_void) -> c_int;
     fn bcl_close(session: *mut c_void);
@@ -598,8 +603,10 @@ impl DesktopTarget {
             return Err("Desktop lease is stopped or failed.".into());
         }
         self.failed = true;
-        if unsafe { bcl_desktop_check(self.session) } != 0 {
-            return Err("Desktop identity/route/metadata check failed.".into());
+        match unsafe { bcl_desktop_route_activity(self.session) } {
+            0 => {}
+            1 => return Err(APPLICATION_AUDIO_IDLE.into()),
+            _ => return Err("Desktop identity/route/metadata check failed.".into()),
         }
         if let Some(physical) = self.physical.as_mut() {
             physical.binding()?;

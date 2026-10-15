@@ -415,14 +415,20 @@ int bcl_desktop_move(struct session *s, const struct receipt *source,
   if (dt_wait(s, d->sink) < 0) return -1;
   return 0;
 }
-int bcl_desktop_check(struct session *s) {
+/* Positive 1 is a verified idle source/route intent, never a playback proof. */
+int bcl_desktop_route_activity(struct session *s) {
   if (!s || !s->desktop || !s->desktop->active || barrier(s) < 0 || barrier(s) < 0 ||
       !s->desktop->cache_guard || s->desktop->conflict ||
       !dt_equal(dt_entry(s->desktop, s->desktop->source.id), true,
-                 s->desktop->expected_type, s->desktop->expected) ||
-      !dt_route(s, s->desktop->sink))
+                 s->desktop->expected_type, s->desktop->expected) || !dt_source(s))
     return -1;
-  return 0;
+  struct object *source=find(s,s->desktop->source.id,NODE);
+  if ((source->state==PW_NODE_STATE_IDLE || source->state==PW_NODE_STATE_SUSPENDED) &&
+      dt_route_mode(s,s->desktop->sink,true)) return 1;
+  return dt_route(s,s->desktop->sink)?0:-1;
+}
+int bcl_desktop_check(struct session *s) {
+  return bcl_desktop_route_activity(s)==0?0:-1;
 }
 int bcl_desktop_stop(struct session *s) {
   if (!s || !s->desktop || !s->desktop->active) return 0;
