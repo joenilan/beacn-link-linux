@@ -325,6 +325,8 @@ mod native_audio;
 #[cfg(all(feature = "native-usb", target_os = "linux"))]
 pub mod native_usb;
 
+#[cfg(all(feature = "native-desktop-target", target_os = "linux"))]
+pub mod desktop_link_session;
 #[cfg(all(feature = "native-pipewire", target_os = "linux"))]
 pub mod native_catalog;
 #[cfg(all(feature = "native-desktop-target", target_os = "linux"))]

@@ -30,6 +30,13 @@ pub trait Transport {
 /// An opt-in transport policy for caller-observed inventory between successful
 /// exchanges. This does not supply OS freshness or authorize route application.
 pub trait PublicationCycles: Transport {
+    #[cfg(all(feature = "native-desktop-target", target_os = "linux"))]
+    fn refresh_desktop_publication(
+        &mut self,
+        _publication: &crate::native_desktop_target::DesktopRoutePublication,
+    ) -> Result<(), TransportError> {
+        Err(TransportError::NoTransfer)
+    }
     fn refresh_publication(
         &mut self,
         inventory: &crate::planner::Inventory,
@@ -346,6 +353,21 @@ impl<T: Transport> Session<T> {
 }
 
 impl<T: PublicationCycles> Session<T> {
+    #[cfg(all(feature = "native-desktop-target", target_os = "linux"))]
+    pub fn refresh_desktop_publication(
+        &mut self,
+        publication: &crate::native_desktop_target::DesktopRoutePublication,
+    ) -> Result<(), Error> {
+        self.require(State::Ready)?;
+        let result = self
+            .transport
+            .refresh_desktop_publication(publication)
+            .map_err(|error| Error::Transport {
+                step: Step::Publish,
+                error,
+            });
+        self.finish(result)
+    }
     pub fn refresh_verified_publication(
         &mut self,
         publication: &crate::route_publication::VerifiedRoutePublication,

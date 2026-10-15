@@ -21,6 +21,7 @@ pub struct Snapshot {
     pub auto_connect: bool,
     pub startup: crate::startup::State,
     pub preference_error: Option<String>,
+    pub desktop_cleanup: Option<Result<(), String>>,
 }
 #[derive(Clone, Debug)]
 pub enum Command {
@@ -104,6 +105,9 @@ pub struct Model {
     snapshot: Snapshot,
 }
 impl Model {
+    pub fn desktop_cleanup(&mut self, cleanup: Option<Result<(), String>>) {
+        self.snapshot.desktop_cleanup = cleanup;
+    }
     pub fn startup(&mut self, supervisor: &crate::startup::Supervisor, error: Option<String>) {
         self.snapshot.auto_connect = supervisor.automatic;
         self.snapshot.startup = supervisor.state;

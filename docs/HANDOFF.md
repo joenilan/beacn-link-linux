@@ -1,6 +1,48 @@
 # LinX continuation handoff
 Updated 2026-10-15 UTC. Resume development; do not restart the investigation.
 
+## Latest checkpoint: desktop publication, GUI assignment and Pause heard
+
+Read [native-desktop-session.md](native-desktop-session.md). An opt-in sealed
+DesktopRoutePublication and bounded DesktopLinkSession now join the real desktop
+catalog, planner, guarded USB session and retained desktop/Studio owner. Unassigned
+apps keep their original output; only a received first-Link-In assignment applies
+audio. Private receipt/zero rules stay unchanged. Expired/revoked/replaced/replayed
+proof and raw/private policy bypasses are refused; failed cleanup blocks restart.
+
+CLI run `linx-desktop-session-20261015T134927Z` (source `134548Z`) passed 40 cycles,
+assignment one at cycle four and actual native PCM progress. Owner: “ok it worked.”
+Result SHA256 `fd47c77f39f9a0be733a3a7954915285c44bd7b56c2f8d7d944c4fc7ea3aaed8`.
+GUI run `linx-desktop-gui-20261015T135607Z` (source `135050Z`) passed actual selection,
+automatic start, assignment/playback, Pause/held pause and Quit. Owner confirmed
+**Yes—video played, then paused.** Transport proof: 36 checks / 822,967 frames.
+Result SHA256 `1d3283cea3174c0a59193962cd2e922ccba36f326ec74d2c6b83ef125a4747cb`.
+Assigned/paused screenshots visibly show Firefox in first Link In/teal icon, then
+unassigned/gray icon and paused status. The automatic toggle remains on.
+Both runs restored their foreign graph/settings, saved state and USB binding;
+selected links were recreated, both PCMs closed. Older owned cache difference below
+remains recorded. Evidence copied and hashed outside Git.
+
+The earlier GUI run `135233Z` was started without fresh owner readiness. It got
+no assignment, no PCM playback and timed out in the widget probe; its full baseline
+matched. It is not playback acceptance. Wait for a fresh ready response for every
+attended physical run, then announce and start immediately. Do useful offline work
+while waiting; do not ask retrospectively whether the owner watched.
+
+Final compiled source `beacn-native-source-20261015T135926Z` passes 101 focused root
+checks and cached native root/GPUI builds. Eight app-core startup/preferences
+checks passed on the accepted GUI source. The final source adds startup failure
+status and exact initial proof/inventory matching; it has not had a new physical
+run. The existing worker has an explicit DesktopStudioSession test connection;
+normal Desktop/default GUI still gated. The approved Console layout is not yet
+ported. No test is left running. Only the local screenshot review server remains.
+
+Next: desktop GUI Resume/failure and longer-session qualification, then expand
+generic app/stream/pair coverage and port approved Console design. No app-specific
+backend path, managed physical session, hotplug, durable assignment continuity or
+installed autostart was added. Laptop has about 1.7 GB free after cached builds;
+no packages installed, source/lockfiles/evidence deleted, or workflows enabled.
+
 ## Latest checkpoint: ordinary Firefox desktop video heard
 
 Read [native-desktop-target.md](native-desktop-target.md). The new opt-in desktop

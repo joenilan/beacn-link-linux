@@ -5,6 +5,8 @@ use beacn_link_protocol::{
 };
 
 pub enum Owner {
+    #[cfg(feature = "desktop-session-test")]
+    Desktop(crate::desktop_session::Session),
     Disabled(Status),
     Private(
         private_session::Configuration,
@@ -21,6 +23,10 @@ pub enum Owner {
 impl Owner {
     pub fn new(connection: &Connection) -> Self {
         match connection {
+            #[cfg(feature = "desktop-session-test")]
+            Connection::DesktopStudioSession(config) => {
+                Self::Desktop(crate::desktop_session::Session::new(config.clone()))
+            }
             Connection::PrivateSession(config) => {
                 Self::Private(config.clone(), Default::default(), false)
             }
@@ -41,6 +47,13 @@ impl Owner {
     pub fn available(&self) -> bool {
         !matches!(self, Self::Disabled(_))
     }
+    #[cfg(feature = "desktop-session-test")]
+    pub fn desktop_cleanup(&self) -> Option<Result<(), String>> {
+        match self {
+            Self::Desktop(link) => link.cleanup(),
+            _ => None,
+        }
+    }
     pub fn private(&self) -> bool {
         #[cfg(feature = "native-playback-test")]
         if matches!(self, Self::NativePlayback(_)) {
@@ -50,6 +63,8 @@ impl Owner {
     }
     pub fn status(&self) -> &Status {
         match self {
+            #[cfg(feature = "desktop-session-test")]
+            Self::Desktop(link) => link.status(),
             Self::Disabled(status) => status,
             Self::Private(_, link, _) => link.status(),
             #[cfg(feature = "studio-session-test")]
@@ -60,6 +75,8 @@ impl Owner {
     }
     pub fn start(&mut self, service: &ApplicationService) -> Result<(), String> {
         match self {
+            #[cfg(feature = "desktop-session-test")]
+            Self::Desktop(link) => link.start(service),
             Self::Disabled(_) => Err("Device connection is not enabled in this preview.".into()),
             Self::Private(config, link, true) => {
                 private_session::start_managed(link, service, config)
@@ -73,6 +90,8 @@ impl Owner {
     }
     pub fn check(&mut self, service: &ApplicationService) -> Result<(), String> {
         match self {
+            #[cfg(feature = "desktop-session-test")]
+            Self::Desktop(link) => link.check(service),
             Self::Disabled(_) => Ok(()),
             Self::Private(_, link, _) => link.check(service),
             #[cfg(feature = "studio-session-test")]
@@ -83,6 +102,8 @@ impl Owner {
     }
     pub fn tick(&mut self, service: &ApplicationService) -> Result<(), String> {
         match self {
+            #[cfg(feature = "desktop-session-test")]
+            Self::Desktop(link) => link.tick(service),
             Self::Disabled(_) => Ok(()),
             Self::Private(_, link, _) => link.tick(service),
             #[cfg(feature = "studio-session-test")]
@@ -93,6 +114,8 @@ impl Owner {
     }
     pub fn stop(&mut self, reason: StopReason) -> Result<(), String> {
         match self {
+            #[cfg(feature = "desktop-session-test")]
+            Self::Desktop(link) => link.stop(reason),
             Self::Disabled(_) => Ok(()),
             Self::Private(_, link, _) => link.stop(reason),
             #[cfg(feature = "studio-session-test")]

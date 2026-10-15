@@ -10,6 +10,7 @@ native-catalog = ["beacn-link-protocol/native-pipewire"]
 private-session-test = ["native-catalog", "beacn-link-protocol/qualification-peer"]
 studio-session-test = ["private-session-test", "beacn-link-protocol/native-usb"]
 native-playback-test = ["studio-session-test", "beacn-link-protocol/native-playback"]
+desktop-session-test = ["private-session-test", "beacn-link-protocol/native-desktop-target"]
 status-tray = ["dep:ksni"]
 [dependencies]
 beacn-link-protocol = { path = ".." }

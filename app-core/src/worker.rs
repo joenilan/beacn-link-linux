@@ -14,6 +14,8 @@ use std::{
 #[derive(Clone)]
 pub enum Connection {
     Desktop,
+    #[cfg(all(feature = "desktop-session-test", target_os = "linux"))]
+    DesktopStudioSession(crate::desktop_session::Configuration),
     Private {
         runtime: PathBuf,
         core: String,
@@ -95,6 +97,8 @@ impl Worker {
                         }
                         catalog = Some(match &connection {
                             Connection::Desktop => NativeCatalog::desktop()?,
+                            #[cfg(feature = "desktop-session-test")]
+                            Connection::DesktopStudioSession(_) => NativeCatalog::desktop()?,
                             Connection::Private { runtime, core } => {
                                 NativeCatalog::connect(runtime, core)?
                             }
@@ -251,6 +255,8 @@ impl Worker {
                         !view.selected.is_empty(),
                     );
                     model.session(link.status().clone(), link.available(), link.private());
+                    #[cfg(feature = "desktop-session-test")]
+                    model.desktop_cleanup(link.desktop_cleanup());
                     if just_started {
                         next_tick = std::time::Instant::now() + Duration::from_millis(500);
                     }
@@ -280,6 +286,8 @@ impl Worker {
                     model.notice(error);
                 }
                 model.session(link.status().clone(), link.available(), link.private());
+                #[cfg(feature = "desktop-session-test")]
+                model.desktop_cleanup(link.desktop_cleanup());
             }
             // Drop native discovery before publishing the final joined state.
             #[cfg(all(feature = "native-catalog", target_os = "linux"))]

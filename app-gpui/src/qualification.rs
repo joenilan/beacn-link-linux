@@ -16,6 +16,7 @@ pub struct Configuration {
     pub managed: bool,
     pub native_playback: bool,
     pub studio_recovery: bool,
+    pub desktop: bool,
 }
 pub struct Probe {
     config: Configuration,
@@ -46,6 +47,9 @@ impl Probe {
         }
     }
     pub fn next(&mut self, snapshot: &Snapshot) -> Option<Action> {
+        if self.config.desktop {
+            return self.next_desktop(snapshot);
+        }
         if self.config.studio_recovery {
             return self.next_studio_recovery(snapshot);
         }
@@ -182,6 +186,58 @@ impl Probe {
     }
 }
 impl Probe {
+    fn next_desktop(&mut self, snapshot: &Snapshot) -> Option<Action> {
+        if snapshot.link.error.is_some()
+            || snapshot.link.phase == Phase::NeedsReview
+            || self.start.elapsed() > Duration::from_secs(65)
+        {
+            return Some(Action::Fail(
+                self.config.root.clone(),
+                format!(
+                    "Desktop stage={} message={:?}",
+                    self.stage, snapshot.message
+                ),
+            ));
+        }
+        if self.pause.elapsed() < Duration::from_millis(250) {
+            return None;
+        }
+        let action = match self.stage {
+            0 if snapshot.connected => Action::Click(format!("select-{}", self.config.first)),
+            1 if snapshot.selected.len() == 1 => Action::Click("auto-connect".into()),
+            2 if snapshot.link.phase == Phase::Running && snapshot.link.completed_cycles >= 1 => {
+                Action::Capture("desktop-connected.ppm")
+            }
+            3 if snapshot.link.phase == Phase::Running
+                && snapshot.link.completed_cycles >= 12
+                && snapshot.routing.assignments.len() == 1
+                && snapshot.routing.assignments.values().next() == Some(&1) =>
+            {
+                Action::Capture("desktop-assigned.ppm")
+            }
+            4 => Action::Click("session".into()),
+            5 if snapshot.link.phase == Phase::Stopped
+                && snapshot.startup == beacn_linx_core::startup::State::Paused
+                && self.pause.elapsed() > Duration::from_millis(1500) =>
+            {
+                assert!(snapshot.auto_connect);
+                assert!(snapshot.desktop_cleanup.as_ref().is_some_and(Result::is_ok));
+                assert!(
+                    snapshot
+                        .link
+                        .transport_cleanup
+                        .as_ref()
+                        .is_some_and(Result::is_ok)
+                );
+                Action::Capture("desktop-paused.ppm")
+            }
+            6 => Action::Finish(self.config.root.clone()),
+            _ => return None,
+        };
+        self.stage += 1;
+        self.pause = Instant::now();
+        Some(action)
+    }
     fn next_studio_recovery(&mut self, snapshot: &Snapshot) -> Option<Action> {
         if snapshot.link.error.is_some()
             || snapshot.link.phase == Phase::NeedsReview
@@ -455,6 +511,22 @@ impl Probe {
         Some(action)
     }
     pub fn on_quit(&self, snapshot: &Snapshot) {
+        if self.config.desktop {
+            if self.stage == 7 {
+                assert_eq!(snapshot.link.phase, Phase::Stopped);
+                assert!(snapshot.desktop_cleanup.as_ref().is_some_and(Result::is_ok));
+                assert!(
+                    snapshot
+                        .link
+                        .transport_cleanup
+                        .as_ref()
+                        .is_some_and(Result::is_ok)
+                );
+                std::fs::write(self.config.root.join("desktop-result.txt"),
+                    "desktop_gui=true automatic=true assignment=1 pause_held=true desktop_release=verified transport_release=verified\n").unwrap();
+            }
+            return;
+        }
         if self.config.studio_recovery {
             if self.stage == 8 {
                 assert_eq!(snapshot.link.phase, Phase::Stopped);

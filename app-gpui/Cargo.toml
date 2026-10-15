@@ -14,6 +14,8 @@ ui-qualification = ["private-session-test", "gpui-kit/test-support"]
 studio-session-test = ["ui-qualification", "beacn-linx-core/studio-session-test"]
 native-playback-test = ["studio-session-test", "beacn-linx-core/native-playback-test"]
 
+desktop-session-test = ["ui-qualification", "beacn-linx-core/desktop-session-test"]
+
 [dependencies]
 beacn-linx-core = { path = "../app-core" }
 beacn-link-protocol = { path = ".." }

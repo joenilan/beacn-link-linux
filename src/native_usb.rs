@@ -380,7 +380,8 @@ pub fn open_publication_with_startup(
     .map(|owner| owner.enable_publication(publication))
 }
 /// Explicit concurrent first-pair diagnostic. The caller must have verified the
-/// retained private PipeWire server through its existing native route owner.
+/// retained native PipeWire server through its existing route owner. Private
+/// routing and the opt-in desktop lease both retain the strict 96-kHz PCM proof.
 /// Pins a closed selected PCM and process generation before any USB setup.
 pub fn open_publication_with_owned_playback(
     sysfs: &Path,

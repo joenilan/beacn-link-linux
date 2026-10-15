@@ -37,7 +37,7 @@ pub struct Options {
     pub initialization_timeout: Duration,
 }
 impl Options {
-    fn validate(&self) -> Result<(), String> {
+    pub(crate) fn validate(&self) -> Result<(), String> {
         if !(1..=usb_handshake::MAX_PUBLICATION_CYCLES).contains(&self.cycles)
             || ![
                 usb_handshake::MAX_TIMEOUT,

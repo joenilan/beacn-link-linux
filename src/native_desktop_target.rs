@@ -10,6 +10,7 @@ use crate::{
     planner::ApplicationId,
 };
 use std::{
+    cell::Cell,
     collections::{BTreeMap, BTreeSet},
     ffi::{c_char, c_int, c_void, CString},
     fs,
@@ -21,10 +22,53 @@ use std::{
     },
     path::Path,
     path::PathBuf,
-    rc::Rc,
+    rc::{Rc, Weak},
     time::{Duration, Instant},
 };
 const DESKTOP_CLIENT_CONFIG: &str = "context.properties = { support.dbus = false context.num-data-loops = 0 }\ncontext.modules = [ { name = libpipewire-module-protocol-native } { name = libpipewire-module-metadata } ]\ncontext.objects = []\ncontext.exec = []\n";
+
+/// Sealed proof from a live desktop lease, distinct from private link receipts.
+/// Zero means the original desktop destination; one means verified Studio output.
+pub struct DesktopRoutePublication {
+    inventory: crate::planner::Inventory,
+    records: Vec<crate::Record>,
+    lease: Weak<Cell<u64>>,
+    nonce: u64,
+}
+impl DesktopRoutePublication {
+    pub fn inventory(&self) -> &crate::planner::Inventory {
+        &self.inventory
+    }
+    pub fn records(&self) -> &[crate::Record] {
+        &self.records
+    }
+    pub(crate) fn valid(&self) -> bool {
+        self.nonce != 0 && self.lease.upgrade().is_some_and(|l| l.get() == self.nonce)
+    }
+    pub(crate) fn lease(&self) -> Weak<Cell<u64>> {
+        self.lease.clone()
+    }
+    pub(crate) fn nonce(&self) -> u64 {
+        self.nonce
+    }
+}
+#[cfg(test)]
+pub(crate) fn test_publication(
+    inventory: crate::planner::Inventory,
+    assignment: u8,
+    lease: &Rc<Cell<u64>>,
+    nonce: u64,
+) -> DesktopRoutePublication {
+    DesktopRoutePublication {
+        records: vec![crate::Record {
+            name: inventory.applications[0].advertised_name.clone(),
+            assignment: crate::Assignment::from_byte(assignment),
+        }],
+        inventory,
+        lease: Rc::downgrade(lease),
+        nonce,
+    }
+}
 
 #[repr(C)]
 #[derive(Default, Clone, Copy)]
@@ -183,6 +227,8 @@ pub struct DesktopTarget {
     bridge_links: BTreeSet<ObjectRef>,
     adapter: Option<ObjectRef>,
     physical: Option<DesktopPlayback>,
+    expected_apps: Vec<crate::planner::Application>,
+    proof_epoch: Rc<Cell<u64>>,
     _single_thread: PhantomData<Rc<()>>,
 }
 struct DesktopPlayback {
@@ -213,6 +259,14 @@ impl DesktopTarget {
         application: &ApplicationId,
         authorized: bool,
     ) -> Result<Self, String> {
+        Self::connect_named(catalog, application, "linx-desktop-check", authorized)
+    }
+    pub fn connect_named(
+        catalog: &Catalog,
+        application: &ApplicationId,
+        wire_name: &str,
+        authorized: bool,
+    ) -> Result<Self, String> {
         if !authorized {
             return Err("Desktop routing needs explicit authority.".into());
         }
@@ -222,7 +276,12 @@ impl DesktopTarget {
         }
         let mut service = crate::catalog::ApplicationService::default();
         service.update(catalog.clone())?;
-        service.select(application, "linx-desktop-check")?;
+        service.select(application, wire_name)?;
+        let expected_apps = service
+            .inventory()
+            .ok_or("Desktop selection absent.")?
+            .applications
+            .clone();
         let app = catalog
             .applications
             .get(application)
@@ -306,7 +365,7 @@ impl DesktopTarget {
         let mut owner = Self {
             session,
             _config: config,
-            bindings: BTreeMap::from([(application.0.clone(), "linx-desktop-check".into())]),
+            bindings: BTreeMap::from([(application.0.clone(), wire_name.into())]),
             source: ObjectRef { id: 0, serial: 0 },
             original: ObjectRef { id: 0, serial: 0 },
             client_serial,
@@ -320,9 +379,14 @@ impl DesktopTarget {
             bridge_links: Default::default(),
             adapter: None,
             physical: None,
+            expected_apps,
+            proof_epoch: Rc::new(Cell::new(0)),
             _single_thread: PhantomData,
         };
         let observed = owner.observe()?;
+        if observed.inventory.applications != owner.expected_apps {
+            return Err("Desktop stream roster changed before connection.".into());
+        }
         let streams = observed
             .graph
             .streams
@@ -368,6 +432,7 @@ impl DesktopTarget {
         Ok(())
     }
     pub fn start(&mut self) -> Result<ObjectRef, String> {
+        self.proof_epoch.set(0);
         if self.failed || self.sink.is_some() || self.cleanup.is_some() {
             return Err("Desktop lease cannot restart.".into());
         }
@@ -401,6 +466,7 @@ impl DesktopTarget {
         Ok(sink.into())
     }
     pub fn check(&mut self) -> Result<(), String> {
+        self.proof_epoch.set(0);
         if self.failed || self.sink.is_none() || self.cleanup.is_some() {
             return Err("Desktop lease is stopped or failed.".into());
         }
@@ -435,6 +501,7 @@ impl DesktopTarget {
         hardware: ObjectRef,
         authorized: bool,
     ) -> Result<(), String> {
+        self.proof_epoch.set(0);
         if !authorized
             || self.failed
             || self.physical.is_some()
@@ -530,7 +597,60 @@ impl DesktopTarget {
     pub fn physical_stats(&self) -> Option<(u32, u64)> {
         self.physical.as_ref().map(|p| p.proof.stats())
     }
+    pub(crate) fn server_pid(&self) -> u32 {
+        self.server
+    }
+    /// Fresh native verification, never a supplied graph or cached UI status.
+    pub fn publication(
+        &mut self,
+        inventory: &crate::planner::Inventory,
+    ) -> Result<DesktopRoutePublication, String> {
+        self.proof_epoch.set(0);
+        let result = (|| {
+            if self.failed || self.cleanup.is_some() || inventory.applications != self.expected_apps
+            {
+                return Err("Desktop publication roster changed or lease failed.".into());
+            }
+            let assignment = if self.sink.is_some() {
+                if self.physical.is_none() || self.adapter.is_none() || self.bridge_links.len() != 2
+                {
+                    return Err("Desktop publication requires the verified physical bridge.".into());
+                }
+                self.check()?;
+                1
+            } else {
+                0
+            };
+            let observed = self.observe()?;
+            self.conserved(&observed.graph)?;
+            if observed.inventory.applications != self.expected_apps
+                || stereo_target(&observed.graph, self.source)?
+                    != self.sink.unwrap_or(self.original)
+            {
+                return Err("Desktop publication source or target changed.".into());
+            }
+            let mut tracker = crate::lifecycle::InventoryTracker::default();
+            tracker.advance(inventory).map_err(|e| e.to_string())?;
+            let records = vec![crate::Record {
+                name: self.expected_apps[0].advertised_name.clone(),
+                assignment: crate::Assignment::from_byte(assignment),
+            }];
+            crate::encode_records(&records).map_err(|e| e.to_string())?;
+            self.proof_epoch.set(self.generation);
+            Ok(DesktopRoutePublication {
+                inventory: inventory.clone(),
+                records,
+                lease: Rc::downgrade(&self.proof_epoch),
+                nonce: self.generation,
+            })
+        })();
+        if result.is_err() {
+            self.failed = true;
+        }
+        result
+    }
     pub fn stop(&mut self) -> Result<(), String> {
+        self.proof_epoch.set(0);
         if let Some(result) = &self.cleanup {
             return result.clone();
         }

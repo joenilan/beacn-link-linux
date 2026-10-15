@@ -11,3 +11,6 @@ pub mod studio_session;
 #[cfg(all(feature = "status-tray", target_os = "linux"))]
 pub mod tray;
 pub mod worker;
+
+#[cfg(all(feature = "desktop-session-test", target_os = "linux"))]
+pub mod desktop_session;

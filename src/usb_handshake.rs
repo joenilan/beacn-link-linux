@@ -28,6 +28,12 @@ pub struct Publication {
     poll_policy: crate::session::PollPolicy,
     initialization_timeout: Duration,
     verified_routes: bool,
+    #[cfg(all(feature = "native-desktop-target", target_os = "linux"))]
+    desktop_lease: Option<std::rc::Weak<std::cell::Cell<u64>>>,
+    #[cfg(all(feature = "native-desktop-target", target_os = "linux"))]
+    desktop: bool,
+    #[cfg(all(feature = "native-desktop-target", target_os = "linux"))]
+    desktop_nonce: u64,
 }
 impl Publication {
     pub fn from_inventory(inventory: &crate::planner::Inventory) -> Result<Self, Error> {
@@ -70,6 +76,12 @@ impl Publication {
             poll_policy: crate::session::PollPolicy::Strict,
             initialization_timeout: MAX_TIMEOUT,
             verified_routes: false,
+            #[cfg(all(feature = "native-desktop-target", target_os = "linux"))]
+            desktop_lease: None,
+            #[cfg(all(feature = "native-desktop-target", target_os = "linux"))]
+            desktop: false,
+            #[cfg(all(feature = "native-desktop-target", target_os = "linux"))]
+            desktop_nonce: 0,
         })
     }
     /// Explicit test budget; all cycles, including the first, require a newer
@@ -108,6 +120,19 @@ impl Publication {
         publication.poll_policy = policy;
         publication.verified_routes = true;
         Ok(publication)
+    }
+    /// Distinct bounded desktop policy; private receipt and raw inventory
+    /// refreshes cannot satisfy this gate. No device or route is opened here.
+    #[cfg(all(feature = "native-desktop-target", target_os = "linux"))]
+    pub fn bounded_desktop(
+        inventory: &crate::planner::Inventory,
+        cycles: usize,
+        policy: crate::session::PollPolicy,
+    ) -> Result<Self, Error> {
+        let mut p =
+            Self::bounded_with_poll_policy(inventory, cycles, policy)?.with_verified_routes();
+        p.desktop = true;
+        Ok(p)
     }
     /// Explicit owner-managed session, separate from every bounded constructor.
     /// The fixed roster, device pin and complete fresh route proof remain
@@ -217,6 +242,51 @@ enum Phase {
     Halted,
 }
 impl<B: Backend> crate::session::PublicationCycles for Handshake<B> {
+    #[cfg(all(feature = "native-desktop-target", target_os = "linux"))]
+    fn refresh_desktop_publication(
+        &mut self,
+        verified: &crate::native_desktop_target::DesktopRoutePublication,
+    ) -> Result<(), TransportError> {
+        let accepted = (|| {
+            if self.closed
+                || self.phase != Phase::AwaitInventory
+                || !verified.valid()
+                || self.check(1).is_err()
+            {
+                return None;
+            }
+            let publication = self.publication.as_mut()?;
+            if !publication.desktop
+                || !publication.verified_routes
+                || verified.inventory().applications != publication.tracker.current()?.applications
+            {
+                return None;
+            }
+            let lease = verified.lease();
+            if publication
+                .desktop_lease
+                .as_ref()
+                .is_some_and(|old| !std::rc::Weak::ptr_eq(old, &lease))
+            {
+                return None;
+            }
+            let payload = crate::encode_records(verified.records()).ok()?;
+            let frame = crate::encode_frame(&crate::Frame::Data(payload)).ok()?;
+            publication.tracker.advance(verified.inventory()).ok()?;
+            publication.desktop_lease = Some(lease);
+            publication.desktop_nonce = verified.nonce();
+            publication.records = verified.records().to_vec();
+            publication.frame = frame;
+            Some(())
+        })();
+        if accepted.is_some() {
+            self.phase = Phase::Publish;
+            Ok(())
+        } else {
+            self.phase = Phase::Halted;
+            Err(TransportError::NoTransfer)
+        }
+    }
     fn refresh_verified_publication(
         &mut self,
         verified: &crate::route_publication::VerifiedRoutePublication,
@@ -226,6 +296,10 @@ impl<B: Backend> crate::session::PublicationCycles for Handshake<B> {
                 return None;
             }
             let publication = self.publication.as_mut()?;
+            #[cfg(all(feature = "native-desktop-target", target_os = "linux"))]
+            if publication.desktop {
+                return None;
+            }
             if !publication.verified_routes
                 || verified.inventory().applications != publication.tracker.current()?.applications
             {
@@ -509,6 +583,21 @@ impl<B: Backend> Handshake<B> {
         self.cleanup()
     }
     fn ready(&mut self, phase: Phase, timeout: Duration) -> Result<u32, TransportError> {
+        #[cfg(all(feature = "native-desktop-target", target_os = "linux"))]
+        if matches!(
+            phase,
+            Phase::Publish | Phase::PollRequest | Phase::PollReply
+        ) && self.publication.as_ref().is_some_and(|p| {
+            p.desktop
+                && !p
+                    .desktop_lease
+                    .as_ref()
+                    .and_then(|w| w.upgrade())
+                    .is_some_and(|l| l.get() != 0 && l.get() == p.desktop_nonce)
+        }) {
+            self.phase = Phase::Halted;
+            return Err(TransportError::NoTransfer);
+        }
         let maximum = if phase == Phase::A2 {
             self.publication
                 .as_ref()

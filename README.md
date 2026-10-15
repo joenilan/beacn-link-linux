@@ -27,7 +27,9 @@ passes with two owner-heard native playback runs and exact immediate cleanup.
 Reassignment was needed after Pause; a later Firefox desktop volume/state
 comparison differed. An opt-in [desktop stream lease](docs/native-desktop-target.md) now also passes
 owner-heard video from an already-running Firefox stream through the first Studio
-pair, with original-output restoration. Ordinary GUI desktop integration,
+pair, with original-output restoration. An explicit [desktop publication and GUI check](docs/native-desktop-session.md)
+also passes real desktop Firefox assignment, audio, automatic connection and Pause
+with restored output/state. Normal startup remains gated; broader desktop support,
 assignment continuity and an installed standalone app remain unfinished.
 The earlier egui preview remains available for comparison. The primary UI also has
 a saved Connect automatically toggle, waiting/paused states and read-only discovery
