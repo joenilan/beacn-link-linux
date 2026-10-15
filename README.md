@@ -13,12 +13,13 @@ Windows.
 
 ![LinX native Console with a live application assigned to Link In 4](assets/screenshots/linx-console.png)
 
-Actual native app capture. Faders, mute buttons and meters are not wired yet.
+Actual native app capture. The selected application's stereo levels appear on
+its assigned pair; faders and mute buttons remain disabled.
 
 <details>
 <summary>Light theme</summary>
 
-![LinX native Console paused in the light theme](assets/screenshots/linx-console-light.png)
+![LinX native Console with Firefox levels in the light theme](assets/screenshots/linx-console-light.png)
 
 </details>
 
@@ -27,6 +28,7 @@ Actual native app capture. Faders, mute buttons and meters are not wired yet.
 - Native Rust and GPUI desktop application with PipeWire application discovery.
 - One selected live stereo application at a time.
 - Local assignment to Link In 1, 2, 3, or 4, verified by the native route owner.
+- Live stereo RMS bars with peak and hold markers for the selected application.
 - Pause and Quit release LinX-owned audio and device resources.
 - Light and dark themes, with five accent palettes.
 
@@ -34,16 +36,19 @@ The owner confirmed that all four assignments appeared in BEACN App with
 incoming meter activity during a native run. Direct listening acceptance for
 the current app build is still pending. See the [current handoff](docs/HANDOFF.md)
 for exact runtime evidence and its limits.
-A twenty-minute silent physical-path run also passed repeated pair switching
+An earlier twenty-minute silent physical-path run also passed repeated pair switching
 and exact desktop/saved-state cleanup.
 
 ## Current limits
 
 LinX currently routes one stereo application at a time. Multi-application
-desktop routing, Linux gain and mute controls, live meters, Mini mode, remote
-volume controls, installers, and launch-at-login support are not implemented.
-Faders and mute buttons are disabled; meters are unlit. Assignment continuity
-after application restart and broader hotplug recovery still need work.
+desktop routing, Linux gain and mute controls, Mini mode, remote volume
+controls, installers, and launch-at-login support are not implemented. Faders
+and mute buttons are disabled. Meters show local digital levels for the one
+selected application and are not calibrated analog VU meters or remote Windows
+mix levels; see [native meter behavior and evidence](docs/native-meters.md).
+Assignment continuity after application restart and broader hotplug recovery
+still need work.
 Pausing media can end the current session; resume playback and assign the
 application again. LinX does not silently adopt a recreated audio stream.
 The current native backend requires a scoped WirePlumber 0.5.8 integration to
@@ -103,5 +108,6 @@ and BEACN Link are referenced only to identify the compatibility target.
 - [Release preparation](docs/releasing.md)
 - [Native GPUI interface](docs/gpui-interface.md)
 - [Native desktop session](docs/native-desktop-session.md)
+- [Native meter behavior and evidence](docs/native-meters.md)
 - [Protocol and compatibility research](docs/protocol.md)
 - [Phased research plan](docs/research-plan.md)

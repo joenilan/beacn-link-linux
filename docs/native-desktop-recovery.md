@@ -90,4 +90,5 @@ match or format/clock/ownership checks.
 One stereo application remains the limit. Recreated-stream reassignment,
 broader hotplug recovery, installation on other WirePlumber versions, and owner
 listening confirmation of the latest native build remain separate acceptance
-items. Faders, mute controls and meters remain disabled UI affordances.
+items. Faders and mute controls remain disabled UI affordances. The subsequent
+[native meters](native-meters.md) checkpoint adds aggregate-only stereo levels.

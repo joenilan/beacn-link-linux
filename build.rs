@@ -21,6 +21,7 @@ fn main() {
     println!("cargo:rerun-if-changed=native/pipewire.c");
     println!("cargo:rerun-if-changed=native/playback.inc");
     println!("cargo:rerun-if-changed=native/desktop_target.inc");
+    println!("cargo:rerun-if-changed=native/meter.inc");
     if env::var_os("CARGO_FEATURE_NATIVE_PIPEWIRE").is_none() {
         return;
     }

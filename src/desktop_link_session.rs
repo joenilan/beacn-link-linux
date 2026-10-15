@@ -108,6 +108,9 @@ impl StudioDesktopLease {
     pub fn physical_stats(&self) -> Option<(u32, u64)> {
         self.target.physical_stats()
     }
+    pub fn meter(&self) -> std::sync::Arc<crate::metering::Mailbox> {
+        self.target.meter()
+    }
 }
 impl DesktopLease for StudioDesktopLease {
     fn publication(&mut self, inventory: &Inventory) -> Result<DesktopRoutePublication, String> {

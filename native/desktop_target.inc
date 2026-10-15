@@ -2,6 +2,32 @@
  * No registry destroy, foreign proxy mutation, defaults or volume writes.
  * This entry cannot use the private executor or physical playback factory. */
 #define DT_ENTRIES 4096
+#include <pipewire/filter.h>
+#include <stdatomic.h>
+#include <float.h>
+#include <math.h>
+struct meter_mailbox {
+  _Atomic uint32_t valid, sequence;
+  _Atomic uint32_t peak[2], power[2];
+  _Atomic uint64_t frames;
+};
+_Static_assert(sizeof(struct meter_mailbox)==32 && offsetof(struct meter_mailbox,frames)==24,
+               "Rust meter mailbox layout mismatch");
+_Static_assert(ATOMIC_INT_LOCK_FREE==2 && ATOMIC_LLONG_LOCK_FREE==2,
+               "Meter requires lock-free atomics");
+struct desktop_meter {
+  struct pw_filter *filter;
+  struct spa_hook listener;
+  void *ports[2];
+  struct receipt node, inputs[2];
+  struct created *links[2];
+  struct meter_mailbox *mailbox;
+  uint64_t frames;
+  uint32_t window_frames;
+  float window_peak[2];
+  double window_power[2];
+  bool ready;
+};
 struct dt_entry {
   uint32_t subject;
   bool present;
@@ -24,12 +50,16 @@ struct desktop_target {
   struct receipt hardware;
   struct playback_refs adapter;
   struct created *adapter_proxy;
+  struct desktop_meter meter;
 #ifdef BCL_TEST_FAULTS
   bool fail_after_target_echo;
 #endif
 };
 int bcl_desktop_unbridge(struct session *);
 int bcl_desktop_bridge_check(struct session *);
+static bool dt_meter_graph(struct session *);
+static int dt_meter_stop(struct session *);
+static void dt_meter_destroy(struct session *);
 static struct desktop_target *desktop_new(void) {
   return calloc(1, sizeof(struct desktop_target));
 }
@@ -134,6 +164,7 @@ static bool desktop_global(struct session *s, uint32_t id, uint32_t permissions,
 }
 static void desktop_free(struct session *s) {
   struct desktop_target *d = s->desktop;
+  dt_meter_destroy(s);
   if (d->metadata) {
     spa_hook_remove(&d->listener);
     pw_proxy_destroy((struct pw_proxy *)d->metadata);
@@ -476,7 +507,20 @@ static bool dt_bridge_graph(struct session *s) {
     if (!expected_pair_port) return false;
     count++;
   }
-  return count==2;
+  /* Only retained physical bridges and the exact meter tap may fan out from
+   * our sink. A foreign link must never disappear through normalization. */
+  for (size_t i=0;i<s->count;i++) {
+    struct object *l=s->objects[i];
+    if (!l->present || l->kind!=LINK || l->out_node!=d->sink.id) continue;
+    bool owned=false;
+    for (int j=0;j<2;j++) {
+      struct created *c=d->bridge[j], *m=d->meter.links[j];
+      owned=owned || (c && c->id==l->id && c->serial==serial(l)) ||
+          (m && m->id==l->id && m->serial==serial(l));
+    }
+    if (!owned) return false;
+  }
+  return count==2 && dt_meter_graph(s);
 }
 /* Read-only discovery on the already authenticated desktop connection. This is
  * a candidate identity, never removal authority or permission to skip bridge checks. */
@@ -616,6 +660,7 @@ int bcl_desktop_adapter_ready(struct session *s) {
 int bcl_desktop_unbridge(struct session *s) {
   if (!s || !s->desktop) return -1;
   struct desktop_target *d=s->desktop;
+  int meter_stopped=dt_meter_stop(s);
   for (int i=0;i<2;i++) {
     struct created *pending=d->switch_bridge[i];
     if (pending && pending->proxy) {
@@ -632,7 +677,7 @@ int bcl_desktop_unbridge(struct session *s) {
     spa_hook_remove(&c->listener);spa_hook_remove(&c->info_listener);
     pw_proxy_destroy(c->proxy);c->proxy=NULL;
   }
-  if (!d->hardware.serial) return 0;
+  if (!d->hardware.serial) return meter_stopped;
   if (barrier(s)<0 || barrier(s)<0) return -1;
   for (int i=0;i<2;i++) {
     struct created *pending=d->switch_bridge[i];
@@ -643,8 +688,9 @@ int bcl_desktop_unbridge(struct session *s) {
     if (o && serial(o)==c->serial) return -1;
   }
   if (dt_ref(find(s,d->adapter.node.id,NODE),d->adapter.node)) return -1;
-  return 0;
+  return meter_stopped;
 }
+#include "meter.inc"
 #ifdef BCL_TEST_FAULTS
 int bcl_desktop_test_fail_after_target_echo(struct session *s) {
   if (!s || !s->desktop || s->desktop->active || s->created) return -1;

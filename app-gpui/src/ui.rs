@@ -17,7 +17,7 @@ use gpui_kit::{
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet},
-    time::Duration,
+    time::{Duration, Instant},
 };
 #[cfg(all(feature = "native-control", target_os = "linux"))]
 #[path = "control_ui.rs"]
@@ -85,6 +85,11 @@ pub struct Interface {
     appearance: crate::appearance::Appearance,
     tray_available: Option<bool>,
     feedback: Option<String>,
+    meter: Option<(u8, crate::meter::Display)>,
+    meter_sample: Option<beacn_link_protocol::metering::Reading>,
+    meter_key: Option<(usize, u8)>,
+    meter_freshness: beacn_link_protocol::metering::Freshness,
+    meter_ballistics: crate::meter::Ballistics,
     _poll: Task<()>,
     #[cfg(all(feature = "native-control", target_os = "linux"))]
     control: crate::control::Control,
@@ -111,8 +116,11 @@ impl Interface {
         let controlled_window = window.window_handle();
         let poll = cx.spawn(async move |weak, cx| {
             loop {
+                let active = weak
+                    .update(cx, |this, _| this.snapshot.meter.is_some())
+                    .unwrap_or(false);
                 cx.background_executor()
-                    .timer(Duration::from_millis(100))
+                    .timer(Duration::from_millis(if active { 33 } else { 100 }))
                     .await;
                 if weak.update(cx, |this, cx| this.refresh(cx)).is_err() {
                     break;
@@ -189,6 +197,11 @@ impl Interface {
             appearance: Default::default(),
             tray_available: None,
             feedback: None,
+            meter: None,
+            meter_sample: None,
+            meter_key: None,
+            meter_freshness: Default::default(),
+            meter_ballistics: Default::default(),
             _poll: poll,
             #[cfg(all(feature = "native-control", target_os = "linux"))]
             control: crate::control::Control::from_configuration()
@@ -222,6 +235,34 @@ impl Interface {
         changed |= next.auto_connect != self.snapshot.auto_connect
             || next.startup != self.snapshot.startup
             || next.preference_error != self.snapshot.preference_error;
+        let now = Instant::now();
+        let pair = (next.link.phase == Phase::Running)
+            .then(|| {
+                next.routing
+                    .assignments
+                    .values()
+                    .copied()
+                    .find(|p| (1..=4).contains(p))
+            })
+            .flatten();
+        let key = next
+            .meter
+            .as_ref()
+            .zip(pair)
+            .map(|(slot, pair)| (std::sync::Arc::as_ptr(slot) as usize, pair));
+        if key != self.meter_key {
+            self.meter_key = key;
+            self.meter_freshness = Default::default();
+            self.meter_ballistics = Default::default();
+        }
+        let reading = key.and_then(|_| next.meter.as_ref().and_then(|slot| slot.read()));
+        self.meter_sample = self.meter_freshness.accept(reading, now);
+        let display = self
+            .meter_ballistics
+            .update(self.meter_sample.map(|r| (r.peak, r.rms)), now);
+        let meter = pair.zip(display);
+        changed |= meter != self.meter;
+        self.meter = meter;
         if self.snapshot.catalog.as_ref().map(|c| &c.core) != next.catalog.as_ref().map(|c| &c.core)
         {
             self.names.clear();
@@ -639,6 +680,9 @@ impl Render for Interface {
                     },
                     self.appearance.light,
                     p.channels[(pair - 1) as usize],
+                    self.meter
+                        .filter(|(active_pair, _)| *active_pair == pair)
+                        .map(|(_, levels)| levels),
                     cx.listener(move |this, _, window, cx| {
                         let same = this.catalog_open && this.channel == Some(pair);
                         this.channel = Some(pair);

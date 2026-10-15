@@ -22,6 +22,7 @@ pub struct Snapshot {
     pub startup: crate::startup::State,
     pub preference_error: Option<String>,
     pub desktop_cleanup: Option<Result<(), String>>,
+    pub meter: Option<std::sync::Arc<beacn_link_protocol::metering::Mailbox>>,
 }
 #[derive(Clone, Debug)]
 pub enum Command {
@@ -141,6 +142,9 @@ pub struct Model {
     snapshot: Snapshot,
 }
 impl Model {
+    pub fn meter(&mut self, meter: Option<std::sync::Arc<beacn_link_protocol::metering::Mailbox>>) {
+        self.snapshot.meter = meter;
+    }
     pub fn desktop_cleanup(&mut self, cleanup: Option<Result<(), String>>) {
         self.snapshot.desktop_cleanup = cleanup;
     }
@@ -158,6 +162,9 @@ impl Model {
         available: bool,
         private: bool,
     ) {
+        if status.phase != beacn_link_protocol::link_session::Phase::Running {
+            self.snapshot.meter = None;
+        }
         if status.phase != self.snapshot.link.phase {
             self.snapshot.message = status.error.clone().or_else(|| match status.phase {
                 beacn_link_protocol::link_session::Phase::Running => Some(

@@ -1,5 +1,6 @@
 //! Explicit one-stream desktop target lease. WirePlumber owns its route links.
-//! No default/volume writes, foreign link deletion, USB or PCM payload reads.
+//! No default/volume writes, foreign link deletion or raw USB/ALSA payload reads.
+//! The owned sink monitor supplies aggregate-only stereo level telemetry.
 use crate::{
     catalog::Catalog,
     execution::Observation,
@@ -24,9 +25,10 @@ use std::{
     path::Path,
     path::PathBuf,
     rc::{Rc, Weak},
+    sync::Arc,
     time::{Duration, Instant},
 };
-const DESKTOP_CLIENT_CONFIG: &str = "context.properties = { support.dbus = false context.num-data-loops = 0 }\ncontext.modules = [ { name = libpipewire-module-protocol-native } { name = libpipewire-module-metadata } ]\ncontext.objects = []\ncontext.exec = []\n";
+const DESKTOP_CLIENT_CONFIG: &str = "context.properties = { support.dbus = false context.num-data-loops = 1 }\ncontext.modules = [ { name = libpipewire-module-protocol-native } { name = libpipewire-module-metadata } { name = libpipewire-module-client-node } ]\ncontext.objects = []\ncontext.exec = []\n";
 
 /// Sealed proof from a live desktop lease, distinct from private link receipts.
 /// Zero means the original desktop destination; one means verified Studio output.
@@ -105,6 +107,12 @@ unsafe extern "C" {
     fn bcl_snapshot(session: *mut c_void, buffer: *mut c_char, size: usize) -> c_int;
     fn bcl_desktop_sink(session: *mut c_void, owner: *const c_char, result: *mut Receipt) -> c_int;
     fn bcl_desktop_cache_guard(session: *mut c_void) -> c_int;
+    fn bcl_desktop_meter_start(
+        session: *mut c_void,
+        mailbox: *const crate::metering::Mailbox,
+        node: *mut Receipt,
+        links: *mut Receipt,
+    ) -> c_int;
     fn bcl_desktop_move(
         session: *mut c_void,
         source: *const Receipt,
@@ -136,6 +144,8 @@ unsafe extern "C" {
     fn bcl_desktop_test_core_identity() -> c_int;
     #[cfg(all(test, feature = "native-test-faults"))]
     fn bcl_desktop_test_pair_mapping() -> c_int;
+    #[cfg(all(test, feature = "native-test-faults"))]
+    fn bcl_desktop_test_meter_math() -> c_int;
     #[cfg(feature = "native-test-faults")]
     fn bcl_desktop_test_fail_after_target_echo(session: *mut c_void) -> c_int;
 }
@@ -254,6 +264,9 @@ pub struct DesktopTarget {
     server: u32,
     bridge_links: BTreeSet<ObjectRef>,
     adapter: Option<ObjectRef>,
+    meter_node: Option<ObjectRef>,
+    meter_links: BTreeSet<ObjectRef>,
+    meter: Arc<crate::metering::Mailbox>,
     physical: Option<DesktopPlayback>,
     pair: u8,
     managed_playback: bool,
@@ -457,6 +470,9 @@ impl DesktopTarget {
             server: daemon,
             bridge_links: Default::default(),
             adapter: None,
+            meter_node: None,
+            meter_links: Default::default(),
+            meter: Arc::new(Default::default()),
             physical: None,
             pair: 1,
             managed_playback: false,
@@ -519,12 +535,16 @@ impl DesktopTarget {
     }
     fn conserved_after_stop(&self, graph: &GraphSnapshot, source_gone: bool) -> Result<(), String> {
         let mut observed = graph.clone();
-        observed
-            .links
-            .retain(|l| !self.bridge_links.contains(&l.object));
+        observed.links.retain(|l| {
+            !self.bridge_links.contains(&l.object) && !self.meter_links.contains(&l.object)
+        });
         if let Some(adapter) = self.adapter {
             observed.nodes.retain(|n| *n != adapter);
             observed.ports.retain(|p| p.node != adapter);
+        }
+        if let Some(meter) = self.meter_node {
+            observed.nodes.retain(|n| *n != meter);
+            observed.ports.retain(|p| p.node != meter);
         }
         let baseline = self.baseline.as_ref().map(|g| {
             if source_gone {
@@ -702,8 +722,31 @@ impl DesktopTarget {
                 }
             }
         }
+        let mut meter_node = Receipt::default();
+        let mut meter_links = [Receipt::default(); 2];
+        if unsafe {
+            bcl_desktop_meter_start(
+                self.session,
+                Arc::as_ptr(&self.meter),
+                &mut meter_node,
+                meter_links.as_mut_ptr(),
+            )
+        } != 0
+        {
+            return Err("Desktop level meter attachment was not verified.".into());
+        }
+        self.meter_node = Some(meter_node.into());
+        self.meter_links = meter_links.into_iter().map(ObjectRef::from).collect();
+        if unsafe { bcl_desktop_bridge_check(self.session) } != 0 {
+            return Err("Desktop level meter graph was not verified.".into());
+        }
+        let observed = self.observe()?;
+        self.conserved(&observed.graph)?;
         self.failed = false;
         Ok(())
+    }
+    pub fn meter(&self) -> Arc<crate::metering::Mailbox> {
+        self.meter.clone()
     }
     pub fn physical_stats(&self) -> Option<(u32, u64)> {
         self.physical.as_ref().map(|p| p.proof.stats())
@@ -874,6 +917,7 @@ impl Drop for DesktopTarget {
             let _ = self.stop();
         }
         unsafe { bcl_close(self.session) };
+        self.meter.clear();
     }
 }
 
@@ -881,6 +925,11 @@ impl Drop for DesktopTarget {
 mod tests {
     use super::*;
     use crate::executor::{ExistingLink, Port};
+    #[cfg(feature = "native-test-faults")]
+    #[test]
+    fn native_meter_reduces_stereo_silence_and_rejects_invalid_buffers() {
+        assert_eq!(unsafe { bcl_desktop_test_meter_math() }, 0);
+    }
     #[cfg(feature = "native-test-faults")]
     #[test]
     fn native_metadata_conflicts_latch_and_cannot_restore_over_foreign_intent() {

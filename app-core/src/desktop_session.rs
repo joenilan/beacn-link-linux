@@ -90,6 +90,11 @@ impl Session {
     pub fn cleanup(&self) -> Option<Result<(), String>> {
         self.owner.status().route_cleanup.clone()
     }
+    pub fn meter(&self) -> Option<std::sync::Arc<beacn_link_protocol::metering::Mailbox>> {
+        (self.status.phase == Phase::Running)
+            .then(|| self.owner.routes().map(|r| r.meter()))
+            .flatten()
+    }
     fn update(&mut self, service: Option<&ApplicationService>, reason: Option<StopReason>) {
         if let Some(routes) = self.owner.routes() {
             if let Some(stats) = routes.physical_stats() {

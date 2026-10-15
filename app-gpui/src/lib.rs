@@ -1,5 +1,6 @@
 mod appearance;
 mod console;
+mod meter;
 mod shutdown;
 #[cfg(all(feature = "native-control", target_os = "linux"))]
 pub mod control;

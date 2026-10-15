@@ -14,6 +14,7 @@ pub fn strip(
     empty_label: &'static str,
     light: bool,
     accent: u32,
+    meter: Option<crate::meter::Display>,
     choose: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> Stateful<Div> {
     let colors = Appearance {
@@ -199,6 +200,7 @@ pub fn strip(
                 cap_mid,
                 cap_bottom,
                 colors.line,
+                meter,
             ))
             .child(
                 div()
@@ -310,6 +312,7 @@ fn fader_block(
     cap_mid: u32,
     cap_bottom: u32,
     cap_border: u32,
+    meter: Option<crate::meter::Display>,
 ) -> Div {
     div()
         .mt(px(22.))
@@ -396,9 +399,86 @@ fn fader_block(
                 .flex()
                 .items_end()
                 .gap(px(3.))
-                .child(div().h_full().w(px(4.)).bg(rgb(rail)))
-                .child(div().h_full().w(px(4.)).bg(rgb(rail))),
+                .child(meter_rail(0, meter, dark, rail))
+                .child(meter_rail(1, meter, dark, rail)),
         )
+}
+
+fn meter_rail(channel: usize, meter: Option<crate::meter::Display>, dark: bool, rail: u32) -> Div {
+    let track = rail;
+    let peak_marker = if dark { 0xf2f4f5 } else { 0x243039 };
+    let Some(display) = meter else {
+        return div()
+            .relative()
+            .h(px(FADER_HEIGHT))
+            .w(px(4.))
+            .bg(rgb(track));
+    };
+
+    let rms = dbfs_height(display.rms_db[channel]);
+    let peak = dbfs_top(display.peak_db[channel]);
+    let hold = dbfs_top(display.hold_db[channel]);
+    let rms_db = display.rms_db[channel];
+    let level_color = if rms_db >= -6.0 {
+        if dark { 0xff514a } else { 0xd8292f }
+    } else if rms_db >= -18.0 {
+        if dark { 0xffc04f } else { 0xc17a00 }
+    } else if dark {
+        0x61d889
+    } else {
+        0x168044
+    };
+
+    div()
+        .relative()
+        .h(px(FADER_HEIGHT))
+        .w(px(4.))
+        .bg(rgb(track))
+        .when(display.rms_db[channel] > -60.0, |rail| {
+            rail.child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .right_0()
+                    .bottom_0()
+                    .h(px(rms))
+                    .bg(rgb(level_color)),
+            )
+        })
+        .when(display.peak_db[channel] > -60.0, |rail| {
+            rail.child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .right_0()
+                    .top(px(peak))
+                    .h(px(1.5))
+                    .bg(rgb(peak_marker)),
+            )
+        })
+        .when(display.hold_db[channel] > -60.0, |rail| {
+            rail.child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .right_0()
+                    .top(px(hold))
+                    .h(px(1.))
+                    .bg(rgb(if hold <= FADER_HEIGHT * 0.1 {
+                        if dark { 0xff514a } else { 0xd8292f }
+                    } else {
+                        level_color
+                    })),
+            )
+        })
+}
+
+fn dbfs_height(db: f32) -> f32 {
+    ((db.clamp(-60.0, 0.0) + 60.0) / 60.0) * FADER_HEIGHT
+}
+
+fn dbfs_top(db: f32) -> f32 {
+    FADER_HEIGHT - dbfs_height(db)
 }
 
 fn mix(foreground: u32, background: u32, percent: u32) -> u32 {

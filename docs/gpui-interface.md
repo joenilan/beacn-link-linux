@@ -43,13 +43,14 @@ the owner-selected Console default, a routing matrix and a compact utility, with
 shared Light/Dark and five accent palettes. The owner rejected
 the earlier cards/list study for repeating the current layout. Console is now
 ported to native GPUI; Matrix and Mini remain offline concepts.
-Gain controls/meters are not implemented production capabilities. The
+Gain controls remain disabled. The selected pair now has
+[live local stereo meters](native-meters.md). The
 [capability plan](../design/linx-concept/README.md) retains local/remote boundaries.
 
 Default client size is 788 by 568 pixels. The header has the lynx session icon,
 LinX name, Console label, actual session text, Connect/Pause and Appearance toggle.
 Four contiguous channel strips contain the actual Link In names, palette bars,
-disabled fader/mute geometry, unlit meter rails and live assignment wells. The dB
+disabled fader/mute geometry, measured stereo rails and live assignment wells. The dB
 readout is a dash, never a fictional measured value. Below 700 pixels they reflow
 to two columns. The Applications drawer expands real discovery/search/selection;
 individual details expose process/stream identity and published-name editing.
@@ -64,7 +65,8 @@ while drawers are open. Future controls can be added without reserving large
 empty panels. Light/
 Dark and Mint/Blue/Violet/Amber/Rose are actual native buttons; appearance currently
 stays in memory. Session/status icon colors remain independent of the palette.
-There are no simulated audio meters or enabled volume controls.
+Meter bars show measured RMS/peak/hold dBFS for the selected route; unavailable
+and silent inputs are unlit. Volume controls remain disabled.
 
 The optional [native component control interface](native-control.md) can drive
 the real app and collect its own diagnostics without taking the owner's mouse.

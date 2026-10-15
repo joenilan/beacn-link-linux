@@ -1,6 +1,7 @@
 //! Offline codecs for a static-evidence subset. No device access.
 //! Strict limits are conservative policy, not claims about device tolerance.
 use std::fmt;
+pub mod metering;
 
 pub const MAX_PAYLOAD: usize = 508;
 pub const MAX_NAME: usize = 255;

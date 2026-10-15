@@ -252,10 +252,21 @@ impl Interface {
     }
     fn control_state(&self, window: &Window, cx: &App) -> Value {
         let s = &self.snapshot;
+        let meter = self.meter.map(|(pair, levels)| {
+            json!({
+                "pair":pair,"rms_dbfs":levels.rms_db,"peak_dbfs":levels.peak_db,
+                "hold_dbfs":levels.hold_db,
+                "sequence":self.meter_sample.map(|r|r.sequence),
+                "frames":self.meter_sample.map(|r|r.frames),
+                "peak_linear":self.meter_sample.map(|r|r.peak),
+                "rms_linear":self.meter_sample.map(|r|r.rms),
+                "aggregate_only":true
+            })
+        });
         let components=self.control_ids().into_iter().filter_map(|id|window.try_find(SharedString::from(id.clone())).map(|e| {
             let b=e.bounds();json!({"id":id,"label":e.label(),"value":e.value(),"disabled":e.disabled().unwrap_or(!self.control_enabled(&id,cx)),"checked":if id=="auto-connect" {Some(s.auto_connect)} else {e.checked()},"visible":e.visible(),"bounds":{"x":f32::from(b.origin.x),"y":f32::from(b.origin.y),"width":f32::from(b.size.width),"height":f32::from(b.size.height)}})
         })).collect::<Vec<_>>();
         let apps=s.catalog.as_ref().into_iter().flat_map(|c|c.applications.values()).map(|a|json!({"id":a.id.0,"name":beacn_linx_core::model::app_name(a),"pid":a.pid,"streams":a.streams.iter().map(|t|json!({"id":t.id.0,"state":format!("{:?}",t.state)})).collect::<Vec<_>>(),"selected":s.selected.get(&a.id),"assignment":s.routing.assignments.get(&a.id)})).collect::<Vec<_>>();
-        json!({"pid":std::process::id(),"revision":s.revision,"connected":s.connected,"phase":format!("{:?}",s.link.phase),"startup":format!("{:?}",s.startup),"error":s.link.error,"message":s.message,"last_reply":s.link.last_reply,"cycles":s.link.completed_cycles,"transport_cleanup":format!("{:?}",s.link.transport_cleanup),"desktop_cleanup":format!("{:?}",s.desktop_cleanup),"auto_connect":s.auto_connect,"applications":apps,"components":components,"drawers":{"applications":self.catalog_open,"settings":self.settings},"search":self.search.read(cx).value().to_string(),"appearance":{"light":self.appearance.light,"accent":self.appearance.accent.label()},"size":{"width":f32::from(window.viewport_size().width),"height":f32::from(window.viewport_size().height)}})
+        json!({"pid":std::process::id(),"revision":s.revision,"connected":s.connected,"phase":format!("{:?}",s.link.phase),"startup":format!("{:?}",s.startup),"error":s.link.error,"message":s.message,"last_reply":s.link.last_reply,"cycles":s.link.completed_cycles,"meter":meter,"transport_cleanup":format!("{:?}",s.link.transport_cleanup),"desktop_cleanup":format!("{:?}",s.desktop_cleanup),"auto_connect":s.auto_connect,"applications":apps,"components":components,"drawers":{"applications":self.catalog_open,"settings":self.settings},"search":self.search.read(cx).value().to_string(),"appearance":{"light":self.appearance.light,"accent":self.appearance.accent.label()},"size":{"width":f32::from(window.viewport_size().width),"height":f32::from(window.viewport_size().height)}})
     }
 }

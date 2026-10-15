@@ -63,6 +63,13 @@ impl Owner {
         }
         matches!(self, Self::Private(..))
     }
+    pub fn meter(&self) -> Option<std::sync::Arc<beacn_link_protocol::metering::Mailbox>> {
+        match self {
+            #[cfg(feature = "desktop-session-test")]
+            Self::Desktop(link) => link.meter(),
+            _ => None,
+        }
+    }
     pub fn status(&self) -> &Status {
         match self {
             #[cfg(feature = "desktop-session-test")]

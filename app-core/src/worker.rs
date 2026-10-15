@@ -310,6 +310,7 @@ impl Worker {
                         !view.selected.is_empty(),
                     );
                     model.session(link.status().clone(), link.available(), link.private());
+                    model.meter(link.meter());
                     #[cfg(feature = "desktop-session-test")]
                     model.desktop_cleanup(link.desktop_cleanup());
                     if just_started {
@@ -341,6 +342,7 @@ impl Worker {
                     model.notice(error);
                 }
                 model.session(link.status().clone(), link.available(), link.private());
+                model.meter(link.meter());
                 #[cfg(feature = "desktop-session-test")]
                 model.desktop_cleanup(link.desktop_cleanup());
             }

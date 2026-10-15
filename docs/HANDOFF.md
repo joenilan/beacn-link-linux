@@ -1,6 +1,68 @@
 # LinX continuation handoff
 Updated 2026-10-15 UTC. Resume development; do not restart the investigation.
 
+## Latest checkpoint: real native stereo meters
+
+The owner requested live meters and confirmed the repository is now public.
+Actions remains disabled. A bounded read-only review of published `ab5e82e`
+found no credentials, private host/key paths, device serials or capture artifacts;
+the only non-text blobs were the two intended UI screenshots. This was not a
+full security audit or a paid scan. Keep private evidence outside Git.
+
+The actual Rust/C/GPUI app now measures its exact owned sink monitor through a
+retained native `pw_filter`. It reduces stereo peak/mean-square power in roughly
+40-ms windows, sends only aggregates through a lock-free mailbox, and displays
+RMS bars plus peak/hold markers on the verified assigned pair. Other pairs are
+unlit. UI polling is about 30 Hz while active; unchanged sequences expire after
+250 ms. Missing/invalid/paused input clears; digital silence decays to an unlit
+-60 dBFS floor. Fader/mute controls remain disabled; no volume/mute writes or
+remote Windows mix metering were added. No samples are recorded or exported.
+
+A native mpv-to-pw-cat calibrated source passed actual GUI assignments 1-4:
+left/right peaks approximately -33.984/-39.992 dBFS, RMS about -37/-43 dBFS.
+Digital silence, resumption, Pause/Connect on pair 4 and source exit passed.
+Desktop, saved-state files and binding matched exactly. The subsequent real
+Firefox run passed live metering through all four pairs and Pause, with actual
+dark/light window captures now used in README. Its native owners cleaned up;
+saved values and binding match. Firefox's retained idle stream/original route,
+two recreated selected link identities, a cleared local 48-kHz Format cache and
+saved JSON field ordering prevent claiming a byte-exact pre-Play graph/state.
+See [meter details and evidence](native-meters.md). Firefox's original Paused
+status was restored. Sampled LinX CPU was 2.6-2.7% of one core, RSS about 182 MiB.
+
+Four mailbox/freshness, one C reduction and six ballistics checks passed on
+Debian/PipeWire 1.4.2. The first live attempt refused a missing client-node module;
+the desktop-only client config now includes it and one data loop. Failed-start
+cleanup succeeded. Its proven new empty Test-source state entry was removed
+with the app closed and WirePlumber stopped; every other saved value was kept.
+The earlier target/PCM checks still pass. Luna reviewed RT safety and exact
+ownership; listener removal synchronizes callback teardown before mailbox release.
+
+The final binary completed a 600-second calibrated meter hold, repeated pair
+switches, silence and resumption: 90 aggregate samples, sampled CPU 2.96% of one
+core, RSS steady at 181.96 MiB. Pause released both owners; Connect retained the
+final Link 1 assignment. The collector wrongly expected Link 4 and timed out;
+the failed overall result remains in the receipt. Its final desktop, state-file
+bytes and binding comparison was exact. Do not report that collector run as an
+overall pass. The helper now checks the actual pre-Pause pair.
+Its focused follow-up on the same binary passed all four pairs, silence and
+resumption, Pause/Connect on pair 4, source exit and exact desktop/state/binding
+restoration. Both native cleanup owners succeeded. Only the collector changed.
+Final native binary SHA256:
+`7595abcda6a3e73486b9d72f53bff8a545d8ee9736fcd87477dc474477fbf6dd`.
+README captures came from the preceding Firefox run; the final change clears
+telemetry on non-Running model observations and does not alter the visible layout.
+The app is left open on the normal desktop in clean Paused mode for owner review.
+Next useful controls are local Linux send gain/mute on the owned sink monitor;
+the PipeWire 1.4.2 property path was researched, but no gain/mute writes or UI
+controls are implemented. They need native property echo/ownership validation
+and a separate runtime check before enabling the existing faders/buttons.
+
+Private receipts: `meter-checks.json`, `meter-unit-checks.json/.log`,
+`meter-cleanup.json`, plus compact capture provenance/history. Scripts drive the
+actual native controls and collect evidence; they do not implement the audio tap,
+routing or app session. Existing source/cache/executable locations are reused.
+
 ## Latest checkpoint: native recovery, saved-target protection and release prep
 
 The owner approved **GPLv3**. LinX now declares `GPL-3.0-only` in all three

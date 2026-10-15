@@ -64,7 +64,11 @@ Studio rows also expose `route-<pair>-<id>` for the currently chosen well. This
 **Assign** button starts the actual desktop owner if needed, validates current
 identity and planner intent, and reports a nonzero assignment only after a fresh
 physical route proof. It is independent of received USB assignment records.
-Mini, gain, mute and audio meters remain unwired.
+Mini, gain and mute remain unwired. Live stereo meters now follow the verified
+pair. `state.meter` is null when unavailable, paused, invalid or stale; otherwise
+it includes `pair`, `rms_dbfs`, `peak_dbfs`, `hold_dbfs`, native `sequence`/`frames`
+and linear peak/RMS aggregates. It never includes audio samples. See
+[native meters](native-meters.md) for measurement and freshness boundaries.
 
 The controller must collect/remove the preceding screenshot before requesting
 another. The app never overwrites that path or accepts a caller-selected output

@@ -40,7 +40,7 @@ Use existing access through the execution environment; do not copy credentials i
 source, command logs or the guest. A handoff is context, not new execution authority.
 
 ## Git and validation
-Private repository: joenilan/beacn-link-linux; branch main.
+Public repository: joenilan/beacn-link-linux; branch main (owner changed visibility).
 Keep GitHub Actions disabled; add no workflows. Use [skip ci] commits.
 Preserve unrelated work; never force-push, reset or blanket-stage the checkout.
 Verify the remote hash before reporting a push. Follow current owner publication
