@@ -10,10 +10,15 @@ description = "Beacn LinX Rust application interface"
 default = []
 native-catalog = ["beacn-link-protocol/native-pipewire"]
 ui-qualification = []
+private-session-test = ["native-catalog", "beacn-link-protocol/qualification-peer"]
+status-tray = ["dep:ksni"]
 
 [dependencies]
 beacn-link-protocol = { path = ".." }
 eframe = { version = "=0.33.3", default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ksni = { version = "=0.3.6", optional = true, features = ["blocking"] }
 
 [workspace]
 

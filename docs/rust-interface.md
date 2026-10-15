@@ -10,7 +10,7 @@ features. This is an application discovery/selection preview, not desktop apply.
 ## Run on Linux
 
 ```sh
-cargo run --manifest-path app/Cargo.toml --locked --features native-catalog
+cargo run --manifest-path app/Cargo.toml --locked --features native-catalog,status-tray
 ```
 
 Run as the normal desktop user with its normal PipeWire session. Optional
@@ -26,10 +26,12 @@ owner and explained in the window. Process ID/stream count are available in a
 tooltip to distinguish identically named applications. Display labels are separate
 from conservative printable-ASCII wire names. No silent aliasing or truncation.
 
-Routing is visibly off. Start link is disabled, and all four channel cards say
-there is no active session. Selected apps are not claimed to appear on Windows.
-No device online state is invented. RoutingControl remains the verified API for
-later integration; this GUI has no backend factory or route-application control.
+The normal executable keeps routing off and Start disabled. An explicit
+qualification-only private session now connects Start/Stop, native private routing,
+scripted handshake/publication/polling and verified channel cards. See
+[rust-link-session.md](rust-link-session.md) for the status-aware lynx silhouette,
+optional Linux tray, session ownership and evidence boundaries. Selected apps are
+not claimed to appear on Windows in this configuration. No USB is opened.
 
 ## Ownership and responsiveness
 
@@ -55,7 +57,9 @@ web content, background daemon or route/audio capture path in the interface.
 
 ## Verification
 
-Five focused egui/model tests pass on Linux: actual pointer/key events select,
+Eight focused egui/model tests pass on Linux, including status semantics, explicit
+backend controls, Stop after discovery loss and queued Start roster binding. Prior
+coverage includes: actual pointer/key events select,
 rename and remove through the existing owner; search and stale/offline controls;
 duplicate/unsupported names and atomic refusal; departure/reopen; and queued actions
 against replaced domains or stream bindings. The root focused checks and all 31
@@ -66,7 +70,10 @@ an isolated Xvfb display with software rendering. It injects egui input events
 inside that window, never OS mouse input or the owner's desktop. Two actual mpv
 processes are discovered through the native catalog. The test selects the first,
 edits the second's duplicate default name, selects it, renames the first, captures
-the rendered window, removes the second and normally stops the worker. Selected
+the rendered window, and normally stops the worker. The new explicit
+private-session configuration additionally starts routes to pairs 1/4, stops and
+verifies cleanup, restarts, then removes the second app to verify lifecycle stop.
+Its status stays blue (private test), never teal (device connected). Selected
 state is checked after every asynchronous command and owned config cleanup is
 verified. The screenshot is inspected outside Git. The enclosing private graph,
 desktop settings/state and process cleanup comparisons all match exactly.
@@ -98,11 +105,14 @@ Qualified source: `beacn-native-source-20261015T002307Z`. Private evidence:
 derived PNG and final provenance. Source code hashes are checked against the
 native-qualified tree before publication.
 
-## Next
+## Current continuation and next
 
-Connect this interface to the guarded routing controller and native transport
-through explicit session state, then qualify the real multi-app hardware path
-when the owner is available. Desktop apply remains disabled. Unaffected-app
+The historical evidence above is the initial discovery-only checkpoint. Current
+session/icon implementation and its newer private-core/tray qualifications are
+recorded in [rust-link-session.md](rust-link-session.md) and HANDOFF.md.
+
+Next supply a physical transport/playback owner and qualify the real multi-app
+hardware path when the owner is available. Desktop apply remains disabled. Unaffected-app
 continuity, durable reconnect, persistence/installation and graceful signals
 remain open. Keep hardware tests closed during the owner's stream, Actions
 disabled and checkpoints local with [skip ci]. Before release, a focused dependency

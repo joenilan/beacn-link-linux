@@ -31,24 +31,33 @@ pub struct Publication {
 }
 impl Publication {
     pub fn from_inventory(inventory: &crate::planner::Inventory) -> Result<Self, Error> {
+        Self::from_roster(inventory, false)
+    }
+    fn from_roster(inventory: &crate::planner::Inventory, multiple: bool) -> Result<Self, Error> {
         let mut tracker = crate::lifecycle::InventoryTracker::default();
         tracker.advance(inventory).map_err(|_| Error::Publication)?;
-        if inventory.applications.len() != 1 {
+        if inventory.applications.is_empty() || (!multiple && inventory.applications.len() != 1) {
             return Err(Error::Publication);
         }
-        let app = &inventory.applications[0];
-        if app.streams.is_empty()
-            || app
-                .streams
-                .iter()
-                .any(|s| s.state != crate::planner::StreamState::Live)
-        {
-            return Err(Error::Publication);
+        let mut apps: Vec<_> = inventory.applications.iter().collect();
+        apps.sort_by(|a, b| a.id.cmp(&b.id));
+        let mut names = std::collections::BTreeSet::new();
+        let mut records = Vec::new();
+        for app in apps {
+            if app.streams.is_empty()
+                || app
+                    .streams
+                    .iter()
+                    .any(|s| s.state != crate::planner::StreamState::Live)
+                || !names.insert(app.advertised_name.clone())
+            {
+                return Err(Error::Publication);
+            }
+            records.push(crate::Record {
+                name: app.advertised_name.clone(),
+                assignment: crate::Assignment::from_byte(0),
+            });
         }
-        let records = vec![crate::Record {
-            name: app.advertised_name.clone(),
-            assignment: crate::Assignment::from_byte(0),
-        }];
         let payload = crate::encode_records(&records).map_err(|_| Error::Publication)?;
         let frame =
             crate::encode_frame(&crate::Frame::Data(payload)).map_err(|_| Error::Publication)?;
@@ -80,6 +89,24 @@ impl Publication {
         publication.remaining = cycles;
         publication.periodic = true;
         publication.poll_policy = policy;
+        Ok(publication)
+    }
+    /// Explicit multi-app qualification gate, never selected by the legacy
+    /// constructors. Fixed nonempty roster; every cycle needs complete observed
+    /// route proof. This policy has no hardware acceptance by itself.
+    pub fn bounded_selected(
+        inventory: &crate::planner::Inventory,
+        cycles: usize,
+        policy: crate::session::PollPolicy,
+    ) -> Result<Self, Error> {
+        if !(1..=MAX_PUBLICATION_CYCLES).contains(&cycles) {
+            return Err(Error::Publication);
+        }
+        let mut publication = Self::from_roster(inventory, true)?;
+        publication.remaining = cycles;
+        publication.periodic = true;
+        publication.poll_policy = policy;
+        publication.verified_routes = true;
         Ok(publication)
     }
     pub fn records(&self) -> &[crate::Record] {

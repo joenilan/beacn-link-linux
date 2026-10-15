@@ -1,5 +1,9 @@
 //! Test-feature-only scripted input inside an isolated eframe window. No OS input.
-#[cfg(feature = "ui-qualification")]
+#[cfg(all(
+    feature = "ui-qualification",
+    feature = "private-session-test",
+    target_os = "linux"
+))]
 fn main() -> eframe::Result {
     use beacn_linx_app::{
         ui::{self, Interface},
@@ -140,15 +144,61 @@ fn main() -> eframe::Result {
                     .get(&first)
                     .is_some_and(|s| s == "Media Player") =>
                 {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(Default::default()));
-                    self.stage = 10;
+                    if self.click("start") {
+                        self.stage = 10;
+                    }
                 }
-                10 if self.shot => {
+                10 if snapshot.link.completed_cycles >= 2
+                    && snapshot.link.phase == beacn_link_protocol::link_session::Phase::Running =>
+                {
+                    assert_eq!(snapshot.routing.assignments.len(), 2);
+                    assert!(snapshot.routing.assignments.values().any(|p| *p == 1));
+                    assert!(snapshot.routing.assignments.values().any(|p| *p == 4));
+                    assert_eq!(
+                        beacn_linx_app::icon::Status::from_snapshot(&snapshot),
+                        beacn_linx_app::icon::Status::PrivateTest
+                    );
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(Default::default()));
+                    self.stage = 13;
+                }
+                13 if self.shot => {
+                    if self.click("stop") {
+                        self.stage = 14;
+                    }
+                }
+                14 if snapshot.link.phase == beacn_link_protocol::link_session::Phase::Stopped => {
+                    assert!(snapshot
+                        .link
+                        .transport_cleanup
+                        .as_ref()
+                        .is_some_and(Result::is_ok));
+                    assert!(snapshot.routing.cleanup.as_ref().is_some_and(Result::is_ok));
+                    assert!(snapshot.routing.assignments.is_empty());
+                    assert_eq!(
+                        beacn_linx_app::icon::Status::from_snapshot(&snapshot),
+                        beacn_linx_app::icon::Status::Disconnected
+                    );
+                    if self.click("start") {
+                        self.stage = 15;
+                    }
+                }
+                15 if snapshot.link.phase == beacn_link_protocol::link_session::Phase::Running
+                    && snapshot.link.completed_cycles >= 1 =>
+                {
                     if self.click(&format!("remove:{}", self.second)) {
                         self.stage = 11;
                     }
                 }
-                11 if snapshot.selected.len() == 1 && !snapshot.selected.contains_key(&second) => {
+                11 if snapshot.selected.len() == 1
+                    && !snapshot.selected.contains_key(&second)
+                    && snapshot.link.phase == beacn_link_protocol::link_session::Phase::Stopped =>
+                {
+                    assert!(snapshot
+                        .link
+                        .transport_cleanup
+                        .as_ref()
+                        .is_some_and(Result::is_ok));
+                    assert!(snapshot.routing.cleanup.as_ref().is_some_and(Result::is_ok));
                     self.worker.stop();
                     let configs = std::fs::read_dir("/tmp")
                         .unwrap()
@@ -167,7 +217,7 @@ fn main() -> eframe::Result {
                         .write(true)
                         .open(self.root.join("result.txt"))
                         .unwrap();
-                    writeln!(result,"widgets_selected=2 renamed=true removed=true worker_stopped=true owned_configs_remaining={configs} failed={}",self.failed).unwrap();
+                    writeln!(result,"widgets_selected=2 renamed=true removed=true worker_stopped=true session_started_stopped_restarted=true lifecycle_release_verified=true owned_configs_remaining={configs} failed={}",self.failed).unwrap();
                     self.stage = 12;
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
@@ -192,16 +242,35 @@ fn main() -> eframe::Result {
         }
     }
     let args: Vec<_> = std::env::args().skip(1).collect();
-    if args.len() != 5 {
-        eprintln!("qualification: interface_probe PRIVATE-RUNTIME CORE FIRST-ID SECOND-ID NEW-EVIDENCE-DIR");
+    if args.len() != 14 {
+        eprintln!("qualification: interface_probe PRIVATE-RUNTIME CORE FIRST-ID SECOND-ID NEW-EVIDENCE-DIR PRIVATE-RUNTIME CORE COOKIE SERVER OWNER 1:ID:SERIAL 2:ID:SERIAL 3:ID:SERIAL 4:ID:SERIAL");
         std::process::exit(2);
     }
     let root = PathBuf::from(&args[4]);
     std::fs::create_dir(&root).expect("exclusive evidence directory");
-    let connection = Connection::Private {
-        runtime: PathBuf::from(&args[0]),
-        core: args[1].clone(),
-    };
+    let destinations = args[10..14]
+        .iter()
+        .map(|arg| {
+            let parts: Vec<_> = arg.split(':').collect();
+            assert_eq!(parts.len(), 3);
+            beacn_link_protocol::executor::Destination {
+                assignment: parts[0].parse().unwrap(),
+                node: beacn_link_protocol::executor::ObjectRef {
+                    id: parts[1].parse().unwrap(),
+                    serial: parts[2].parse().unwrap(),
+                },
+            }
+        })
+        .collect();
+    let connection = Connection::PrivateSession(beacn_linx_app::private_session::Configuration {
+        runtime: PathBuf::from(&args[5]),
+        core: args[6].clone(),
+        cookie: args[7].parse().unwrap(),
+        server: args[8].parse().unwrap(),
+        owner: args[9].clone(),
+        destinations,
+        cycles: 12,
+    });
     eframe::run_native(
         "Beacn LinX · isolated interface qualification",
         eframe::NativeOptions {
@@ -226,7 +295,11 @@ fn main() -> eframe::Result {
         }),
     )
 }
-#[cfg(not(feature = "ui-qualification"))]
+#[cfg(not(all(
+    feature = "ui-qualification",
+    feature = "private-session-test",
+    target_os = "linux"
+)))]
 fn main() {
     eprintln!("requires explicit ui-qualification feature");
     std::process::exit(2);

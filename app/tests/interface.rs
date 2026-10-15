@@ -226,3 +226,67 @@ fn queued_ui_action_cannot_select_replaced_core_or_changed_stream_binding() {
         assert!(model.snapshot().selected.is_empty());
     }
 }
+
+#[test]
+fn link_icon_never_confuses_discovery_or_private_routing_with_device_connection() {
+    use beacn_link_protocol::link_session::Phase;
+    use beacn_linx_app::icon::Status;
+    let mut view = Snapshot {
+        connected: true,
+        ..Default::default()
+    };
+    assert_eq!(Status::from_snapshot(&view), Status::Disconnected);
+    view.link.phase = Phase::Running;
+    assert_eq!(Status::from_snapshot(&view), Status::Connecting);
+    view.link.completed_cycles = 2;
+    assert_eq!(Status::from_snapshot(&view), Status::Connected);
+    view.private_session = true;
+    assert_eq!(Status::from_snapshot(&view), Status::PrivateTest);
+    view.link.error = Some("transport lost".into());
+    assert_eq!(Status::from_snapshot(&view), Status::Error);
+    view.link.error = None;
+    view.link.phase = Phase::NeedsReview;
+    assert_eq!(Status::from_snapshot(&view), Status::Error);
+    view.link.phase = Phase::Stopped;
+    assert_eq!(Status::from_snapshot(&view), Status::Disconnected);
+}
+
+#[test]
+fn session_buttons_require_explicit_backend_and_stop_survives_discovery_loss() {
+    let ctx = egui::Context::default();
+    let mut ui = Interface::default();
+    let mut model = Model::default();
+    model.observe(catalog(1, ROWS)).unwrap();
+    model
+        .command(Command::Select(id(0), "Player".into()))
+        .unwrap();
+    let mut view = model.snapshot();
+    frame(&ctx, &mut ui, &view, vec![]);
+    assert!(click(&ctx, &mut ui, &view, "start").is_empty());
+    view.private_session = true;
+    frame(&ctx, &mut ui, &view, vec![]);
+    assert!(matches!(
+        click(&ctx, &mut ui, &view, "start").as_slice(),
+        [Command::Start]
+    ));
+    view.link.phase = beacn_link_protocol::link_session::Phase::Running;
+    view.connected = false;
+    frame(&ctx, &mut ui, &view, vec![]);
+    let commands = click(&ctx, &mut ui, &view, "stop");
+    assert!(matches!(commands.as_slice(), [Command::Stop]));
+    assert!(Request::from_view(Command::Stop, &view).is_ok());
+}
+
+#[test]
+fn queued_start_pins_the_entire_selected_stream_roster() {
+    let mut model = Model::default();
+    model.observe(catalog(1, ROWS)).unwrap();
+    model
+        .command(Command::Select(id(0), "Player".into()))
+        .unwrap();
+    let request = Request::from_view(Command::Start, &model.snapshot()).unwrap();
+    model
+        .observe(catalog(2, &ROWS.replace("\t20\t", "\t22\t")))
+        .unwrap();
+    assert!(model.accept(request).is_err());
+}

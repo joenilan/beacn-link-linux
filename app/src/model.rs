@@ -12,25 +12,41 @@ pub struct Snapshot {
     pub revision: u64,
     pub connected: bool,
     pub busy: bool,
+    pub discovery_error: bool,
     pub message: Option<String>,
     pub routing: Status,
+    pub link: beacn_link_protocol::link_session::Status,
+    pub private_session: bool,
 }
 #[derive(Clone, Debug)]
 pub enum Command {
     Select(ApplicationId, String),
     Unselect(ApplicationId),
     Refresh,
+    Start,
+    Stop,
 }
 #[derive(Clone)]
 pub struct Request {
     command: Command,
     core: String,
     binding: Option<beacn_link_protocol::catalog::CatalogApplication>,
+    selected: Option<BTreeMap<ApplicationId, String>>,
+    roster: Vec<beacn_link_protocol::catalog::CatalogApplication>,
 }
 impl Request {
     pub fn from_view(command: Command, snapshot: &Snapshot) -> Result<Self, String> {
-        if !snapshot.connected {
+        if !snapshot.connected && !matches!(command, Command::Stop) {
             return Err("Application discovery is disconnected.".into());
+        }
+        if matches!(command, Command::Stop) {
+            return Ok(Self {
+                command,
+                core: String::new(),
+                binding: None,
+                selected: None,
+                roster: vec![],
+            });
         }
         let catalog = snapshot
             .catalog
@@ -44,12 +60,34 @@ impl Request {
                     .ok_or("Application is no longer available.")?
                     .clone(),
             ),
-            Command::Refresh => None,
+            Command::Refresh | Command::Start | Command::Stop => None,
+        };
+        let selected = if matches!(command, Command::Start) {
+            Some(snapshot.selected.clone())
+        } else {
+            None
+        };
+        let roster = if selected.is_some() {
+            snapshot
+                .selected
+                .keys()
+                .map(|id| {
+                    catalog
+                        .applications
+                        .get(id)
+                        .cloned()
+                        .ok_or("Selected application disappeared.")
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            vec![]
         };
         Ok(Self {
+            roster,
             command,
             core: catalog.core.clone(),
             binding,
+            selected,
         })
     }
 }
@@ -61,6 +99,36 @@ pub struct Model {
     snapshot: Snapshot,
 }
 impl Model {
+    pub fn service(&self) -> &ApplicationService {
+        &self.service
+    }
+    pub fn session(&mut self, status: beacn_link_protocol::link_session::Status, available: bool) {
+        if status.phase != self.snapshot.link.phase {
+            self.snapshot.message = status.error.clone().or_else(|| match status.phase {
+                beacn_link_protocol::link_session::Phase::Running => Some(
+                    if available {
+                        "Private test session active. Changing the selection stops this session."
+                    } else {
+                        "Link session active."
+                    }
+                    .into(),
+                ),
+                beacn_link_protocol::link_session::Phase::Stopped => {
+                    Some("Link stopped. Owned routes released.".into())
+                }
+                beacn_link_protocol::link_session::Phase::NeedsReview => {
+                    Some("Cleanup needs review. Restart is blocked.".into())
+                }
+                _ => None,
+            });
+        }
+        self.snapshot.routing = status.routes.clone();
+        self.snapshot.link = status;
+        self.snapshot.private_session = available;
+    }
+    pub fn notice(&mut self, error: String) {
+        self.snapshot.message = Some(error);
+    }
     pub fn snapshot(&self) -> Snapshot {
         self.snapshot.clone()
     }
@@ -72,6 +140,7 @@ impl Model {
     pub fn observe(&mut self, catalog: Catalog) -> Result<(), String> {
         let update = self.service.update(catalog)?;
         self.snapshot.connected = true;
+        self.snapshot.discovery_error = false;
         if update.core_changed {
             self.snapshot.message =
                 Some("Audio session changed. Select your applications again.".into());
@@ -92,9 +161,12 @@ impl Model {
             Command::Select(id, alias) => self.service.select(&id, &alias),
             Command::Unselect(id) => self.service.unselect(&id),
             Command::Refresh => Ok(()),
+            Command::Start | Command::Stop => {
+                Err("Session commands require the routing owner.".into())
+            }
         };
         self.snapshot.message = Some(match &result {
-            Ok(()) => "Selection updated. Routing is off.".into(),
+            Ok(()) => "Selection updated.".into(),
             Err(error) if error.contains("distinct wire names")=>"That published name is already selected. Give each application a different name.".into(),
             Err(error) if error.contains("printable ASCII")=>"Use 1–255 letters, numbers or common English symbols for the published name.".into(),
             Err(error) if error.contains("payload length")=>"These published names are too long together. Shorten a name or select fewer applications.".into(),
@@ -103,7 +175,10 @@ impl Model {
         self.sync();
         result
     }
-    pub fn request(&mut self, request: Request) -> Result<(), String> {
+    pub fn accept(&mut self, request: Request) -> Result<Command, String> {
+        if matches!(request.command, Command::Stop) {
+            return Ok(request.command);
+        }
         let current = self.service.current();
         if !self.snapshot.connected
             || current.is_none_or(|c| c.core != request.core)
@@ -111,18 +186,31 @@ impl Model {
                 .binding
                 .as_ref()
                 .is_some_and(|app| current.and_then(|c| c.applications.get(&app.id)) != Some(app))
+            || request
+                .roster
+                .iter()
+                .any(|app| current.and_then(|c| c.applications.get(&app.id)) != Some(app))
+            || request
+                .selected
+                .as_ref()
+                .is_some_and(|selected| selected != self.service.selected())
         {
             let error="Application changed since it was displayed. Review the current list and try again.".to_owned();
             self.snapshot.message = Some(error.clone());
             return Err(error);
         }
-        self.command(request.command)
+        Ok(request.command)
+    }
+    pub fn request(&mut self, request: Request) -> Result<(), String> {
+        let command = self.accept(request)?;
+        self.command(command)
     }
     /// Preserve the last catalog for display but revoke every in-memory selection
     /// on loss of observation. No auto reconnect or same-name rebinding.
     pub fn disconnected(&mut self, error: String) {
         self.service = ApplicationService::default();
         self.snapshot.connected = false;
+        self.snapshot.discovery_error = true;
         self.snapshot.selected.clear();
         self.snapshot.message = Some(format!("Application discovery stopped: {error}"));
     }

@@ -11,6 +11,8 @@ const ACCENT: Color32 = Color32::from_rgb(81, 224, 194);
 #[derive(Default)]
 pub struct Interface {
     pub search: String,
+    pub tray_unavailable: bool,
+    icon: Option<(crate::icon::Status, egui::TextureHandle)>,
     drafts: BTreeMap<ApplicationId, String>,
     selected_edits: BTreeMap<ApplicationId, String>,
     core: Option<String>,
@@ -35,6 +37,18 @@ pub fn style(ctx: &egui::Context) {
 impl Interface {
     pub fn show(&mut self, ctx: &egui::Context, snapshot: &Snapshot) -> Vec<Command> {
         self.widgets.clear();
+        let status = crate::icon::Status::from_snapshot(snapshot);
+        if self.icon.as_ref().is_none_or(|(old, _)| *old != status) {
+            let icon = crate::icon::raster(status, 64);
+            let texture = ctx.load_texture(
+                "lynx-status",
+                egui::ColorImage::from_rgba_unmultiplied([64, 64], &icon.rgba),
+                egui::TextureOptions::LINEAR,
+            );
+            ctx.send_viewport_cmd(egui::ViewportCommand::Icon(Some(std::sync::Arc::new(icon))));
+            self.icon = Some((status, texture));
+        }
+        let running = snapshot.link.phase == beacn_link_protocol::link_session::Phase::Running;
         let core = snapshot.catalog.as_ref().map(|c| c.core.clone());
         if self.core != core {
             self.drafts.clear();
@@ -57,27 +71,12 @@ impl Interface {
                         ui.label("Your Linux audio, connected.");
                     });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(
-                            RichText::new(if snapshot.busy {
-                                "Opening audio session"
-                            } else if snapshot.connected {
-                                "Discovery connected"
-                            } else {
-                                "Discovery offline"
-                            })
-                            .color(if snapshot.connected {
-                                ACCENT
-                            } else {
-                                MUTED
-                            }),
-                        );
-                        let (rect, _) =
-                            ui.allocate_exact_size(egui::vec2(12., 12.), egui::Sense::hover());
-                        ui.painter().circle_filled(
-                            rect.center(),
-                            3.,
-                            if snapshot.connected { ACCENT } else { MUTED },
-                        );
+                        ui.label(RichText::new(status.label()).color(status.color()));
+                        if let Some((_, texture)) = &self.icon {
+                            ui.add(
+                                egui::Image::new(texture).fit_to_exact_size(egui::vec2(30., 30.)),
+                            );
+                        }
                     });
                 });
             });
@@ -90,6 +89,13 @@ impl Interface {
                             .small()
                             .color(MUTED),
                     );
+                    if self.tray_unavailable {
+                        ui.label(
+                            RichText::new("System tray unavailable on this desktop")
+                                .small()
+                                .color(MUTED),
+                        );
+                    }
                     ui.separator();
                     ui.label(
                         RichText::new("Selections last until this window closes")
@@ -104,33 +110,26 @@ impl Interface {
             .frame(egui::Frame::new().fill(PANEL).inner_margin(22))
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.add_space(8.);
+                    ui.spacing_mut().item_spacing.y = 6.;
+                    ui.add_space(4.);
                     ui.label(RichText::new("STUDIO LINK").size(12.).color(MUTED));
                     ui.add_space(10.);
-                    ui.label(RichText::new("Routing is off").size(23.).strong());
+                    ui.label(RichText::new(if running { "Private test running" } else { "Routing is off" }).size(23.).strong());
                     ui.add_space(4.);
-                    ui.label(
-                        RichText::new(
-                            "Prepare the applications you want to share with your streaming PC.",
-                        )
-                        .color(MUTED),
-                    );
+                    if !running { ui.label(RichText::new("Select the apps you want to share.").color(MUTED)); }
                     ui.add_space(10.);
-                    let start = ui.add_enabled(
-                        false,
-                        egui::Button::new("Start link")
-                            .min_size(egui::vec2(ui.available_width(), 38.)),
-                    );
+                    let review = snapshot.link.phase == beacn_link_protocol::link_session::Phase::NeedsReview;
+                    let start = ui.add_enabled(snapshot.private_session && snapshot.connected && !snapshot.selected.is_empty() && !running && !review,
+                        egui::Button::new("Start link").min_size(egui::vec2(ui.available_width(), 38.)));
                     self.widgets.insert("start".into(), start.rect);
-                    start.on_hover_text(
-                        "Device connection and desktop routing are not enabled in this preview.",
-                    );
+                    if start.clicked() { commands.push(Command::Start); }
+                    start.on_hover_text("Enabled only for an explicitly configured private test core. Desktop routing and USB remain off.");
+                    let stop = ui.add_enabled(running, egui::Button::new("Stop link").min_size(egui::vec2(ui.available_width(), 32.)));
+                    self.widgets.insert("stop".into(), stop.rect);
+                    if stop.clicked() { commands.push(Command::Stop); }
                     ui.add_space(6.);
-                    ui.label(
-                        RichText::new("Device connection is coming next.")
-                            .small()
-                            .color(MUTED),
-                    );
+                    ui.label(RichText::new(if snapshot.private_session { "Private core · scripted peer · no device I/O" } else { "Device connection is coming next." }).small().color(MUTED));
+                    ui.label(RichText::new(if snapshot.connected { "Application discovery online" } else { "Application discovery offline" }).small().color(MUTED));
                     ui.add_space(10.);
                     ui.separator();
                     ui.add_space(10.);
@@ -147,7 +146,8 @@ impl Interface {
                                     ui.label(RichText::new(format!("{i:02}")).color(ACCENT));
                                     ui.label(format!("Link {i}"));
                                 });
-                                ui.label(RichText::new("No active session").small().color(MUTED));
+                                let names = snapshot.routing.assignments.iter().filter(|(_, pair)| **pair == i).filter_map(|(id, _)| snapshot.selected.get(id)).cloned().collect::<Vec<_>>();
+                                ui.label(RichText::new(if names.is_empty() { if running { "Unassigned".into() } else { "No active session".into() } } else { names.join(", ") }).small().color(MUTED));
                             });
                     }
                 });
@@ -185,7 +185,7 @@ impl Interface {
                     egui::Frame::new().fill(CARD).corner_radius(10).inner_margin(16).stroke(egui::Stroke::new(1.,if selected.is_some(){Color32::from_rgb(44,110,98)}else{CARD})).show(ui,|ui|{
                         ui.set_width(ui.available_width());
                         ui.horizontal(|ui|{
-                            ui.vertical(|ui|{ui.label(RichText::new(&name).size(18.).strong()).on_hover_text(format!("Process {} · {} audio stream(s)",app.pid,app.streams.len()));ui.label(RichText::new(if selected.is_some(){"Selected · ready for a future link session"}else if !model::live(app){"Audio stream unavailable"}else{"Available on this computer"}).small().color(if selected.is_some(){ACCENT}else{MUTED}));});
+                            ui.vertical(|ui|{ui.label(RichText::new(&name).size(18.).strong()).on_hover_text(format!("Process {} · {} audio stream(s)",app.pid,app.streams.len()));ui.label(RichText::new(if selected.is_some(){if running { "Selected · session active" } else { "Selected · ready for a link session" }}else if !model::live(app){"Audio stream unavailable"}else{"Available on this computer"}).small().color(if selected.is_some(){ACCENT}else{MUTED}));});
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|{
                                 if selected.is_some() {
                                     let remove=ui.add_enabled(snapshot.connected,egui::Button::new("Remove"));self.widgets.insert(format!("remove:{}",app.id.0),remove.rect);

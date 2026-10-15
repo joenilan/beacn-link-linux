@@ -17,7 +17,9 @@ and desktop routing are not yet connected to this service.
 The [Rust graphical preview](docs/rust-interface.md) now provides native discovery,
 search, explicit selection and published-name editing. Its real window/widgets
 pass isolated Linux tests with two actual apps and exact settings/state cleanup.
-Routing is visibly off; session/transport integration remains next.
+A status-aware lynx icon is shared by the window and optional Linux tray.
+[Start/stop/session integration](docs/rust-link-session.md) passes actual private-core
+GUI tests with a scripted protocol peer; normal desktop routing stays disabled.
 
 The [multi-app integration](docs/multi-app-publication.md) now connects selection,
 reply planning, native private routing and verified publication data. Two real mpv
@@ -28,7 +30,7 @@ disposable core. Multi-app USB/physical interoperability remains untested.
 and verified lifecycle cleanup. On the private core, closing one of two real apps
 released the owned routes while preserving a foreign link with the same owner tag.
 The foreground application remains read-only; the graphical interface is implemented
-and routing/session integration is next.
+and private-session GUI integration is qualified. Physical/desktop integration is next.
 
 The owner placed the Linux test application in the streaming PC's first Link In
 channel. Linux received assignment 1, applied its private stereo route and
@@ -61,7 +63,7 @@ A subsequent [real-application test](docs/native-application-routing.md) routed
 unmodified mpv through each of Studio's four pairs. The owner heard every pair;
 concurrent control and exact laptop cleanup passed. A no-USB source-exit check
 stopped safely, and a fresh isolated session routed all four destinations.
-The Rust service, shared-desktop routing, multi-app hardware control, UI and
+The shared-desktop routing, multi-app hardware control, physical GUI integration and
 long-lived recovery still need integration.
 Read the current handoff and playback report before another test.
 Windows Link stays closed during hardware tests.

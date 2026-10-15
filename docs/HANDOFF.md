@@ -1,7 +1,52 @@
 # Beacn LinX — continuation handoff
 Updated 2026-10-14. Resume development; do not restart the investigation.
 
-## Current checkpoint: Rust graphical discovery/selection preview works
+## Current checkpoint: GUI sessions and status-aware lynx icon
+
+The owner remains live streaming: software/private-core qualification only. No
+USB, physical audio, Windows changes, desktop route apply or mouse automation.
+See [rust-link-session.md](rust-link-session.md) for the exact ownership contract.
+
+LinkSession joins existing selection, epoch, routing and guarded transport owners.
+Every bounded publication needs fresh catalog plus complete observed route proof;
+assignments apply through existing acknowledgment/receipt owners. Stop releases
+routes before transport. Lifecycle/alias/core changes or failures stop both,
+without retry. Unverified cleanup blocks restart. Legacy single-app gates remain;
+only the explicit bounded_selected gate allows a fixed multi-app roster.
+
+The GUI now supports Start/Stop and verified channel cards only through explicit
+private-session-test configuration: real native private routes, actual Handshake/
+Session bytes, scripted peer, no USB. Two real mpv apps pass select/name/start,
+pairs 1/4, stop/release, restart and selection-change lifecycle release using real
+widgets on isolated Xvfb. The normal binary still has no route/device factory and
+Start remains disabled. This is not physical GUI or shared-desktop acceptance.
+
+One lynx silhouette and status mapping serve the interface/window and optional
+Linux tray: gray disconnected, amber connecting, teal successful running Link,
+red error/review, blue private scripted test. Discovery alone never turns it teal.
+The tray offers Open/Stop/Quit on its own bus thread and explains missing-host
+fallback. No close-to-tray, autostart or persistence yet. The private D-Bus test
+checks all icon pixels/states and menu callbacks, plus bus-name release. Actual
+GNOME/KDE panel visibility remains open; no desktop extension was installed.
+
+Eight GUI/model tests, five new session tests, 74 focused Linux root tests and 31
+Python runner tests pass. The production GUI separately opens read-only discovery
+and closes normally on isolated Xvfb/private D-Bus, preserving settings/state.
+All enclosing private-core, desktop, hashes, config and process comparisons pass.
+Intermediate negotiated disposable-node Format/vector differences remain false
+in evidence; final original whole-core equality is required and passes.
+Qualified source `beacn-native-source-20261015T004833Z`; GUI/session qualification
+SHA256 `f1becbf4d96b8e9f46016685a8f6e0ffbfc971cebbc154b8363ad5f7241f81ef`.
+Tray and production window-icon/normal-close evidence hashes are in the session
+report. 61 evidence/provenance files copied and hashed privately. The latter test
+also verifies the actual X11 gray icon property; absent-host fallback passes.
+
+Next: native physical transport/playback ownership for this session, then real
+multi-app GUI/hardware qualification after the stream. Shared-desktop apply,
+unaffected-app continuity, durable reconnect and installation remain open. Keep
+Actions disabled and checkpoints local with [skip ci]. Do not repeat initial audit.
+
+## Previous checkpoint: Rust graphical discovery/selection preview works
 
 The owner remains live streaming. No USB, hardware/audio, Windows app changes or
 desktop route application. The first Rust GUI uses egui/eframe 0.33.3 in the separate

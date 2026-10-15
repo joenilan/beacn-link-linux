@@ -8,10 +8,32 @@ use std::{path::PathBuf, time::Duration};
 struct App {
     interface: Interface,
     worker: Worker,
+    #[cfg(all(feature = "status-tray", target_os = "linux"))]
+    tray: beacn_linx_app::tray::Tray,
 }
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
         let snapshot = self.worker.snapshot();
+        #[cfg(all(feature = "status-tray", target_os = "linux"))]
+        {
+            use beacn_linx_app::{model::Command, tray};
+            self.tray.update(
+                beacn_linx_app::icon::Status::from_snapshot(&snapshot),
+                snapshot.link.phase == beacn_link_protocol::link_session::Phase::Running,
+            );
+            let actions = self.tray.actions();
+            if actions & tray::SHOW != 0 {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            }
+            if actions & tray::STOP != 0 {
+                self.interface.feedback = self.worker.send(Command::Stop, &snapshot).err();
+            }
+            if actions & tray::QUIT != 0 {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+            self.interface.tray_unavailable = self.tray.available() == Some(false);
+        }
         for command in self.interface.show(ctx, &snapshot) {
             self.interface.feedback = self.worker.send(command, &snapshot).err();
         }
@@ -45,6 +67,10 @@ fn main() -> eframe::Result {
         "Beacn LinX",
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
+                .with_icon(beacn_linx_app::icon::raster(
+                    beacn_linx_app::icon::Status::Disconnected,
+                    64,
+                ))
                 .with_inner_size([1060., 760.])
                 .with_min_inner_size([880., 600.]),
             renderer: eframe::Renderer::Glow,
@@ -54,6 +80,8 @@ fn main() -> eframe::Result {
             ui::style(&cc.egui_ctx);
             Ok(Box::new(App {
                 interface: Interface::default(),
+                #[cfg(all(feature = "status-tray", target_os = "linux"))]
+                tray: beacn_linx_app::tray::Tray::spawn(),
                 worker: Worker::spawn(connection),
             }))
         }),

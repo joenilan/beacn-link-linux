@@ -113,8 +113,9 @@ config fixed the helper without changing the native executor/catalog gates.
 
 ## Next
 
-The [Rust egui interface](rust-interface.md) now provides read-only discovery and
-selection. Next connect session state/controls to the interface. Foreground service integration, unaffected-app
+The [Rust egui interface](rust-interface.md) now provides discovery and selection.
+[Session controls](rust-link-session.md) are qualified through its private-core
+test configuration. Physical/desktop integration, unaffected-app
 continuity, multi-app USB/hardware interoperability, shared-desktop apply,
 persistence/autostart, graceful signal handling and durable reconnect remain open.
 Keep hardware testing closed while the owner is live. Actions remain disabled;

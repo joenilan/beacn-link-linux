@@ -68,11 +68,11 @@ def verify(binary, root, runtime, remote, env, dump, first_pid, media, propertie
         second=launch('second');status(2,1);second_id=find_app(second.pid)
         send('select '+second_id+'=Other Player');status(2,2)
         if gui is not None:
-            command=['xvfb-run','-a','-s','-screen 0 1280x900x24',str(gui),str(runtime),remote,first,second_id,str(root/'gui')]
+            command=['xvfb-run','-a','-s','-screen 0 1280x900x24',str(gui),str(runtime),remote,first,second_id,str(root/'gui'),*native_arguments]
             result=subprocess.run(command,env={**clean_env,'LIBGL_ALWAYS_SOFTWARE':'1','WINIT_UNIX_BACKEND':'x11'},capture_output=True,text=True,timeout=22)
             owner.save(root/'gui-process.json',{'exit':result.returncode,'stdout':result.stdout,'stderr':result.stderr,'binary_sha256':hashlib.sha256(Path(gui).read_bytes()).hexdigest()})
             evidence=root/'gui/result.txt'
-            proof['gui_widgets_verified']=result.returncode==0 and evidence.is_file() and evidence.read_text().strip()=='widgets_selected=2 renamed=true removed=true worker_stopped=true owned_configs_remaining=0 failed=false' and not (root/'gui/failure.txt').exists()
+            proof['gui_widgets_verified']=result.returncode==0 and evidence.is_file() and evidence.read_text().strip()=='widgets_selected=2 renamed=true removed=true worker_stopped=true session_started_stopped_restarted=true lifecycle_release_verified=true owned_configs_remaining=0 failed=false' and not (root/'gui/failure.txt').exists()
             if not proof['gui_widgets_verified']:raise RuntimeError('native graphical qualification failed; inspect GUI evidence')
         if multi_app is not None:
             _, route_before = dump()
@@ -144,7 +144,7 @@ def verify(binary, root, runtime, remote, env, dump, first_pid, media, propertie
         # these retained disposable nodes. Preserve the exact intermediate
         # comparison (including false); the enclosing owner must destroy every
         # owned source/destination and require its original whole-core baseline.
-        proof['private_graph_teardown_deferred']=multi_app is not None or session_control is not None
+        proof['private_graph_teardown_deferred']=multi_app is not None or session_control is not None or gui is not None
         proof['desktop_exact_equal']=owner.snapshot()==desktop
         proof['private_configs_removed']=set(Path('/tmp').glob('beacn-linx-catalog-*'))==configs
         proof['all_owned_processes_stopped']=all(p.poll() is not None for p in processes)

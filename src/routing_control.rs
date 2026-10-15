@@ -82,6 +82,44 @@ impl<B: OwnedRoutingBackend> RoutingControl<B> {
     pub fn status(&self) -> &Status {
         &self.status
     }
+    /// Fresh full-roster publication proof, including before the first reply and
+    /// on ticks whose last reply contained no assignment records.
+    pub fn verify(
+        &mut self,
+        service: &ApplicationService,
+    ) -> Result<VerifiedRoutePublication, String> {
+        self.check(service)?;
+        let result = (|| {
+            let active = self
+                .active
+                .as_mut()
+                .ok_or("routing session is not running")?;
+            let before = active.backend.observe(service.revision())?;
+            let after = active.backend.observe(service.revision())?;
+            active.epoch.verify_routes(
+                service,
+                &before,
+                &after,
+                &active.destinations,
+                active.backend.ownership(),
+                &active.assignments,
+            )
+        })();
+        match result {
+            Ok(proof) => {
+                self.status.assignments = self.active.as_ref().unwrap().assignments.clone();
+                self.status.verified_revision = Some(service.revision());
+                Ok(proof)
+            }
+            Err(error) => {
+                let cleanup = self.stop(StopReason::OperationFailed(error.clone()));
+                Err(match cleanup {
+                    Ok(_) => error,
+                    Err(e) => format!("{error}; cleanup unverified: {e}"),
+                })
+            }
+        }
+    }
     /// Explicit factory: idle construction never opens a connection. NeedsReview
     /// cannot restart, and start never automatically rebinds a changed selection.
     pub fn start(

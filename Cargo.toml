@@ -11,6 +11,7 @@ default = []
 native-pipewire = []
 native-test-faults = ["native-pipewire"]
 native-usb = []
+qualification-peer = []
 
 [lib]
 name = "beacn_link_protocol"

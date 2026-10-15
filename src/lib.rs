@@ -302,11 +302,15 @@ pub mod receipts;
 
 pub mod execution;
 
-pub mod route_publication;
+/// Bounded control transport and actual routing under one explicit owner.
+pub mod link_session;
 /// Offline fixed-roster application/control integration; no device access.
 pub mod publication_epoch;
+pub mod route_publication;
 /// Explicit start/stop/status and lifecycle cleanup over retained owned backends.
 pub mod routing_control;
+#[cfg(feature = "qualification-peer")]
+pub mod scripted_peer;
 /// Guarded transport-neutral protocol exchanges; no USB or automatic routing.
 pub mod session;
 
