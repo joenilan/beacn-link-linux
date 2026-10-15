@@ -90,6 +90,10 @@ run also assigned Firefox through all four wells in one physical session, with
 continuous PCM progress and original-route restoration on Pause. Saved state
 matched after its delayed write settled. Only the recreated selected-route link
 serials differ in the raw graph. Heard output remains an owner observation.
+In the subsequent announced run, the owner remotely confirmed that BEACN App
+reflected all four local assignments and showed incoming audio activity. Each
+pair held for 15 seconds; the native session reached 95 cycles before clean
+Pause, with saved-state hashes matching. Direct listening remains pending.
 
 An earlier owner attempt stopped after its selected roster changed, before any
 assignment was accepted. Logs then lacked the invalidating selection event;

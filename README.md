@@ -41,8 +41,9 @@ passed for all four wells. See [the current handoff](docs/HANDOFF.md). Default s
 read-only; multi-app support and automatic hotplug remain unfinished. The new
 [local native component interface](docs/native-control.md) lets a development
 controller inspect and drive the actual app without taking the desktop cursor.
-The current heard-output check remains separate: earlier heard-output evidence
-does not qualify what reaches the streaming PC in this newest main.
+The owner also confirmed Firefox moved through all four Link In slots in BEACN
+App with visible audio activity during an announced 15-second-per-pair run.
+Direct listening and longer stability/reconnect checks remain separate.
 The earlier egui preview remains available for comparison. The primary UI also has
 a saved Connect automatically toggle, waiting/paused states and read-only discovery
 recovery. Automatic session tests use owned private cores; physical GUI connection

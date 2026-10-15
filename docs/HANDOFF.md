@@ -3,6 +3,14 @@ Updated 2026-10-15 UTC. Resume development; do not restart the investigation.
 
 ## Latest checkpoint: actual local assignment and live switching passed
 
+The owner remotely observed the announced four-pair run and confirmed that Firefox
+**moved through all four Link In boxes in BEACN App, with visible audio activity**.
+This confirms remote assignment reflection and incoming signal for the actual
+native app, beyond its local route proof. The run held each pair for 15 seconds,
+reached 95 cycles without errors, then Paused with both cleanup owners Ok, saved
+state exact and connected binding unchanged. Private receipt: `remote-watch.json`.
+The owner observed meters remotely; direct listening on this build is still pending.
+
 The owner explicitly corrected the paused-only stopping point and authorized
 driving the actual app's start/assignment path, with heard-output confirmation
 later. Do not reimpose the older unattended restriction below on this authorized
@@ -38,7 +46,7 @@ request/stale-identity checks, and the C monitor/ordinary-port/ledger fixture.
 The final UI wording fix makes unused wells say Choose application after the
 selected app is already assigned. Current build and repeated live receipt are
 in the fixed private workspace. No new trees, caches, branches or servers.
-Next: owner confirmation of sound at the streaming PC, then longer use/reconnect.
+Next: longer use/reconnect and owner listening confirmation when home.
 One stereo app is still the desktop limit. The actual app is left paused.
 
 ## Latest checkpoint: native component control and four-pair desktop routing
