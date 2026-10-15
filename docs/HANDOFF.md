@@ -1,6 +1,44 @@
 # LinX continuation handoff
 Updated 2026-10-15 UTC. Resume development; do not restart the investigation.
 
+## Latest checkpoint: ordinary Firefox desktop video heard
+
+Read [native-desktop-target.md](native-desktop-target.md). The new opt-in desktop
+lease selects one already-running stereo app through the native catalog, moves
+it using an exact echoed WirePlumber target request, and restores its prior
+metadata/destination. It uses the shared graph/inventory bridge and retained native
+adapter owner; no application-specific executable path exists in the Rust backend.
+The owner confirmed **Heard the Firefox video** through first Link In in
+`linx-desktop-studio-20261015T132948Z`, exact source
+`beacn-native-source-20261015T132933Z`: 98 PCM checks, 476,138 hardware frames,
+FLOAT_LE/8ch/96k, capture closed. Result SHA256
+`73b71ab5ed156bb01cba5a88b995979e347577854f7013f487bd03c95b3f62a9`.
+Foreign graph/settings, saved state and USB binding matched that run's baseline;
+selected links were recreated, both PCMs closed. No vendor USB I/O was used.
+
+The existing desktop 48-kHz node stalled. The working path uses a retained owned
+96-kHz adapter excluded from WirePlumber port/pause policy, leaving the ordinary
+ALSA node/global audio configuration untouched. The actual daemon PID is pinned
+from Core metadata separately from a socket-activated listener's credentials.
+The first failed metadata write left an owned saved-property cache entry; its
+owned target override was removed. A whole-file restoration guard later refused
+because foreign settings changed. Preserve that difference; subsequent exact
+per-run baselines include it. No foreign setting was overwritten.
+
+Later exact source `beacn-native-source-20261015T133151Z` passes 25 focused checks,
+all four native virtual mappings/fault cleanup and a real desktop failure after
+an echoed target write. Failed start/restart remain latched and cleanup caches.
+`linx-desktop-failure-20261015T133314Z` result SHA256
+`52050995ee428b5239d483a55cadec02ff70592406e7164b8e6fdd10f7eca0c2`.
+No new physical playback was claimed for that later failure-injection source.
+
+This is still a bounded qualification example, not a normal installed application.
+Next integrate a separate sealed desktop route proof into protocol publication
+and the existing GUI session owner; never weaken private link-receipt/zero rules.
+One app/stream and physical first pair only; multi-app, hotplug and durable
+assignment continuity remain open. Laptop cached builds use about 6 GB free;
+no packages installed or old artifacts removed. Keep snapshots and evidence private.
+
 ## Latest checkpoint: native Studio Pause and explicit reconnect heard
 
 Read [native-studio-recovery.md](native-studio-recovery.md). The next native GUI
@@ -2000,3 +2038,9 @@ because of that historical orchestration failure.
    native fault/recovery batch is implemented. Keep progress factual and report
    implemented / built / runtime-tested / pushed separately.
 5. Leave Jawjack, Haiwire, AI benchmarks and other agents' processes alone.
+
+Final build/source `beacn-native-source-20261015T133608Z` retains strict 96-kHz
+PCM validation and passes the same 25 focused checks. The final read-only audit
+matches the failure-cleanup desktop/state snapshot exactly; both PCMs are closed
+and no owned native test process remains. Private evidence was copied and hashed
+outside Git. No additional physical acceptance is claimed for this source.

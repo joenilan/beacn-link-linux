@@ -52,6 +52,7 @@ fn field<'a>(data: &'a str, name: &str) -> Result<&'a str, Failure> {
     }
     Ok(value)
 }
+#[cfg(test)]
 fn pcm(status: &str, params: &str, pid: u32) -> Result<u64, Failure> {
     pcm_state(status, params, pid, false).map(|(_, pointer)| pointer)
 }
@@ -62,10 +63,20 @@ fn pcm_state(status: &str, params: &str, pid: u32, starting: bool) -> Result<(bo
     {
         return Err(());
     }
-    for (name, expected) in [("format", "FLOAT_LE"), ("channels", "8"), ("rate", "96000")] {
+    for (name, expected) in [("format", "FLOAT_LE"), ("channels", "8")] {
         if field(params, name)?.split_whitespace().next() != Some(expected) {
             return Err(());
         }
+    }
+    if field(params, "rate")?
+        .split_whitespace()
+        .next()
+        .ok_or(())?
+        .parse::<u32>()
+        .map_err(|_| ())?
+        != 96000
+    {
+        return Err(());
     }
     Ok((
         state == "RUNNING",
@@ -85,6 +96,7 @@ pub(crate) struct PinnedPlayback {
     last: Option<(u64, Instant)>,
     first: Option<u64>,
     checks: u32,
+    rejection: Option<&'static str>,
 }
 impl PinnedPlayback {
     pub(crate) fn pin(sysfs: &Path, pid: u32) -> Result<Self, Failure> {
@@ -139,11 +151,17 @@ impl PinnedPlayback {
             last: None,
             first: None,
             checks: 0,
+            rejection: None,
         })
     }
     pub(crate) fn validate(&mut self) -> Result<(), Failure> {
-        let last = self.observe(false)?.ok_or(())?;
-        self.advance_clock(last)
+        let last = self
+            .observe(false)
+            .map_err(|why| self.rejection = Some(why))?
+            .ok_or(())?;
+        self.advance_clock(last).map_err(|_| {
+            self.rejection = Some("clock reversed, stalled, or observation limit reached");
+        })
     }
     /// One creation-time PREPARED -> RUNNING transition, with full identity,
     /// format and held-device proof even while pending. Never used by refresh.
@@ -152,7 +170,10 @@ impl PinnedPlayback {
         if self.last.is_some() || self.checks != 0 {
             return Err(());
         }
-        match self.observe(true)? {
+        match self
+            .observe(true)
+            .map_err(|why| self.rejection = Some(why))?
+        {
             Some(last) => {
                 self.advance_clock(last)?;
                 Ok(true)
@@ -160,43 +181,46 @@ impl PinnedPlayback {
             None => Ok(false),
         }
     }
-    fn observe(&self, starting: bool) -> Result<Option<u64>, Failure> {
-        if generation(self.pid)? != self.start
-            || identity(&self.device)? != self.stamp
-            || text(&self.capture)?.trim() != "closed"
+    fn observe(&self, starting: bool) -> Result<Option<u64>, &'static str> {
+        if generation(self.pid).map_err(|_| "server generation unavailable")? != self.start
+            || identity(&self.device).map_err(|_| "PCM identity unavailable")? != self.stamp
+            || text(&self.capture)
+                .map_err(|_| "capture state unavailable")?
+                .trim()
+                != "closed"
         {
-            return Err(());
+            return Err("server, PCM identity, or capture state changed");
         }
         let sample = || {
             let status = text(&self.pcm.join("status"))?;
             let params = text(&self.pcm.join("hw_params"))?;
-            if starting {
-                pcm_state(&status, &params, self.pid, true)
-            } else {
-                pcm(&status, &params, self.pid).map(|pointer| (true, pointer))
-            }
+            pcm_state(&status, &params, self.pid, starting)
         };
-        let first = sample()?;
+        let first = sample().map_err(|_| "initial PCM state, owner, format, or pointer invalid")?;
         let mut found = false;
         for (count, entry) in fs::read_dir(format!("/proc/{}/fd", self.pid))
-            .map_err(|_| ())?
+            .map_err(|_| "server FD inventory unavailable")?
             .enumerate()
         {
             if count >= 256 {
-                return Err(());
+                return Err("server FD inventory exceeds limit");
             }
-            let entry = entry.map_err(|_| ())?;
+            let entry = entry.map_err(|_| "server FD enumeration failed")?;
             found |= identity(&entry.path()).is_ok_and(|stamp| stamp == self.stamp);
         }
-        let last = sample()?;
+        let last = sample().map_err(|_| "second PCM state, owner, format, or pointer invalid")?;
         if !found
             || last.1 < first.1
             || (first.0 && !last.0)
-            || generation(self.pid)? != self.start
-            || identity(&self.device)? != self.stamp
-            || text(&self.capture)?.trim() != "closed"
+            || generation(self.pid).map_err(|_| "server generation recheck unavailable")?
+                != self.start
+            || identity(&self.device).map_err(|_| "PCM identity recheck unavailable")? != self.stamp
+            || text(&self.capture)
+                .map_err(|_| "capture recheck unavailable")?
+                .trim()
+                != "closed"
         {
-            return Err(());
+            return Err("held PCM FD, pointer monotonicity, or identity recheck failed");
         }
         Ok(last.0.then_some(last.1))
     }
@@ -277,7 +301,8 @@ impl PinnedPlayback {
             false
         };
         format!(
-            "metadata recheck: state={state:?} owner={:?} expected_owner={} format={:?} channels={:?} rate={:?} server_generation={} pcm_identity={} capture_closed={} fd_read={} fd_count={} pcm_fd_held={}",
+            "rejection={:?} checks={} previous_pointer={:?} current_pointer={:?}; metadata recheck: state={state:?} owner={:?} expected_owner={} format={:?} channels={:?} rate={:?} server_generation={} pcm_identity={} capture_closed={} fd_read={} fd_count={} pcm_fd_held={}",
+            self.rejection, self.checks, self.last.map(|(p, _)| p), value(&status, "hw_ptr"),
             value(&status, "owner_pid"), self.pid, value(&params, "format"),
             value(&params, "channels"), value(&params, "rate"),
             generation(self.pid).is_ok_and(|start| start == self.start),
@@ -291,6 +316,16 @@ impl PinnedPlayback {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn native_playback_rate_remains_strictly_96k() {
+        let status = "state: RUNNING\nowner_pid: 42\nhw_ptr: 48000\n";
+        let params = "format: FLOAT_LE\nchannels: 8\nrate: 48000\n";
+        assert!(pcm(status, params, 42).is_err());
+        assert_eq!(
+            pcm(status, &params.replace("48000", "96000"), 42),
+            Ok(48000)
+        );
+    }
     #[test]
     fn live_proof_rejects_replaced_generation_inode_owner_closed_fd_and_stalled_clock() {
         let pid = std::process::id();
@@ -326,6 +361,7 @@ mod tests {
             last: None,
             first: None,
             checks: 0,
+            rejection: None,
         };
         #[cfg(feature = "native-playback")]
         {

@@ -20,6 +20,7 @@ fn main() {
     }
     println!("cargo:rerun-if-changed=native/pipewire.c");
     println!("cargo:rerun-if-changed=native/playback.inc");
+    println!("cargo:rerun-if-changed=native/desktop_target.inc");
     if env::var_os("CARGO_FEATURE_NATIVE_PIPEWIRE").is_none() {
         return;
     }
@@ -54,6 +55,9 @@ fn main() {
     }
     if env::var_os("CARGO_FEATURE_NATIVE_PLAYBACK").is_some() {
         cc.arg("-DBCL_NATIVE_PLAYBACK");
+    }
+    if env::var_os("CARGO_FEATURE_NATIVE_DESKTOP_TARGET").is_some() {
+        cc.arg("-DBCL_DESKTOP_TARGET");
     }
     if let Some(root) = env::var_os("BEACN_PIPEWIRE_SYSROOT") {
         let root = PathBuf::from(root);

@@ -247,47 +247,9 @@ impl NativePipeWire {
             .position(|b| *b == 0)
             .ok_or("unterminated native observation")?;
         let raw = std::str::from_utf8(&buffer[..length]).map_err(|e| e.to_string())?;
-        let mut graph = String::new();
-        let mut inventory = String::new();
-        let mut seen = std::collections::BTreeSet::new();
-        for row in raw.lines() {
-            let f: Vec<_> = row.split('\t').collect();
-            if f.first() == Some(&"playback") {
-                if f.len() != 6 {
-                    return Err("malformed native playback row".into());
-                }
-                graph.push_str(&format!("stream\t{}\t{}\t{}\t{}\n", f[1], f[2], f[4], f[5]));
-                if let Some(name) = self.bindings.get(f[1]) {
-                    inventory.push_str(&format!(
-                        "inventory\t{}\t{}\t{}\t{}\n",
-                        f[1], name, f[2], f[3]
-                    ));
-                    seen.insert(f[1].to_owned());
-                }
-            } else {
-                graph.push_str(row);
-                graph.push('\n');
-            }
-        }
-        if self.bindings.keys().any(|id| !seen.contains(id)) {
-            return Err("explicit binding disappeared".into());
-        }
-        let mut tsv = inventory;
-        for side in ["expected", "observed"] {
-            for row in graph.lines() {
-                tsv.push_str(side);
-                tsv.push('\t');
-                tsv.push_str(row);
-                tsv.push('\n');
-            }
-        }
-        tsv.push_str(&format!("owner\t{}\n", self.ownership.token));
-        let parsed = graph_snapshot::preparation_from_tsv(generation, &tsv)?;
+        let observed = parse_observation(raw, &self.bindings, &self.ownership.token, generation)?;
         self.generation = generation;
-        Ok(Observation {
-            graph: parsed.observed,
-            inventory: parsed.inventory,
-        })
+        Ok(observed)
     }
     fn verify(
         &mut self,
@@ -446,4 +408,53 @@ impl Backend for NativePipeWire {
         }
         result
     }
+}
+
+/// Shared bounded graph bridge; this grants no mutation authority.
+pub(crate) fn parse_observation(
+    raw: &str,
+    bindings: &BTreeMap<String, String>,
+    owner: &str,
+    generation: u64,
+) -> Result<Observation, String> {
+    let mut graph = String::new();
+    let mut inventory = String::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for row in raw.lines() {
+        let f: Vec<_> = row.split('\t').collect();
+        if f.first() == Some(&"playback") {
+            if f.len() != 6 {
+                return Err("malformed native playback row".into());
+            }
+            graph.push_str(&format!("stream\t{}\t{}\t{}\t{}\n", f[1], f[2], f[4], f[5]));
+            if let Some(name) = bindings.get(f[1]) {
+                inventory.push_str(&format!(
+                    "inventory\t{}\t{}\t{}\t{}\n",
+                    f[1], name, f[2], f[3]
+                ));
+                seen.insert(f[1].to_owned());
+            }
+        } else {
+            graph.push_str(row);
+            graph.push('\n');
+        }
+    }
+    if bindings.keys().any(|id| !seen.contains(id)) {
+        return Err("explicit binding disappeared".into());
+    }
+    let mut tsv = inventory;
+    for side in ["expected", "observed"] {
+        for row in graph.lines() {
+            tsv.push_str(side);
+            tsv.push('\t');
+            tsv.push_str(row);
+            tsv.push('\n');
+        }
+    }
+    tsv.push_str(&format!("owner\t{}\n", owner));
+    let parsed = graph_snapshot::preparation_from_tsv(generation, &tsv)?;
+    Ok(Observation {
+        graph: parsed.observed,
+        inventory: parsed.inventory,
+    })
 }

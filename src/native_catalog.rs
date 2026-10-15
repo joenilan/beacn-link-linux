@@ -23,12 +23,16 @@ unsafe extern "C" {
     #[cfg(feature = "native-test-faults")]
     fn bcl_catalog_test_mutation_refused(session: *mut c_void) -> c_int;
 }
-struct PrivateConfig {
-    directory: PathBuf,
+pub(crate) struct PrivateConfig {
+    pub(crate) directory: PathBuf,
     stamp: (u64, u64),
+    text: &'static str,
 }
 impl PrivateConfig {
-    fn new() -> Result<Self, String> {
+    pub(crate) fn new() -> Result<Self, String> {
+        Self::with_text(crate::native_pipewire::CLIENT_CONFIG)
+    }
+    pub(crate) fn with_text(text: &'static str) -> Result<Self, String> {
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|e| e.to_string())?
@@ -45,6 +49,7 @@ impl PrivateConfig {
         let config = Self {
             directory,
             stamp: (m.dev(), m.ino()),
+            text,
         };
         let mut file = OpenOptions::new()
             .write(true)
@@ -52,8 +57,7 @@ impl PrivateConfig {
             .mode(0o600)
             .open(config.directory.join("client.conf"))
             .map_err(|e| e.to_string())?;
-        file.write_all(crate::native_pipewire::CLIENT_CONFIG.as_bytes())
-            .map_err(|e| e.to_string())?;
+        file.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
         Ok(config)
     }
 }
@@ -74,9 +78,8 @@ impl Drop for PrivateConfig {
             m.is_file()
                 && !m.file_type().is_symlink()
                 && m.uid() == unsafe { getuid() }
-                && m.len() == crate::native_pipewire::CLIENT_CONFIG.len() as u64
-        }) && fs::read(&path)
-            .is_ok_and(|b| b == crate::native_pipewire::CLIENT_CONFIG.as_bytes())
+                && m.len() == self.text.len() as u64
+        }) && fs::read(&path).is_ok_and(|b| b == self.text.as_bytes())
         {
             let _ = fs::remove_file(path);
         }

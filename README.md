@@ -25,8 +25,10 @@ also passes with owner-heard mpv output and exact immediate/late laptop settings
 comparisons. A subsequent [Pause/reconnect qualification](docs/native-studio-recovery.md)
 passes with two owner-heard native playback runs and exact immediate cleanup.
 Reassignment was needed after Pause; a later Firefox desktop volume/state
-comparison differed. Ordinary desktop integration, assignment continuity and an
-installed standalone app remain unfinished.
+comparison differed. An opt-in [desktop stream lease](docs/native-desktop-target.md) now also passes
+owner-heard video from an already-running Firefox stream through the first Studio
+pair, with original-output restoration. Ordinary GUI desktop integration,
+assignment continuity and an installed standalone app remain unfinished.
 The earlier egui preview remains available for comparison. The primary UI also has
 a saved Connect automatically toggle, waiting/paused states and read-only discovery
 recovery. Automatic session tests use owned private cores; physical GUI connection

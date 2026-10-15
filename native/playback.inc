@@ -152,29 +152,12 @@ static bool playback_ports(struct session *s, const struct receipt *node,
   }
   return count == 8;
 }
-int bcl_playback_create(struct session *s, const struct receipt *source,
-                        const char *owner, int pair, int card,
-                        struct playback_refs *result) {
-  if (!s || s->catalog_only || s->fatal || s->pending || s->created ||
-      !source || !result || !label(owner) || pair < 1 || pair > 4 ||
-      card < -1 || card > 255 || barrier(s) < 0 || barrier(s) < 0)
-    return -1;
-  struct object *outputs[2];
-  if (!playback_source(s, source, owner, outputs))
-    return -10;
-  /* Never fan out or replace any existing monitor link, even with our tag. */
-  for (size_t i = 0; i < s->count; i++) {
-    struct object *l = s->objects[i];
-    if (l->present && l->kind == LINK &&
-        (l->out_port == outputs[0]->id || l->out_port == outputs[1]->id))
-      return -11;
-  }
-  int fault = s->playback_fault;
-  s->playback_fault = 0;
-  if (fault == 1)
-    return -1;
+/* Shared adapter owner; callers retain distinct source and authority checks. */
+static int playback_adapter_create(struct session *s, uint32_t source_id,
+    const char *owner, int card, int fault, bool desktop,
+    struct playback_refs *result, struct object **inputs) {
   char name[80];
-  snprintf(name, sizeof(name), "linx-playback-%u-%u", (unsigned)getpid(), source->id);
+  snprintf(name, sizeof(name), "linx-playback-%u-%u", (unsigned)getpid(), source_id);
   struct pw_properties *p = pw_properties_new(
       "factory.name", card < 0 ? "support.null-audio-sink" : "api.alsa.pcm.sink",
       PW_KEY_NODE_NAME, name, PW_KEY_MEDIA_CLASS, "Audio/Sink",
@@ -186,6 +169,16 @@ int bcl_playback_create(struct session *s, const struct receipt *source,
       "beacn.test.token", owner, OWNER, owner, NULL);
   if (!p)
     return -1;
+  if (desktop) {
+    /* Installed WirePlumber create-item.lua explicitly excludes this property.
+     * This retained adapter has its own port/idle owner; policy must not replace
+     * its PortConfig or suspend it while native bridge receipts are active. */
+    pw_properties_set(p, "wireplumber.is-virtual", "true");
+    pw_properties_set(p, "state.restore-props", "false");
+    pw_properties_set(p, "state.restore-target", "false");
+    pw_properties_set(p, "priority.session", "0");
+    pw_properties_set(p, "node.hidden", "true");
+  }
   if (card < 0)
     pw_properties_set(p, "node.virtual", "true");
   else {
@@ -216,11 +209,37 @@ int bcl_playback_create(struct session *s, const struct receipt *source,
                                    SPA_PARAM_PortConfig, 0, config) < 0 ||
       barrier(s) < 0 || barrier(s) < 0)
     return -21;
-  struct object *inputs[8];
   if (!playback_ports(s, &result->node, inputs) || fault == 2)
     return -22;
   for (int i = 0; i < 8; i++)
     result->ports[i] = (struct receipt){inputs[i]->id, serial(inputs[i])};
+  return 0;
+}
+int bcl_playback_create(struct session *s, const struct receipt *source,
+                        const char *owner, int pair, int card,
+                        struct playback_refs *result) {
+  if (!s || s->catalog_only || s->desktop || s->fatal || s->pending || s->created ||
+      !source || !result || !label(owner) || pair < 1 || pair > 4 ||
+      card < -1 || card > 255 || barrier(s) < 0 || barrier(s) < 0)
+    return -1;
+  struct object *outputs[2];
+  if (!playback_source(s, source, owner, outputs))
+    return -10;
+  /* Never fan out or replace any existing monitor link, even with our tag. */
+  for (size_t i = 0; i < s->count; i++) {
+    struct object *l = s->objects[i];
+    if (l->present && l->kind == LINK &&
+        (l->out_port == outputs[0]->id || l->out_port == outputs[1]->id))
+      return -11;
+  }
+  int fault = s->playback_fault;
+  s->playback_fault = 0;
+  if (fault == 1)
+    return -1;
+  struct object *inputs[8];
+  int adapter_result = playback_adapter_create(s, source->id, owner, card, fault, false, result, inputs);
+  if (adapter_result < 0) return adapter_result;
+  struct pw_properties *p;
   for (int i = 0; i < 2; i++)
     result->monitors[i] = (struct receipt){outputs[i]->id, serial(outputs[i])};
   for (int i = 0; i < 2; i++) {

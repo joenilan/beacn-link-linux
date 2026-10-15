@@ -1,0 +1,477 @@
+/* Explicit desktop target lease. The session manager owns stream links.
+ * No registry destroy, foreign proxy mutation, defaults or volume writes.
+ * This entry cannot use the private executor or physical playback factory. */
+#define DT_ENTRIES 4096
+struct dt_entry {
+  uint32_t subject;
+  bool present;
+  char type[33], value[129];
+};
+struct desktop_target {
+  struct pw_metadata *metadata;
+  struct spa_hook listener;
+  struct receipt metadata_ref, sink, source, client, original;
+  struct dt_entry entries[DT_ENTRIES], prior;
+  size_t count;
+  uint32_t pid;
+  struct receipt source_ports[2];
+  bool active, conflict, stopping, expected_present;
+  char expected_type[33], expected[129];
+  struct created *bridge[2];
+  struct receipt hardware;
+  struct playback_refs adapter;
+  struct created *adapter_proxy;
+#ifdef BCL_TEST_FAULTS
+  bool fail_after_target_echo;
+#endif
+};
+int bcl_desktop_unbridge(struct session *);
+static struct desktop_target *desktop_new(void) {
+  return calloc(1, sizeof(struct desktop_target));
+}
+static void desktop_removed(struct session *s, uint32_t id) {
+  if (s->desktop->metadata && s->desktop->metadata_ref.id == id)
+    s->fatal = true;
+}
+static struct dt_entry *dt_entry(struct desktop_target *d, uint32_t subject) {
+  for (size_t i = 0; i < d->count; i++)
+    if (d->entries[i].subject == subject)
+      return &d->entries[i];
+  return NULL;
+}
+static bool dt_equal(struct dt_entry *e, bool present, const char *type, const char *value) {
+  return (!e || !e->present) ? !present : present &&
+      spa_streq(e->type, type) && spa_streq(e->value, value);
+}
+static int dt_property(void *data, uint32_t subject, const char *key,
+                       const char *type, const char *value) {
+  struct session *s = data;
+  struct desktop_target *d = s->desktop;
+  if (!key) { s->fatal = true; return 0; }
+  if (d->active && ((subject == 0 && strstr(key, "default.") == key) ||
+       (subject == d->source.id && spa_streq(key, "target.node"))))
+    d->conflict = true;
+  if (!spa_streq(key, "target.object"))
+    return 0;
+  if ((value && (!type || strlen(type) > 32 || strlen(value) > 128))) {
+    s->fatal = true; return 0;
+  }
+  struct dt_entry *e = dt_entry(d, subject);
+  if (!e) {
+    if (d->count == DT_ENTRIES) { s->fatal = true; return 0; }
+    e = &d->entries[d->count++]; e->subject = subject;
+  }
+  e->present = value != NULL;
+  snprintf(e->type, sizeof(e->type), "%s", value ? type : "");
+  snprintf(e->value, sizeof(e->value), "%s", value ? value : "");
+  if (d->active && subject == d->source.id &&
+      !dt_equal(e, d->expected_present, d->expected_type, d->expected)) {
+    fprintf(stderr, "desktop metadata conflict: present=%d expected=%d type_match=%d value_match=%d\n",
+            e->present, d->expected_present, spa_streq(e->type, d->expected_type), spa_streq(e->value, d->expected));
+    d->conflict = true;
+  }
+  return 0;
+}
+static const struct pw_metadata_events dt_events = {
+    .version = PW_VERSION_METADATA_EVENTS, .property = dt_property};
+static bool desktop_global(struct session *s, uint32_t id, uint32_t permissions,
+                           const char *type, uint32_t version, const struct spa_dict *props) {
+  if (spa_streq(type, PW_TYPE_INTERFACE_Device) || spa_streq(type, PW_TYPE_INTERFACE_Module))
+    return true;
+  if (!spa_streq(type, PW_TYPE_INTERFACE_Metadata))
+    return false;
+  if (!props || !spa_streq(spa_dict_lookup(props, PW_KEY_METADATA_NAME), "default"))
+    return true;
+  struct desktop_target *d = s->desktop;
+  if (d->metadata || !(permissions & PW_PERM_R) || !(permissions & PW_PERM_W) ||
+      !(permissions & PW_PERM_X) || !num(spa_dict_lookup(props, PW_KEY_OBJECT_SERIAL))) {
+    s->fatal = true; return true;
+  }
+  d->metadata_ref = (struct receipt){id, num(spa_dict_lookup(props, PW_KEY_OBJECT_SERIAL))};
+  d->metadata = pw_registry_bind(s->registry, id, type,
+      version < PW_VERSION_METADATA ? version : PW_VERSION_METADATA, 0);
+  if (!d->metadata || pw_metadata_add_listener(d->metadata, &d->listener, &dt_events, s) < 0)
+    s->fatal = true;
+  return true;
+}
+static void desktop_free(struct session *s) {
+  struct desktop_target *d = s->desktop;
+  if (d->metadata) {
+    spa_hook_remove(&d->listener);
+    pw_proxy_destroy((struct pw_proxy *)d->metadata);
+  }
+  free(d); s->desktop = NULL;
+}
+struct session *bcl_open_desktop_target(int fd, const char *config, uint32_t cookie,
+                                       const char *name, uint32_t server_pid) {
+  struct session *s = open_session(fd, config, cookie, name, server_pid, false, true);
+  if (s && !s->desktop->metadata) { bcl_close(s); return NULL; }
+  return s;
+}
+uint32_t bcl_desktop_daemon_pid(struct session *s) {
+  return s && s->desktop && !s->fatal ? s->daemon_pid : 0;
+}
+static bool dt_ref(struct object *o, struct receipt r) {
+  return o && o->info && o->present && serial(o) == r.serial && o->id == r.id;
+}
+static bool dt_ports(struct session *s, struct receipt node, int direction, struct object **result) {
+  result[0] = result[1] = NULL;
+  for (size_t i = 0; i < s->count; i++) {
+    struct object *p = s->objects[i];
+    if (!p->present || p->kind != PORT || num(prop(p, PW_KEY_NODE_ID)) != node.id ||
+        p->direction != direction)
+      continue;
+    const char *ch = prop(p, PW_KEY_AUDIO_CHANNEL);
+    int side = spa_streq(ch, "FL") ? 0 : spa_streq(ch, "FR") ? 1 : -1;
+    if (!p->info || !serial(p) || side < 0 || result[side] ||
+        spa_streq(prop(p, PW_KEY_PORT_MONITOR), "true") ||
+        spa_streq(prop(p, PW_KEY_PORT_CONTROL), "true"))
+      return false;
+    result[side] = p;
+  }
+  return result[0] && result[1];
+}
+static bool dt_source(struct session *s) {
+  struct desktop_target *d = s->desktop;
+  struct object *n = find(s, d->source.id, NODE), *c = find(s, d->client.id, CLIENT);
+  if (!dt_ref(n, d->source) || !dt_ref(c, d->client) ||
+      !spa_streq(prop(n, PW_KEY_MEDIA_CLASS), "Stream/Output/Audio") ||
+      num(prop(n, PW_KEY_CLIENT_ID)) != d->client.id ||
+      num(prop(c, PW_KEY_APP_PROCESS_ID)) != d->pid ||
+      spa_streq(prop(n, "node.dont-move"), "true"))
+    return false;
+  struct object *ports[2];
+  if (!dt_ports(s, d->source, PW_DIRECTION_OUTPUT, ports))
+    return false;
+  for (int i = 0; i < 2; i++)
+    if (d->source_ports[i].serial && !dt_ref(ports[i], d->source_ports[i]))
+      return false;
+  return true;
+}
+static bool dt_route(struct session *s, struct receipt sink) {
+  struct desktop_target *d = s->desktop;
+  struct object *n = find(s, sink.id, NODE), *out[2], *in[2];
+  if (!dt_source(s) || !dt_ref(n, sink) ||
+      !spa_streq(prop(n, PW_KEY_MEDIA_CLASS), "Audio/Sink") ||
+      !dt_ports(s, d->source, PW_DIRECTION_OUTPUT, out) ||
+      !dt_ports(s, sink, PW_DIRECTION_INPUT, in))
+    return false;
+  unsigned counts[2] = {0, 0};
+  for (size_t i = 0; i < s->count; i++) {
+    struct object *l = s->objects[i];
+    if (!l->present || l->kind != LINK || l->out_node != d->source.id)
+      continue;
+    int side = l->out_port == out[0]->id ? 0 : l->out_port == out[1]->id ? 1 : -1;
+    if (!l->info || !serial(l) || side < 0 || l->in_node != sink.id ||
+        l->in_port != in[side]->id || l->state != PW_LINK_STATE_ACTIVE)
+      return false;
+    counts[side]++;
+  }
+  return counts[0] == 1 && counts[1] == 1;
+}
+static int dt_wait(struct session *s, struct receipt sink) {
+  int64_t deadline = millis() + 5000;
+  do {
+    if (barrier(s) < 0 || barrier(s) < 0 || s->desktop->conflict || !dt_source(s)) {
+      fprintf(stderr, "desktop route wait refused: fatal=%d conflict=%d source=%d\n", s->fatal, s->desktop->conflict, dt_source(s));
+      return -1;
+    }
+    if (dt_route(s, sink))
+      return 0;
+    if (pw_loop_iterate(pw_main_loop_get_loop(s->loop), 20) < 0)
+      return -1;
+  } while (millis() < deadline);
+  return -1;
+}
+static int dt_set(struct session *s, bool present, const char *type, const char *value) {
+  struct desktop_target *d = s->desktop;
+  if (barrier(s) < 0 || d->conflict ||
+      !dt_equal(dt_entry(d, d->source.id), d->expected_present, d->expected_type, d->expected))
+    return -1;
+  d->expected_present = present;
+  snprintf(d->expected_type, sizeof(d->expected_type), "%s", present ? type : "");
+  snprintf(d->expected, sizeof(d->expected), "%s", present ? value : "");
+  if (pw_metadata_set_property(d->metadata, d->source.id, "target.object",
+      present ? type : NULL, present ? value : NULL) < 0)
+    return -1;
+  /* default metadata is implemented by another client. Core sync acknowledges
+   * our request, not that client's eventual property event. Submit only once
+   * and await the exact echo; unrelated values latch a conflict above. */
+  int64_t deadline = millis() + 2000;
+  do {
+    if (barrier(s) < 0 || d->conflict) return -1;
+    if (dt_equal(dt_entry(d, d->source.id), present, type, value)) return 0;
+    if (pw_loop_iterate(pw_main_loop_get_loop(s->loop), 20) < 0) return -1;
+  } while (millis() < deadline);
+  fprintf(stderr, "desktop metadata echo deadline exceeded\n");
+  return -1;
+}
+int bcl_desktop_sink(struct session *s, const char *owner, struct receipt *result) {
+  if (!s || !s->desktop || s->desktop->sink.serial || s->created || !label(owner) ||
+      barrier(s) < 0)
+    return -1;
+  char name[80]; snprintf(name, sizeof(name), "linx-desktop-%u", (unsigned)getpid());
+  struct pw_properties *p = pw_properties_new("factory.name", "support.null-audio-sink",
+      PW_KEY_NODE_NAME, name, PW_KEY_NODE_DESCRIPTION, "LinX desktop routing check",
+      PW_KEY_MEDIA_CLASS, "Audio/Sink", PW_KEY_OBJECT_LINGER, "false",
+      PW_KEY_NODE_AUTOCONNECT, "false", "node.virtual", "true", "node.driver", "true",
+      "state.restore-props", "false", "state.restore-target", "false",
+      "priority.session", "0", "audio.rate", "48000", "audio.channels", "2",
+      "audio.position", "[ FL FR ]", OWNER, owner,
+      "adapter.auto-port-config", "{ mode = dsp monitor = true position = preserve }", NULL);
+  if (!p) return -1;
+  struct created *c = playback_created(s, "adapter", PW_TYPE_INTERFACE_Node,
+                                      PW_VERSION_NODE, p, owner, true, NULL, NULL);
+  pw_properties_free(p);
+  if (!c || playback_ack(s, c, true, result) < 0) return -1;
+  s->desktop->sink = *result;
+  int64_t deadline = millis() + 5000;
+  struct object *ports[2];
+  do {
+    if (barrier(s) < 0 || barrier(s) < 0) return -1;
+    if (dt_ports(s, *result, PW_DIRECTION_INPUT, ports)) return 0;
+    if (pw_loop_iterate(pw_main_loop_get_loop(s->loop), 20) < 0) return -1;
+  } while (millis() < deadline);
+  return -1;
+}
+int bcl_desktop_move(struct session *s, const struct receipt *source,
+                      uint64_t client_serial, uint32_t pid,
+                      const struct receipt *original) {
+  if (!s || !s->desktop || !source || !client_serial || !original || !pid ||
+      !s->desktop->sink.serial || s->desktop->active || s->desktop->stopping ||
+      barrier(s) < 0 || barrier(s) < 0)
+    return -1;
+  struct desktop_target *d = s->desktop;
+  struct object *node = find(s, source->id, NODE);
+  uint64_t cid = node ? num(prop(node, PW_KEY_CLIENT_ID)) : 0;
+  if (!cid || cid > UINT32_MAX) return -1;
+  d->source = *source; d->client = (struct receipt){(uint32_t)cid, client_serial};
+  d->pid = pid; d->original = *original;
+  if (!dt_route(s, *original)) return -1;
+  struct object *ports[2];
+  if (!dt_ports(s, *source, PW_DIRECTION_OUTPUT, ports)) return -1;
+  for (int i = 0; i < 2; i++)
+    d->source_ports[i] = (struct receipt){ports[i]->id, serial(ports[i])};
+  struct dt_entry *prior = dt_entry(d, source->id);
+  if (prior) d->prior = *prior;
+  d->expected_present = d->prior.present;
+  snprintf(d->expected_type, sizeof(d->expected_type), "%s", d->prior.type);
+  snprintf(d->expected, sizeof(d->expected), "%s", d->prior.value);
+  d->active = true;
+  char target[32]; snprintf(target, sizeof(target), "%" PRIu64, d->sink.serial);
+  if (dt_set(s, true, "Spa:Id", target) < 0)
+    return -1;
+#ifdef BCL_TEST_FAULTS
+  if (d->fail_after_target_echo) {
+    d->fail_after_target_echo=false;
+    return -1;
+  }
+#endif
+  if (dt_wait(s, d->sink) < 0) return -1;
+  return 0;
+}
+int bcl_desktop_check(struct session *s) {
+  if (!s || !s->desktop || !s->desktop->active || barrier(s) < 0 || barrier(s) < 0 ||
+      s->desktop->conflict ||
+      !dt_equal(dt_entry(s->desktop, s->desktop->source.id), true,
+                 s->desktop->expected_type, s->desktop->expected) ||
+      !dt_route(s, s->desktop->sink))
+    return -1;
+  return 0;
+}
+int bcl_desktop_stop(struct session *s) {
+  if (!s || !s->desktop || !s->desktop->active) return 0;
+  struct desktop_target *d = s->desktop;
+  if (d->stopping) return -1;
+  d->stopping = true;
+  if (bcl_desktop_unbridge(s) < 0) return -1;
+  if (s->fatal || d->conflict || !dt_source(s) || !dt_ref(find(s, d->original.id, NODE), d->original))
+    return -1;
+  char target[32]; snprintf(target, sizeof(target), "%" PRIu64, d->original.serial);
+  if (dt_set(s, true, "Spa:Id", target) < 0 || dt_wait(s, d->original) < 0 ||
+      dt_set(s, d->prior.present, d->prior.type, d->prior.value) < 0 ||
+      dt_wait(s, d->original) < 0)
+    return -1;
+  d->active = false;
+  return 0;
+}
+int bcl_desktop_release_sink(struct session *s) {
+  if (!s || !s->desktop || s->desktop->active || !s->desktop->sink.serial)
+    return -1;
+  struct created *c = s->created;
+  while (c && (c->id != s->desktop->sink.id || c->serial != s->desktop->sink.serial)) c=c->next;
+  if (!c || !c->bound || c->id != s->desktop->sink.id ||
+      c->serial != s->desktop->sink.serial || !c->proxy)
+    return -1;
+  spa_hook_remove(&c->listener); spa_hook_remove(&c->info_listener);
+  pw_proxy_destroy(c->proxy); c->proxy = NULL;
+  if (barrier(s) < 0 || barrier(s) < 0 || find(s, c->id, NODE))
+    return -1;
+  return 0;
+}
+static bool dt_bridge_graph(struct session *s) {
+  struct desktop_target *d=s->desktop;
+  struct object *hardware=find(s,d->hardware.id,NODE), *inputs[8];
+  struct object *adapter=find(s,d->adapter.node.id,NODE);
+  if (!dt_ref(hardware,d->hardware) || !dt_route(s,d->sink) ||
+      !dt_ref(adapter,d->adapter.node) || !d->adapter_proxy ||
+      !d->adapter_proxy->proxy || d->adapter_proxy->removed || d->adapter_proxy->error ||
+      !playback_ports(s,&d->adapter.node,inputs)) return false;
+  for (int i=0;i<8;i++)
+    if (!dt_ref(inputs[i],d->adapter.ports[i])) return false;
+  unsigned count=0;
+  for (size_t i=0;i<s->count;i++) {
+    struct object *l=s->objects[i];
+    if (!l->present || l->kind!=LINK) continue;
+    if (l->in_node==d->hardware.id) return false;
+    if (l->in_node!=d->adapter.node.id) continue;
+    struct created *c=NULL;
+    for (int j=0;j<2;j++)
+      if (d->bridge[j] && d->bridge[j]->id==l->id && d->bridge[j]->serial==serial(l)) c=d->bridge[j];
+    if (!c || !c->proxy || c->removed || c->error || !l->info || l->state!=PW_LINK_STATE_ACTIVE ||
+        l->out_node!=d->sink.id || l->out_port!=c->out_port || l->in_port!=c->in_port)
+      return false;
+    count++;
+  }
+  return count==2;
+}
+int bcl_desktop_bridge(struct session *s, const struct receipt *hardware,
+                        uint32_t card, const char *owner, struct receipt *links,
+                        struct receipt *adapter_result) {
+  if (!s || !s->desktop || !hardware || !links || !label(owner) || card>255 ||
+      s->desktop->hardware.serial || bcl_desktop_check(s)<0) return -1;
+  struct desktop_target *d=s->desktop;
+  struct object *node=find(s,hardware->id,NODE);
+  char path[32],path0[32];snprintf(path,sizeof(path),"hw:%u",card);snprintf(path0,sizeof(path0),"hw:%u,0",card);
+  if (!dt_ref(node,*hardware) || !spa_streq(prop(node,PW_KEY_MEDIA_CLASS),"Audio/Sink") ||
+      !(spa_streq(prop(node,"api.alsa.path"),path) || spa_streq(prop(node,"api.alsa.path"),path0))) return -1;
+  for (size_t i=0;i<s->count;i++) {
+    struct object *l=s->objects[i];
+    if (l->present && l->kind==LINK && l->in_node==node->id) return -1;
+  }
+  struct object *out[2]={NULL,NULL};unsigned input_count=0;
+  const char *channels[]={"FL","FR","RL","RR","FC","LFE","SL","SR"};
+  bool seen[8]={false};
+  for (size_t i=0;i<s->count;i++) {
+    struct object *p=s->objects[i];
+    if (!p->present || p->kind!=PORT) continue;
+    uint64_t parent=num(prop(p,PW_KEY_NODE_ID));const char *ch=prop(p,PW_KEY_AUDIO_CHANNEL);
+    if (parent==d->sink.id && p->direction==PW_DIRECTION_OUTPUT) {
+      int side=spa_streq(ch,"FL")?0:spa_streq(ch,"FR")?1:-1;
+      if (!p->info || !serial(p) || side<0 || out[side] || !spa_streq(prop(p,PW_KEY_PORT_MONITOR),"true")) return -1;
+      out[side]=p;
+    }
+    if (parent==hardware->id && p->direction==PW_DIRECTION_INPUT) {
+      int side=-1;for (int j=0;j<8;j++) if (spa_streq(ch,channels[j])) side=j;
+      if (!p->info || !serial(p) || side<0 || seen[side]) return -1;
+      seen[side]=true;input_count++;
+    }
+  }
+  if (input_count!=8 || !out[0] || !out[1] || !adapter_result) return -1;
+  d->hardware=*hardware;
+  struct object *inputs[8];
+  int created=playback_adapter_create(s,d->sink.id,owner,card,0,true,&d->adapter,inputs);
+  for (struct created *c=s->created;c;c=c->next)
+    if (c->bound && c->id==d->adapter.node.id && c->serial==d->adapter.node.serial)
+      d->adapter_proxy=c;
+  if (created<0 || !d->adapter_proxy) return -1;
+  *adapter_result=d->adapter.node;
+  for (int i=0;i<2;i++) {
+    struct pw_properties *p=pw_properties_new(PW_KEY_OBJECT_LINGER,"false",PW_KEY_LINK_PASSIVE,"false",OWNER,owner,NULL);
+    if (!p) return -1;
+    d->bridge[i]=playback_created(s,"link-factory",PW_TYPE_INTERFACE_Link,PW_VERSION_LINK,p,owner,false,out[i],inputs[i]);
+    pw_properties_free(p);
+    if (!d->bridge[i] || playback_ack(s,d->bridge[i],false,&links[i])<0) return -1;
+  }
+  return dt_bridge_graph(s)?0:-1;
+}
+int bcl_desktop_bridge_check(struct session *s) {
+  return bcl_desktop_check(s)==0 && dt_bridge_graph(s)?0:-1;
+}
+int bcl_desktop_adapter_ready(struct session *s) {
+  if (bcl_desktop_bridge_check(s)<0) return -1;
+  struct created *c=s->desktop->adapter_proxy;
+  struct object *n=find(s,s->desktop->adapter.node.id,NODE);
+  if (!c || !n || !c->info || !n->info) return -1;
+  if (c->state==PW_NODE_STATE_RUNNING && n->state==PW_NODE_STATE_RUNNING) return 1;
+  if ((c->state==PW_NODE_STATE_IDLE || c->state==PW_NODE_STATE_SUSPENDED) &&
+      (n->state==PW_NODE_STATE_IDLE || n->state==PW_NODE_STATE_SUSPENDED)) return 0;
+  fprintf(stderr,"desktop adapter readiness refused: retained=%d observed=%d\n",c->state,n->state);
+  return -1;
+}
+int bcl_desktop_unbridge(struct session *s) {
+  if (!s || !s->desktop) return -1;
+  struct desktop_target *d=s->desktop;
+  for (int i=0;i<2;i++) {
+    struct created *c=d->bridge[i];
+    if (!c || !c->proxy) continue;
+    spa_hook_remove(&c->listener);spa_hook_remove(&c->info_listener);
+    pw_proxy_destroy(c->proxy);c->proxy=NULL;
+  }
+  if (d->adapter_proxy && d->adapter_proxy->proxy) {
+    struct created *c=d->adapter_proxy;
+    spa_hook_remove(&c->listener);spa_hook_remove(&c->info_listener);
+    pw_proxy_destroy(c->proxy);c->proxy=NULL;
+  }
+  if (!d->hardware.serial) return 0;
+  if (barrier(s)<0 || barrier(s)<0) return -1;
+  for (int i=0;i<2;i++) {
+    struct created *c=d->bridge[i];
+    struct object *o=c?find(s,c->id,LINK):NULL;
+    if (o && serial(o)==c->serial) return -1;
+  }
+  if (dt_ref(find(s,d->adapter.node.id,NODE),d->adapter.node)) return -1;
+  return 0;
+}
+#ifdef BCL_TEST_FAULTS
+int bcl_desktop_test_fail_after_target_echo(struct session *s) {
+  if (!s || !s->desktop || s->desktop->active || s->created) return -1;
+  s->desktop->fail_after_target_echo=true;
+  return 0;
+}
+int bcl_desktop_test_core_identity(void) {
+  struct desktop_target desktop={0};
+  struct session s={.desktop=&desktop,.cookie=7};
+  snprintf(s.name,sizeof(s.name),"test-core");
+  struct spa_dict_item item={PW_KEY_APP_PROCESS_ID,"41"};
+  struct spa_dict props=SPA_DICT_INIT(&item,1);
+  struct pw_core_info info={.cookie=7,.name="test-core",.props=&props};
+  core_info(&s,&info);
+  if (s.fatal || s.daemon_pid!=41 || !s.core_seen) return -1;
+  /* Same daemon is stable even when the authenticated socket peer differs. */
+  core_info(&s,&info);
+  if (s.fatal || s.daemon_pid!=41) return -1;
+  item.value="42";core_info(&s,&info);
+  if (!s.fatal) return -1;
+  for (int mode=0;mode<4;mode++) {
+    memset(&s,0,sizeof(s));s.desktop=&desktop;s.cookie=7;
+    snprintf(s.name,sizeof(s.name),"test-core");
+    const char *invalid[]={"0","4294967296","garbage",""};item.value=invalid[mode];
+    core_info(&s,&info);if (!s.fatal) return -1;
+  }
+  return 7;
+}
+int bcl_desktop_test_metadata_guards(void) {
+  int checks = 0;
+  for (int mode = 0; mode < 6; mode++) {
+    struct session s = {0}; s.desktop = desktop_new();
+    if (!s.desktop) return -1;
+    struct desktop_target *d = s.desktop;
+    d->active = true; d->source.id = 7; d->expected_present = true;
+    snprintf(d->expected_type, sizeof(d->expected_type), "Spa:Id");
+    snprintf(d->expected, sizeof(d->expected), "123");
+    if (mode == 0) dt_property(&s, 7, "target.object", "Spa:Id", "123");
+    if (mode == 1) dt_property(&s, 7, "target.object", "Spa:Id", "124");
+    if (mode == 2) dt_property(&s, 7, "target.object", NULL, NULL);
+    if (mode == 3) dt_property(&s, 0, "default.audio.sink", "Spa:String:JSON", "{}");
+    if (mode == 4) dt_property(&s, 7, "target.node", "Spa:Id", "9");
+    if (mode == 5) dt_property(&s, 8, "target.object", "Spa:Id", "124");
+    bool expected = mode > 0 && mode < 5;
+    if (d->conflict != expected || (expected && bcl_desktop_stop(&s) != -1)) {
+      free(d); return -1;
+    }
+    free(d); checks++;
+  }
+  return checks;
+}
+#endif

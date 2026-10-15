@@ -3,6 +3,9 @@
  * can be destroyed. Public PipeWire headers supply all ABI definitions. */
 #include <inttypes.h>
 #include <pipewire/pipewire.h>
+#ifdef BCL_DESKTOP_TARGET
+#include <pipewire/extensions/metadata.h>
+#endif
 #include <spa/utils/string.h>
 #include <stdarg.h>
 #include <sys/socket.h>
@@ -17,6 +20,7 @@
 #define OWNER "beacn.link.owner"
 enum { NODE = 1, PORT, LINK, CLIENT };
 struct session;
+struct desktop_target;
 struct object {
   struct session *s;
   uint32_t id, kind;
@@ -49,7 +53,9 @@ struct session {
   uint64_t removed_stale_binds;
   struct created *created, *pending;
   bool deleting, fatal, core_seen, catalog_only;
+  struct desktop_target *desktop;
   uint32_t peer_pid;
+  uint32_t daemon_pid;
   uint32_t cookie;
   char name[129];
   int seq, done;
@@ -72,6 +78,13 @@ struct receipt {
   uint32_t id;
   uint64_t serial;
 };
+#ifdef BCL_DESKTOP_TARGET
+static bool desktop_global(struct session *, uint32_t, uint32_t, const char *, uint32_t, const struct spa_dict *);
+static struct desktop_target *desktop_new(void);
+static void desktop_free(struct session *);
+static void desktop_removed(struct session *, uint32_t);
+int bcl_desktop_stop(struct session *);
+#endif
 
 static uint64_t num(const char *s) {
   if (!s || !*s)
@@ -158,6 +171,10 @@ static void global(void *data, uint32_t id, uint32_t permissions,
   uint32_t v;
   const void *events;
   (void)permissions;
+#ifdef BCL_DESKTOP_TARGET
+  if (s->desktop && desktop_global(s, id, permissions, type, version, props))
+    return;
+#endif
   if (s->catalog_only && !spa_streq(type, PW_TYPE_INTERFACE_Node) &&
       !spa_streq(type, PW_TYPE_INTERFACE_Client))
     return;
@@ -231,6 +248,9 @@ static void global(void *data, uint32_t id, uint32_t permissions,
 }
 static void global_remove(void *data, uint32_t id) {
   struct session *s = data;
+#ifdef BCL_DESKTOP_TARGET
+  if (s->desktop) desktop_removed(s, id);
+#endif
   for (size_t i = 0; i < s->count; i++)
     if (s->objects[i]->id == id && s->objects[i]->present)
       s->objects[i]->present = false;
@@ -241,6 +261,16 @@ static const struct pw_registry_events registry_events = {
     .global_remove = global_remove};
 static void core_info(void *data, const struct pw_core_info *info) {
   struct session *s = data;
+  if (s->desktop) {
+    /* A socket-activated listener's SO_PEERCRED can identify the user service
+     * manager. Pin the actual daemon separately from the authenticated socket
+     * peer; never infer the PCM owner from its status file. */
+    const char *pid = info->props ? spa_dict_lookup(info->props, PW_KEY_APP_PROCESS_ID) : NULL;
+    uint64_t value = num(pid);
+    if ((!s->core_seen && (!value || value > UINT32_MAX)) ||
+        (value && s->daemon_pid && value != s->daemon_pid)) s->fatal = true;
+    if (value && value <= UINT32_MAX) s->daemon_pid = (uint32_t)value;
+  }
   if (s->catalog_only && !s->core_seen) {
     if (!label(info->name)) {
       s->fatal = true;
@@ -335,6 +365,13 @@ static int barrier(struct session *s) {
 void bcl_close(struct session *s) {
   if (!s)
     return;
+#ifdef BCL_DESKTOP_TARGET
+  if (s->desktop) {
+    if (bcl_desktop_stop(s) < 0)
+      fprintf(stderr, "desktop target release unverified\n");
+    desktop_free(s);
+  }
+#endif
   if (s->removed_stale_binds)
     fprintf(stderr, "native removed metadata binds=%" PRIu64 "\n",
             s->removed_stale_binds);
@@ -383,7 +420,7 @@ void bcl_close(struct session *s) {
 }
 static struct session *open_session(int fd, const char *config, uint32_t cookie,
                                     const char *name, uint32_t server_pid,
-                                    bool catalog_only) {
+                                    bool catalog_only, bool desktop) {
   struct ucred peer;
   socklen_t len = sizeof(peer);
   if ((!catalog_only && !label(name)) ||
@@ -414,6 +451,19 @@ static struct session *open_session(int fd, const char *config, uint32_t cookie,
   }
   s->cookie = cookie;
   s->catalog_only = catalog_only;
+#ifdef BCL_DESKTOP_TARGET
+  if (desktop && !(s->desktop = desktop_new())) {
+    close(fd);
+    free(s);
+    return NULL;
+  }
+#else
+  if (desktop) {
+    close(fd);
+    free(s);
+    return NULL;
+  }
+#endif
   s->peer_pid = peer.pid;
   snprintf(s->name, sizeof(s->name), "%s", name);
   s->done = -1;
@@ -436,7 +486,7 @@ static struct session *open_session(int fd, const char *config, uint32_t cookie,
   s->core = pw_context_connect_fd(
       s->context, fd,
       pw_properties_new(PW_KEY_APP_NAME,
-                        catalog_only ? "Beacn LinX catalog" : "beacn-private-executor", NULL), 0);
+                        catalog_only ? "Beacn LinX catalog" : desktop ? "LinX desktop target" : "beacn-private-executor", NULL), 0);
   if (!s->core) {
     bcl_close(s);
     return NULL;
@@ -458,10 +508,10 @@ static struct session *open_session(int fd, const char *config, uint32_t cookie,
 }
 struct session *bcl_open(int fd, const char *config, uint32_t cookie,
                          const char *name, uint32_t server_pid) {
-  return open_session(fd, config, cookie, name, server_pid, false);
+  return open_session(fd, config, cookie, name, server_pid, false, false);
 }
 struct session *bcl_open_catalog(int fd, const char *config) {
-  return open_session(fd, config, 0, "", 0, true);
+  return open_session(fd, config, 0, "", 0, true, false);
 }
 static int append(char **buf, size_t *left, const char *fmt, ...) {
   va_list ap;
@@ -740,7 +790,7 @@ int bcl_perform(struct session *s, int deleting, const struct endpoint *out,
                 const struct endpoint *in, const char *owner,
                 const struct receipt *old, struct receipt *result) {
   /* Catalog connections have no mutation capability, even through this FFI. */
-  if (s->catalog_only)
+  if (s->catalog_only || s->desktop)
     return 1;
 #ifdef BCL_TEST_FAULTS
   /* Consume even on a local refusal: a test fault cannot leak into recovery. */
@@ -843,4 +893,7 @@ int bcl_catalog_test_mutation_refused(struct session *s) {
 
 #ifdef BCL_NATIVE_PLAYBACK
 #include "playback.inc"
+#endif
+#ifdef BCL_DESKTOP_TARGET
+#include "desktop_target.inc"
 #endif
