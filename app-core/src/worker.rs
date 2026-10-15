@@ -20,6 +20,8 @@ pub enum Connection {
     },
     #[cfg(all(feature = "private-session-test", target_os = "linux"))]
     PrivateSession(crate::private_session::Configuration),
+    #[cfg(all(feature = "private-session-test", target_os = "linux"))]
+    ManagedPrivateSession(crate::private_session::Configuration),
     #[cfg(all(feature = "studio-session-test", target_os = "linux"))]
     StudioSession(crate::studio_session::Configuration),
 }
@@ -85,7 +87,8 @@ impl Worker {
                                 NativeCatalog::connect(runtime, core)?
                             }
                             #[cfg(feature = "private-session-test")]
-                            Connection::PrivateSession(config) => {
+                            Connection::PrivateSession(config)
+                            | Connection::ManagedPrivateSession(config) => {
                                 NativeCatalog::connect(&config.runtime, &config.core)?
                             }
                             #[cfg(feature = "studio-session-test")]

@@ -1,6 +1,46 @@
 # LinX continuation handoff
 Updated 2026-10-15 UTC. Resume development; do not restart the investigation.
 
+## Current checkpoint: managed session lifetime passes native private GUI
+
+`LinkSession::start_managed` and `Publication::managed_selected` now explicitly
+retain the existing route/transport owners until Pause, Quit or failure. Every
+cycle still needs a newer catalog observation and complete fresh route proof.
+No count sentinel enables this mode; bounded constructors still reject budgets
+outside 1..40. Counter exhaustion stops safely. Selection/core/stream changes,
+stale proof, route/control faults and failed cleanup retain the existing stop,
+no-retry and NeedsReview behavior. No ordinary desktop or hardware gate widened.
+
+The explicit private GUI mode ran two real mpv apps on native private routes 1/4
+for 96 cycles, paused with automatic connection still enabled, held the pause,
+resumed explicitly, stopped on selection change, restarted with one app, and quit
+with verified release. Whole private core, laptop desktop/settings/routes/defaults/
+volumes/mutes/state, owned configs/processes and connected USB binding matched.
+No USB I/O or physical output occurred. Source `beacn-native-source-20261015T030813Z`;
+run `beacn-managed-gui-20261015T031153Z`, complete-result SHA256
+`93fdfd7b8d908a5f449cc9bef83f273751cf1f9a21ea5a2d8000a65f344256a5`.
+
+57 focused root checks pass on Windows and Linux, plus 31 Python runner, eleven
+core and eight reference-GUI checks. Exact native binaries, production GPUI and
+explicit Studio example build. Production mapped window/read-only catalog/gray
+icon/normal close and exact desktop/state/config/USB comparison pass in
+`beacn-gui-desktop-20261015T031452Z` (journal SHA256
+`affe340fc444669b858c3a3b80844fa7ce692e0b75f9ed6f05344f2301f46c82`).
+The unchanged bounded GUI widget/session sequence also passes; its outer strict
+desktop/state comparison failed amid a pre-existing desktop stream's recreation.
+Its raw mismatch and all earlier failed setup attempts remain private; no foreign
+state was restored. See [rust-link-session.md](rust-link-session.md#managed-lifetime)
+for exact evidence boundaries and the build-interference correction.
+
+Persistent physical playback is still unfinished: Studio GUI remains explicitly
+40-cycle qualification with the external Python bridge, its 45-second bound and
+native PCM proof's 4096-check fuse. Do not select managed mode for that adapter or
+raise those limits to claim standalone acceptance. Next implement retained native
+Rust/C physical playback ownership, then qualify physical pause/failure/reconnect
+and ordinary desktop routing. Nothing needs watching or toggling now. Finish
+all builds first, then obtain fresh **start now** for any watched hardware run.
+Do not build over helper executables while a qualification is using them.
+
 ## Current checkpoint: native GUI physical Link In passed
 
 The owner explicitly replied **start now**, then **Heard tones; mpv stayed in

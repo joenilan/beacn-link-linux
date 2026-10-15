@@ -164,6 +164,15 @@ fn verified_route(
 }
 
 fn verified_mode() -> (Rc<RefCell<Journal>>, Session<Handshake<Fake>>) {
+    verified_mode_with(
+        Publication::bounded(&inventory(), 2)
+            .unwrap()
+            .with_verified_routes(),
+    )
+}
+fn verified_mode_with(
+    publication: Publication,
+) -> (Rc<RefCell<Journal>>, Session<Handshake<Fake>>) {
     let log = Rc::new(RefCell::new(Journal {
         reply: 0xAC000000u32.to_le_bytes().to_vec(),
         ..Journal::default()
@@ -173,12 +182,44 @@ fn verified_mode() -> (Rc<RefCell<Journal>>, Session<Handshake<Fake>>) {
             log: log.clone(),
             alt: 0,
         },
-        Publication::bounded(&inventory(), 2)
-            .unwrap()
-            .with_verified_routes(),
+        publication,
     )
     .unwrap();
     (log, Session::new(owner, T).unwrap())
+}
+
+#[test]
+fn managed_transport_needs_fresh_complete_proof_after_every_cycle_and_halts_on_replay() {
+    use beacn_link_protocol::session::PollPolicy;
+    for raw_refresh in [false, true] {
+        let (log, mut session) = verified_mode_with(
+            Publication::managed_selected(&inventory(), PollPolicy::Strict).unwrap(),
+        );
+        session.initialize().unwrap();
+        for generation in 2..=97 {
+            let proof = verified_route(generation, 1);
+            session.refresh_verified_publication(&proof).unwrap();
+            session.publish(proof.records()).unwrap();
+            session.poll().unwrap();
+        }
+        let submissions = log.borrow().writes.len();
+        if raw_refresh {
+            let mut newer = inventory();
+            newer.snapshot_id = 98;
+            assert!(session.refresh_publication(&newer).is_err());
+        } else {
+            assert!(session
+                .refresh_verified_publication(&verified_route(97, 1))
+                .is_err());
+        }
+        assert!(session
+            .refresh_verified_publication(&verified_route(98, 1))
+            .is_err());
+        assert!(session.publish(verified_route(98, 1).records()).is_err());
+        assert_eq!(log.borrow().writes.len(), submissions);
+        assert!(session.into_transport().close().baseline_restored);
+        assert_eq!(log.borrow().releases, 1);
+    }
 }
 
 #[test]

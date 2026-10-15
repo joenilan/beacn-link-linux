@@ -23,7 +23,7 @@ pub struct Publication {
     records: Vec<crate::Record>,
     frame: Vec<u8>,
     tracker: crate::lifecycle::InventoryTracker,
-    remaining: usize,
+    remaining: Option<usize>,
     periodic: bool,
     poll_policy: crate::session::PollPolicy,
     initialization_timeout: Duration,
@@ -65,7 +65,7 @@ impl Publication {
             records,
             frame,
             tracker,
-            remaining: 1,
+            remaining: Some(1),
             periodic: false,
             poll_policy: crate::session::PollPolicy::Strict,
             initialization_timeout: MAX_TIMEOUT,
@@ -86,7 +86,7 @@ impl Publication {
             return Err(Error::Publication);
         }
         let mut publication = Self::from_inventory(inventory)?;
-        publication.remaining = cycles;
+        publication.remaining = Some(cycles);
         publication.periodic = true;
         publication.poll_policy = policy;
         Ok(publication)
@@ -103,7 +103,22 @@ impl Publication {
             return Err(Error::Publication);
         }
         let mut publication = Self::from_roster(inventory, true)?;
-        publication.remaining = cycles;
+        publication.remaining = Some(cycles);
+        publication.periodic = true;
+        publication.poll_policy = policy;
+        publication.verified_routes = true;
+        Ok(publication)
+    }
+    /// Explicit owner-managed session, separate from every bounded constructor.
+    /// The fixed roster, device pin and complete fresh route proof remain
+    /// mandatory before every exchange. The owner must close on pause, shutdown,
+    /// or failure; this grants no discovery, retry or reconnection authority.
+    pub fn managed_selected(
+        inventory: &crate::planner::Inventory,
+        policy: crate::session::PollPolicy,
+    ) -> Result<Self, Error> {
+        let mut publication = Self::from_roster(inventory, true)?;
+        publication.remaining = None;
         publication.periodic = true;
         publication.poll_policy = policy;
         publication.verified_routes = true;
@@ -604,8 +619,14 @@ impl<B: Backend> Transport for Handshake<B> {
                     .is_ok()
                 {
                     let publication = self.publication.as_mut().expect("poll requires policy");
-                    publication.remaining -= 1;
-                    if publication.periodic && publication.remaining > 0 {
+                    let continuing = match publication.remaining.as_mut() {
+                        None => true,
+                        Some(remaining) => {
+                            *remaining -= 1;
+                            *remaining > 0
+                        }
+                    };
+                    if publication.periodic && continuing {
                         Phase::AwaitInventory
                     } else {
                         Phase::Complete

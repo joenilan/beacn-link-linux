@@ -204,3 +204,11 @@ the native GUI session. Next implement standalone Rust physical playback and
 qualify ordinary desktop/multi-app hardware behavior. Keep default
 apply disabled, Actions disabled, private evidence outside Git and [skip ci]
 checkpoints local unless the owner asks to publish.
+
+The explicit managed private-session probe now holds two native mpv routes for
+96 cycles, then verifies Pause, held automatic intent, explicit resume, selection
+loss and Quit cleanup. It stays blue during private operation and gray while
+paused. This removes the test-cycle lifetime from the reusable software session;
+normal desktop apply and the physical Studio adapter remain gated/bounded. See
+[managed lifetime](rust-link-session.md#managed-lifetime) for reproducible evidence
+and the separate bounded regression's desktop-state mismatch.

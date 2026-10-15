@@ -1,6 +1,6 @@
 use beacn_link_protocol::{
     decode_frame, decode_records, encode_frame, encode_records,
-    link_session::{LinkSession, OpenFailure, Options, Phase},
+    link_session::{LinkSession, ManagedOptions, OpenFailure, Options, Phase},
     planner::Inventory,
     routing_control::StopReason,
     session::{PollPolicy, ReceivedNamePolicy},
@@ -258,4 +258,165 @@ fn explicit_selected_gate_keeps_default_single_app_policy_and_frame_bounds() {
     invalid = inv.clone();
     invalid.applications.clear();
     assert!(Publication::bounded_selected(&invalid, 2, PollPolicy::Strict).is_err());
+}
+
+fn managed_options() -> ManagedOptions {
+    ManagedOptions {
+        poll_policy: PollPolicy::ReportRejectedMarker,
+        names: ReceivedNamePolicy::WindowsCString,
+        initialization_timeout: Duration::from_millis(500),
+    }
+}
+fn open_managed(
+    peer: ScriptedPeer,
+    inventory: &Inventory,
+    options: ManagedOptions,
+) -> Result<Handshake<ScriptedPeer>, OpenFailure> {
+    Handshake::prepare_publication(
+        peer,
+        Publication::managed_selected(inventory, options.poll_policy).unwrap(),
+    )
+    .map_err(|e| OpenFailure {
+        message: e.error.to_string(),
+        cleanup: Err("unverified setup".into()),
+    })
+}
+
+#[test]
+fn managed_session_retains_owners_beyond_test_budget_then_pause_and_fresh_restart() {
+    let (mut service, baseline, destinations, ownership) = setup();
+    let (backend, state) = backend(baseline.clone(), ownership.clone());
+    let (peer, log) = ScriptedPeer::new(vec![reply(1, 4)]).unwrap();
+    let mut session = LinkSession::default();
+    session
+        .start_managed(
+            &service,
+            destinations.clone(),
+            managed_options(),
+            || Ok(backend),
+            |i, o| open_managed(peer, i, o),
+        )
+        .unwrap();
+    for n in 2..=129 {
+        service.update(catalog(n, ROWS)).unwrap();
+        session.tick(&service).unwrap();
+    }
+    assert_eq!(session.status().phase, Phase::Running);
+    assert_eq!(session.status().completed_cycles, 128);
+    assert_eq!(session.status().cycle_limit, None);
+    assert_eq!(log.borrow().releases, 0);
+    assert_eq!(state.borrow().stops, 0);
+    assert_eq!(session.status().routes.assignments.len(), 2);
+    session.stop(StopReason::Owner).unwrap();
+    assert_eq!(log.borrow().releases, 1);
+    assert_eq!(state.borrow().stops, 1);
+    assert_eq!(state.borrow().observation.graph.links, baseline.graph.links);
+    // Restart consumes new owners, not a reset/replay of the previous handles.
+    let (next_backend, next_state) = owned::backend(baseline, ownership);
+    let (next_peer, next_log) = ScriptedPeer::new(vec![reply(4, 1)]).unwrap();
+    session
+        .start_managed(
+            &service,
+            destinations,
+            managed_options(),
+            || Ok(next_backend),
+            |i, o| open_managed(next_peer, i, o),
+        )
+        .unwrap();
+    service.update(catalog(130, ROWS)).unwrap();
+    session.tick(&service).unwrap();
+    assert_eq!(session.status().completed_cycles, 1);
+    drop(session);
+    assert_eq!(next_state.borrow().stops, 1);
+    assert_eq!(next_log.borrow().releases, 1);
+    assert!(next_state.borrow().observation.graph.links.is_empty());
+}
+
+#[test]
+fn managed_failures_after_long_operation_stop_without_more_submissions_and_block_bad_cleanup() {
+    for kind in 0..5 {
+        let (mut service, baseline, destinations, ownership) = setup();
+        let (backend, state) = backend(baseline, ownership);
+        let (peer, log) = ScriptedPeer::new(vec![reply(1, 4)]).unwrap();
+        let mut session = LinkSession::default();
+        session
+            .start_managed(
+                &service,
+                destinations.clone(),
+                managed_options(),
+                || Ok(backend),
+                |i, o| open_managed(peer, i, o),
+            )
+            .unwrap();
+        for n in 2..=65 {
+            service.update(catalog(n, ROWS)).unwrap();
+            session.tick(&service).unwrap();
+        }
+        let before = log.borrow().writes.len();
+        match kind {
+            0 => {} // stale application observation
+            1 => {
+                service.unselect(&id(1)).unwrap();
+            }
+            2 => {
+                state.borrow_mut().observation_fails = true;
+            }
+            3 => {
+                log.borrow_mut().changed = true;
+            }
+            _ => {
+                log.borrow_mut().fail_write = Some(before + 1);
+            }
+        }
+        if kind != 0 && kind != 1 {
+            service.update(catalog(66, ROWS)).unwrap();
+        }
+        assert!(session.tick(&service).is_err());
+        let stopped = log.borrow().writes.len();
+        assert!(stopped <= before + usize::from(kind == 4));
+        assert!(session.tick(&service).is_err());
+        assert_eq!(log.borrow().writes.len(), stopped);
+        assert_eq!(log.borrow().releases, 1);
+        assert_eq!(state.borrow().stops, 1);
+        assert!(state.borrow().observation.graph.links.is_empty());
+        if kind == 2 || kind == 3 {
+            assert_eq!(session.status().phase, Phase::NeedsReview);
+            assert!(session
+                .start_managed(
+                    &service,
+                    destinations,
+                    managed_options(),
+                    || panic!("unverified cleanup reopened routes"),
+                    |_, _| panic!("reopened USB")
+                )
+                .is_err());
+        } else {
+            assert_eq!(session.status().phase, Phase::Stopped);
+        }
+    }
+}
+
+#[test]
+fn managed_invalid_options_do_not_construct_owners_and_do_not_change_bounded_policy() {
+    let (service, _, destinations, _) = setup();
+    let mut session: LinkSession<owned::Fake, Handshake<ScriptedPeer>> = LinkSession::default();
+    let mut options = managed_options();
+    options.initialization_timeout = Duration::from_secs(6);
+    assert!(session
+        .start_managed(
+            &service,
+            destinations,
+            options,
+            || panic!("invalid options opened routes"),
+            |_, _| panic!("invalid options opened control")
+        )
+        .is_err());
+    assert_eq!(session.status().phase, Phase::Idle);
+    let inventory = service.inventory().unwrap();
+    for cycles in [0, 41, usize::MAX] {
+        assert!(Publication::bounded_selected(inventory, cycles, PollPolicy::Strict).is_err());
+    }
+    let mut invalid = inventory.clone();
+    invalid.applications[1].advertised_name = invalid.applications[0].advertised_name.clone();
+    assert!(Publication::managed_selected(&invalid, PollPolicy::Strict).is_err());
 }

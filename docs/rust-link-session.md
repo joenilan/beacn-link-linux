@@ -2,13 +2,84 @@
 
 Updated 2026-10-14 (qualification continued into 2026-10-15 UTC).
 
+## Managed lifetime
+
+`LinkSession::start_managed` takes explicit `ManagedOptions` and the same retained
+route/transport factories. `Publication::managed_selected` requires a fixed,
+nonempty roster and verified route publication before every exchange. This is an
+explicit alternative to the bounded APIs, which retain their 1..40 policy. Status
+uses `cycle_limit: Some(n)` for a bounded run and `None` for a managed run; phase
+must also be read because Idle has no budget. The completed counter uses checked
+addition. Stop/Drop still close routes before consuming the transport.
+
+Managed operation has no automatic reopen, new-process rebinding, transfer retry
+or permission to bypass stale observations. Every tick reuses the existing
+ApplicationService, route verification, epoch and acknowledgment owners. Failed
+cleanup blocks both bounded and managed starts. The owner must keep observing and
+call check/tick/stop; this API is not an independent watchdog or hotplug policy.
+
+The private worker exposes this only through explicit
+`Connection::ManagedPrivateSession` in qualification builds. The ordinary app
+continues read-only discovery. The existing Studio adapter remains bounded and
+uses neither new managed constructor. Its external physical bridge and active-PCM
+check budget remain unchanged; this software milestone is not continuous physical
+playback acceptance.
+
+To exercise the managed GUI sequence, build the explicit `ui-qualification`
+`interface_probe` example and use the existing authorized no-USB
+`routing-probe --application-mpv --catalog-service-check ... --gui-check ...`
+harness with `LINX_MANAGED_PRIVATE_GUI_TEST=1`. This requires its owned core,
+explicit routing authorization and private display, just like the bounded GUI
+probe. Normal app startup does not read this variable. The harness allows 85
+seconds for this sequence, independently of the session's lifetime. No physical
+budget is raised.
+
+Qualified source `beacn-native-source-20261015T030813Z`; native managed run
+`beacn-managed-gui-20261015T031153Z` passes two real mpv apps, routes 1/4 and at
+least 96 cycles before Pause, pause held while automatic remains enabled,
+explicit resume, selection-change stop, restart with one app and Quit while
+running. Both cleanup owners verify release. The complete original private core,
+desktop/settings/routes/defaults/volumes/mutes/state, owned configs/processes and
+connected USB binding match afterward. Complete-result SHA256
+`93fdfd7b8d908a5f449cc9bef83f273751cf1f9a21ea5a2d8000a65f344256a5`;
+service journal SHA256
+`74e7b36e14d563d47c40820687334e2df8e658d208cfeb12c75ac92a4a6d0a29`.
+Native GUI running/paused screenshots were inspected. No USB or physical audio
+occurred in these checks.
+
+Four new root checks exercise 128-cycle retention/pause/fresh-owner restart/Drop,
+faults after 64 cycles, invalid managed policy and unchanged bounded limits, plus
+96-cycle transport operation followed by stale-proof or raw-inventory refusal.
+The focused root suite has 57 passing checks on Windows and Linux; eleven core,
+eight reference GUI and 31 Python runner checks also pass. Native production and
+Studio qualification builds pass. Production window/catalog/gray-icon/normal-close
+and exact desktop/settings/config/USB comparison pass separately.
+
+Earlier evidence is retained without converting failures to passes. The first
+probe used two identical mpv wire names and was correctly refused before session
+start. A concurrent default-feature root test build then replaced the native
+catalog helper during a later run: its 96-cycle GUI sequence passed but subsequent
+CLI checks correctly reported native discovery unavailable. Rebuilding the helper
+and running without concurrent builds produced the complete passing run above.
+Never overwrite qualification executables while their owners are running.
+
+The bounded GUI regression `beacn-gui-20261015T031457Z` passes its full widget/
+route/session sequence and verified release, with all owned processes stopped
+and original private core restored. Its outer desktop/state comparison is **not
+exact**: a stream already on the desktop before the probe was recreated with new
+node/port/link identities, and persistent state differed at the run boundary.
+The first failed setup run also has desktop/state drift. Later comparisons are
+not substituted for those mismatches. No foreign settings/routes were restored
+and the strict comparator remains unchanged. The managed and production runs
+above each have their own exact matching comparisons.
+
 ## Session ownership
 
 `LinkSession` joins the existing ApplicationService, PublicationEpoch,
 RoutingControl, Session and guarded Handshake owners. It takes explicit route
 and transport factories; constructing it opens nothing. Start validates the fixed
 selected roster, obtains an owned route lease, then initializes the transport.
-Every bounded cycle requires a newer catalog observation and fresh complete route
+Every cycle requires a newer catalog observation and fresh complete route
 proof before publication. Received assignments pass through the existing planner,
 executor, acknowledgment and route-verification path. Only verified data is
 published on the next cycle. NoPayload/rejected/blocked records do not infer unroute.

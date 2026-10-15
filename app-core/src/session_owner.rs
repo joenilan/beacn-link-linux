@@ -6,14 +6,23 @@ use beacn_link_protocol::{
 
 pub enum Owner {
     Disabled(Status),
-    Private(private_session::Configuration, private_session::Session),
+    Private(
+        private_session::Configuration,
+        private_session::Session,
+        bool,
+    ),
     #[cfg(feature = "studio-session-test")]
     Studio(crate::studio_session::Session),
 }
 impl Owner {
     pub fn new(connection: &Connection) -> Self {
         match connection {
-            Connection::PrivateSession(config) => Self::Private(config.clone(), Default::default()),
+            Connection::PrivateSession(config) => {
+                Self::Private(config.clone(), Default::default(), false)
+            }
+            Connection::ManagedPrivateSession(config) => {
+                Self::Private(config.clone(), Default::default(), true)
+            }
             #[cfg(feature = "studio-session-test")]
             Connection::StudioSession(config) => {
                 Self::Studio(crate::studio_session::Session::new(config.clone()))
@@ -30,7 +39,7 @@ impl Owner {
     pub fn status(&self) -> &Status {
         match self {
             Self::Disabled(status) => status,
-            Self::Private(_, link) => link.status(),
+            Self::Private(_, link, _) => link.status(),
             #[cfg(feature = "studio-session-test")]
             Self::Studio(link) => link.status(),
         }
@@ -38,7 +47,10 @@ impl Owner {
     pub fn start(&mut self, service: &ApplicationService) -> Result<(), String> {
         match self {
             Self::Disabled(_) => Err("Device connection is not enabled in this preview.".into()),
-            Self::Private(config, link) => private_session::start(link, service, config),
+            Self::Private(config, link, true) => {
+                private_session::start_managed(link, service, config)
+            }
+            Self::Private(config, link, false) => private_session::start(link, service, config),
             #[cfg(feature = "studio-session-test")]
             Self::Studio(link) => link.start(service),
         }
@@ -46,7 +58,7 @@ impl Owner {
     pub fn check(&mut self, service: &ApplicationService) -> Result<(), String> {
         match self {
             Self::Disabled(_) => Ok(()),
-            Self::Private(_, link) => link.check(service),
+            Self::Private(_, link, _) => link.check(service),
             #[cfg(feature = "studio-session-test")]
             Self::Studio(link) => link.check(service),
         }
@@ -54,7 +66,7 @@ impl Owner {
     pub fn tick(&mut self, service: &ApplicationService) -> Result<(), String> {
         match self {
             Self::Disabled(_) => Ok(()),
-            Self::Private(_, link) => link.tick(service),
+            Self::Private(_, link, _) => link.tick(service),
             #[cfg(feature = "studio-session-test")]
             Self::Studio(link) => link.tick(service),
         }
@@ -62,7 +74,7 @@ impl Owner {
     pub fn stop(&mut self, reason: StopReason) -> Result<(), String> {
         match self {
             Self::Disabled(_) => Ok(()),
-            Self::Private(_, link) => link.stop(reason),
+            Self::Private(_, link, _) => link.stop(reason),
             #[cfg(feature = "studio-session-test")]
             Self::Studio(link) => link.stop(reason),
         }

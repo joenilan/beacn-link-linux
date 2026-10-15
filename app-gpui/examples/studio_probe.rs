@@ -59,6 +59,7 @@ fn main() {
             second: String::new(),
             root,
             studio: true,
+            managed: false,
         },
     );
 }

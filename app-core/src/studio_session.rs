@@ -349,7 +349,7 @@ impl Session {
     pub fn tick(&mut self, service: &ApplicationService) -> Result<(), String> {
         // Close physical playback before the last two publication cycles and
         // before the session's bounded completion restores the idle USB profile.
-        if self.status().completed_cycles + 2 >= self.status().cycle_limit {
+        if self.status().completed_cycles + 2 >= self.config.routing.cycles {
             let stopped = self.bridge.borrow_mut().stop();
             if let Err(error) = stopped {
                 let _ = self.link.stop(StopReason::OperationFailed(error.clone()));
@@ -372,7 +372,7 @@ impl Session {
         eprintln!("STUDIO reply={}", status.last_reply.unwrap_or("none"));
         if self.config.physical
             && status.phase == Phase::Running
-            && status.completed_cycles + 8 < status.cycle_limit
+            && status.completed_cycles + 8 < self.config.routing.cycles
             && status.routes.assignments.len() == 1
             && status
                 .routes

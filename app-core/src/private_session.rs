@@ -2,7 +2,7 @@
 use beacn_link_protocol::{
     catalog::ApplicationService,
     executor::Destination,
-    link_session::{LinkSession, OpenFailure, Options},
+    link_session::{LinkSession, ManagedOptions, OpenFailure, Options},
     native_routing_lease::NativeRoutingLease,
     scripted_peer::{Reply, ScriptedPeer},
     session::{PollPolicy, ReceivedNamePolicy},
@@ -25,6 +25,23 @@ pub fn start(
     session: &mut Session,
     service: &ApplicationService,
     config: &Configuration,
+) -> Result<(), String> {
+    start_with(session, service, config, false)
+}
+/// No USB or physical playback: exercise the production session lifetime with
+/// real retained private-core routing and an explicitly scripted peer.
+pub fn start_managed(
+    session: &mut Session,
+    service: &ApplicationService,
+    config: &Configuration,
+) -> Result<(), String> {
+    start_with(session, service, config, true)
+}
+fn start_with(
+    session: &mut Session,
+    service: &ApplicationService,
+    config: &Configuration,
+    managed: bool,
 ) -> Result<(), String> {
     if service.current().is_none_or(|c| {
         c.core
@@ -49,47 +66,65 @@ pub fn start(
             assignment: Assignment::from_byte(if n % 2 == 0 { 1 } else { 4 }),
         })
         .collect();
-    session.start(
-        service,
-        config.destinations.clone(),
-        Options {
-            cycles: config.cycles,
-            poll_policy: PollPolicy::ReportRejectedMarker,
-            names: ReceivedNamePolicy::WindowsCString,
-            initialization_timeout: Duration::from_millis(500),
-        },
-        || {
-            NativeRoutingLease::connect(
-                &config.runtime,
-                &config.core,
-                config.cookie,
-                config.server,
-                bindings,
-                config.owner.clone(),
-            )
-        },
-        |inventory, options| {
-            let (peer, _) =
-                ScriptedPeer::new(vec![Reply::Records(records)]).map_err(|message| {
-                    OpenFailure {
-                        message,
-                        cleanup: Ok(()),
-                    }
-                })?;
-            let publication =
-                Publication::bounded_selected(inventory, options.cycles, options.poll_policy)
-                    .map_err(|e| OpenFailure {
-                        message: e.to_string(),
-                        cleanup: Ok(()),
-                    })?;
-            Handshake::prepare_publication(peer, publication).map_err(|e| OpenFailure {
-                message: e.error.to_string(),
-                cleanup: if e.cleanup.baseline_restored {
-                    Ok(())
-                } else {
-                    Err("scripted claim cleanup not verified".into())
-                },
-            })
-        },
-    )
+    let routes = || {
+        NativeRoutingLease::connect(
+            &config.runtime,
+            &config.core,
+            config.cookie,
+            config.server,
+            bindings,
+            config.owner.clone(),
+        )
+    };
+    let transport = |inventory: &beacn_link_protocol::planner::Inventory, policy| {
+        let (peer, _) =
+            ScriptedPeer::new(vec![Reply::Records(records)]).map_err(|message| OpenFailure {
+                message,
+                cleanup: Ok(()),
+            })?;
+        let publication = if managed {
+            Publication::managed_selected(inventory, policy)
+        } else {
+            Publication::bounded_selected(inventory, config.cycles, policy)
+        }
+        .map_err(|e| OpenFailure {
+            message: e.to_string(),
+            cleanup: Ok(()),
+        })?;
+        Handshake::prepare_publication(peer, publication).map_err(|e| OpenFailure {
+            message: e.error.to_string(),
+            cleanup: if e.cleanup.baseline_restored {
+                Ok(())
+            } else {
+                Err("scripted claim cleanup not verified".into())
+            },
+        })
+    };
+    let policies = ManagedOptions {
+        poll_policy: PollPolicy::ReportRejectedMarker,
+        names: ReceivedNamePolicy::WindowsCString,
+        initialization_timeout: Duration::from_millis(500),
+    };
+    if managed {
+        session.start_managed(
+            service,
+            config.destinations.clone(),
+            policies,
+            routes,
+            |inventory, options| transport(inventory, options.poll_policy),
+        )
+    } else {
+        session.start(
+            service,
+            config.destinations.clone(),
+            Options {
+                cycles: config.cycles,
+                poll_policy: policies.poll_policy,
+                names: policies.names,
+                initialization_timeout: policies.initialization_timeout,
+            },
+            routes,
+            |inventory, options| transport(inventory, options.poll_policy),
+        )
+    }
 }

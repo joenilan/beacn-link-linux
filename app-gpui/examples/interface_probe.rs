@@ -30,6 +30,7 @@ fn main() {
     unsafe {
         std::env::set_var("LINX_PRIVATE_GUI_EVIDENCE", &root);
     }
+    let managed = std::env::var("LINX_MANAGED_PRIVATE_GUI_TEST").as_deref() == Ok("1");
     let config = Configuration {
         runtime: PathBuf::from(&args[5]),
         core: args[6].clone(),
@@ -40,12 +41,17 @@ fn main() {
         cycles: 30,
     };
     beacn_linx_gpui::ui::run_qualification(
-        Connection::PrivateSession(config),
+        if managed {
+            Connection::ManagedPrivateSession(config)
+        } else {
+            Connection::PrivateSession(config)
+        },
         beacn_linx_gpui::qualification::Configuration {
             first: args[2].clone(),
             second: args[3].clone(),
             root,
             studio: false,
+            managed,
         },
     );
 }
