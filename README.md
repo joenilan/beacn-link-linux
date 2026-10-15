@@ -33,6 +33,12 @@ pair, with original-output restoration. An explicit [desktop publication and GUI
 also passes real desktop Firefox assignment, audio, automatic connection and Pause
 with restored output/state. Normal startup remains gated; broader desktop support,
 assignment continuity and an installed standalone app remain unfinished.
+An explicit `studio` build of the actual GPUI executable now provides `--studio`:
+native device discovery, one selected stereo desktop app, first Link In and a
+session retained until Pause/Quit/failure. It has been built and opened on Debian
+for direct owner testing; this managed main executable has no new physical
+acceptance yet. See [the current handoff](docs/HANDOFF.md). Default startup stays
+read-only; broader app/pair support and automatic hotplug remain unfinished.
 The earlier egui preview remains available for comparison. The primary UI also has
 a saved Connect automatically toggle, waiting/paused states and read-only discovery
 recovery. Automatic session tests use owned private cores; physical GUI connection

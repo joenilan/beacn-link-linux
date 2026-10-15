@@ -96,9 +96,12 @@ pub(crate) struct PinnedPlayback {
     last: Option<(u64, Instant)>,
     first: Option<u64>,
     checks: u32,
+    managed: bool,
     rejection: Option<&'static str>,
 }
 impl PinnedPlayback {
+    #[cfg(feature = "native-desktop-target")]
+    pub(crate) fn manage_until_stop(&mut self) { self.managed = true; }
     pub(crate) fn pin(sysfs: &Path, pid: u32) -> Result<Self, Failure> {
         if pid == 0 {
             return Err(());
@@ -151,6 +154,7 @@ impl PinnedPlayback {
             last: None,
             first: None,
             checks: 0,
+            managed: false,
             rejection: None,
         })
     }
@@ -242,7 +246,7 @@ impl PinnedPlayback {
         self.checks = self
             .checks
             .checked_add(1)
-            .filter(|n| *n <= 4096)
+            .filter(|n| self.managed || *n <= 4096)
             .ok_or(())?;
         Ok(())
     }
@@ -361,6 +365,7 @@ mod tests {
             last: None,
             first: None,
             checks: 0,
+            managed: false,
             rejection: None,
         };
         #[cfg(feature = "native-playback")]
@@ -401,6 +406,14 @@ mod tests {
             );
         }
         assert!(proof.validate().is_ok());
+        #[cfg(feature = "native-desktop-target")]
+        {
+            proof.checks = 4096;
+            assert!(proof.validate().is_err(), "bounded PCM observation fuse stays enforced");
+            proof.manage_until_stop();
+            assert!(proof.validate().is_ok(), "explicit app lifetime can pass the test fuse");
+            assert_eq!(proof.checks, 4097);
+        }
         #[cfg(feature = "native-playback")]
         {
             let diagnostic = proof.diagnostic();

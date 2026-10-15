@@ -134,6 +134,17 @@ impl Publication {
         p.desktop = true;
         Ok(p)
     }
+    /// App-owned desktop lifetime. Still requires a current sealed desktop proof
+    /// before every publish; neither raw inventory nor private receipts qualify.
+    #[cfg(all(feature = "native-desktop-target", target_os = "linux"))]
+    pub fn managed_desktop(
+        inventory: &crate::planner::Inventory,
+        policy: crate::session::PollPolicy,
+    ) -> Result<Self, Error> {
+        let mut p = Self::bounded_desktop(inventory, 1, policy)?;
+        p.remaining = None;
+        Ok(p)
+    }
     /// Explicit owner-managed session, separate from every bounded constructor.
     /// The fixed roster, device pin and complete fresh route proof remain
     /// mandatory before every exchange. The owner must close on pause, shutdown,

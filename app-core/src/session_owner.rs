@@ -24,6 +24,8 @@ impl Owner {
     pub fn new(connection: &Connection) -> Self {
         match connection {
             #[cfg(feature = "desktop-session-test")]
+            Connection::Studio => Self::Desktop(crate::desktop_session::Session::managed()),
+            #[cfg(feature = "desktop-session-test")]
             Connection::DesktopStudioSession(config) => {
                 Self::Desktop(crate::desktop_session::Session::new(config.clone()))
             }

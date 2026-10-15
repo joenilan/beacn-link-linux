@@ -335,6 +335,24 @@ static bool dt_bridge_graph(struct session *s) {
   }
   return count==2;
 }
+/* Read-only discovery on the already authenticated desktop connection. This is
+ * a candidate identity, never removal authority or permission to skip bridge checks. */
+int bcl_desktop_find_studio(struct session *s, uint32_t card, struct receipt *result) {
+  if (!s || !s->desktop || !result || card>255 || barrier(s)<0) return -1;
+  char path[32],path0[32];snprintf(path,sizeof(path),"hw:%u",card);snprintf(path0,sizeof(path0),"hw:%u,0",card);
+  struct object *selected=NULL;
+  for (size_t i=0;i<s->count;i++) {
+    struct object *n=s->objects[i];
+    if (!n->present || n->kind!=NODE || !n->info || !serial(n) ||
+        !spa_streq(prop(n,PW_KEY_MEDIA_CLASS),"Audio/Sink") ||
+        !(spa_streq(prop(n,"api.alsa.path"),path) || spa_streq(prop(n,"api.alsa.path"),path0)) ||
+        num(prop(n,"audio.channels"))!=8) continue;
+    if (selected) return -1;
+    selected=n;
+  }
+  if (!selected) return -1;
+  result->id=selected->id;result->serial=serial(selected);return 0;
+}
 int bcl_desktop_bridge(struct session *s, const struct receipt *hardware,
                         uint32_t card, const char *owner, struct receipt *links,
                         struct receipt *adapter_result) {

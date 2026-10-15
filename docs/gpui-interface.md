@@ -7,6 +7,15 @@ remain stable. This naming decision is not a trademark-clearance result.
 
 ## Application structure
 
+The actual main executable now has an opt-in `studio` build and `--studio` entry
+for direct use on the Debian desktop. Its native managed desktop owner has no
+test countdown: select one existing stereo application, Connect, assign it to
+first Link In on the streaming PC, then Pause/Quit to release. Discovery uses
+current native identities; no Python playback/session controller or qualification
+widget sequence is involved. The 23 focused native checks and real main build pass;
+direct owner hardware acceptance of this entry remains pending. Normal no-argument
+startup is still read-only. The visual port is not yet 1:1 or owner-approved.
+
 The primary interface is now `app-gpui/`, using pinned GPUI Kit 0.7.3 and its
 styled components/assets. No JavaScript shell, webview or speech feature is
 enabled. The previous egui preview is retained under `app/` for comparison and

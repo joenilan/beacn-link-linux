@@ -115,6 +115,7 @@ unsafe extern "C" {
     fn bcl_desktop_release_sink(session: *mut c_void) -> c_int;
     fn bcl_close(session: *mut c_void);
     fn bcl_desktop_daemon_pid(session: *mut c_void) -> u32;
+    fn bcl_desktop_find_studio(session: *mut c_void, card: u32, result: *mut Receipt) -> c_int;
     fn bcl_desktop_bridge(
         session: *mut c_void,
         hardware: *const Receipt,
@@ -227,6 +228,7 @@ pub struct DesktopTarget {
     bridge_links: BTreeSet<ObjectRef>,
     adapter: Option<ObjectRef>,
     physical: Option<DesktopPlayback>,
+    managed_playback: bool,
     expected_apps: Vec<crate::planner::Application>,
     proof_epoch: Rc<Cell<u64>>,
     _single_thread: PhantomData<Rc<()>>,
@@ -245,6 +247,30 @@ impl DesktopPlayback {
     }
 }
 impl DesktopTarget {
+    pub fn manage_playback_until_stop(&mut self) {
+        self.managed_playback = true;
+    }
+    /// Resolve one current Studio ALSA sink from a selected sysfs device. Read
+    /// only; the retained connection and the later bridge revalidate identity.
+    pub fn studio_hardware(&self, sysfs: &Path) -> Result<ObjectRef, String> {
+        let selected = sysfs.canonicalize().map_err(|e| e.to_string())?;
+        if !selected.starts_with("/sys/devices") { return Err("Invalid Studio sysfs path.".into()); }
+        let mut cards = Vec::new();
+        for entry in fs::read_dir("/sys/class/sound").map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let name = entry.file_name();
+            let Some(number) = name.to_str().and_then(|n| n.strip_prefix("card")).and_then(|n| n.parse::<u32>().ok()) else { continue; };
+            if entry.path().join("device").canonicalize().is_ok_and(|p| p.starts_with(&selected)) {
+                cards.push(number);
+            }
+        }
+        if cards.len() != 1 { return Err("Studio ALSA card absent or ambiguous.".into()); }
+        let mut receipt = Receipt::default();
+        if unsafe { bcl_desktop_find_studio(self.session, cards[0], &mut receipt) } != 0 {
+            return Err("Studio playback endpoint absent or ambiguous.".into());
+        }
+        Ok(receipt.into())
+    }
     #[cfg(feature = "native-test-faults")]
     pub fn fail_after_target_echo_for_test(&mut self) -> Result<(), String> {
         if unsafe { bcl_desktop_test_fail_after_target_echo(self.session) } != 0 {
@@ -379,6 +405,7 @@ impl DesktopTarget {
             bridge_links: Default::default(),
             adapter: None,
             physical: None,
+            managed_playback: false,
             expected_apps,
             proof_epoch: Rc::new(Cell::new(0)),
             _single_thread: PhantomData,
@@ -532,8 +559,9 @@ impl DesktopTarget {
         {
             return Err("Selected desktop Studio identity refused.".into());
         }
-        let proof = PinnedPlayback::pin(&selected, self.server)
+        let mut proof = PinnedPlayback::pin(&selected, self.server)
             .map_err(|_| "Selected desktop Studio PCM preflight refused.")?;
+        if self.managed_playback { proof.manage_until_stop(); }
         let card = proof.card();
         self.physical = Some(DesktopPlayback {
             proof,

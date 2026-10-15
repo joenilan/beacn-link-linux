@@ -7,6 +7,7 @@ publish = false
 
 [features]
 default = ["native-catalog", "status-tray"]
+studio = ["native-catalog", "beacn-linx-core/desktop-session-test"]
 native-catalog = ["beacn-linx-core/native-catalog"]
 status-tray = ["beacn-linx-core/status-tray"]
 private-session-test = ["native-catalog", "beacn-linx-core/private-session-test"]

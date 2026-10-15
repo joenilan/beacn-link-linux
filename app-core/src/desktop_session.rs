@@ -3,7 +3,7 @@ use beacn_link_protocol::{
     catalog::ApplicationService,
     desktop_link_session::{DesktopLinkSession, StudioDesktopLease},
     executor::ObjectRef,
-    link_session::{OpenFailure, Options, Status},
+    link_session::{ManagedOptions, OpenFailure, Options, Status},
     native_usb::{self, NativeUsb, OpenError},
     routing_control::{self, StopReason},
     session::{PollPolicy, ReceivedNamePolicy},
@@ -18,7 +18,7 @@ pub struct Configuration {
     pub cycles: usize,
 }
 pub struct Session {
-    config: Configuration,
+    config: Option<Configuration>,
     owner: DesktopLinkSession<StudioDesktopLease, Handshake<NativeUsb>>,
     status: Status,
     pub physical_stats: Option<(u32, u64)>,
@@ -26,11 +26,14 @@ pub struct Session {
 impl Session {
     pub fn new(config: Configuration) -> Self {
         Self {
-            config,
+            config: Some(config),
             owner: Default::default(),
             status: Default::default(),
             physical_stats: None,
         }
+    }
+    pub fn managed() -> Self {
+        Self { config: None, owner: Default::default(), status: Default::default(), physical_stats: None }
     }
     pub fn status(&self) -> &Status {
         &self.status
@@ -56,7 +59,7 @@ impl Session {
         self.status = Status {
             phase: s.phase,
             completed_cycles: s.completed_cycles,
-            cycle_limit: Some(s.cycle_limit),
+            cycle_limit: s.cycle_limit,
             last_reply: s.last_reply,
             error: s.error.clone(),
             transport_cleanup: s.transport_cleanup.clone(),
@@ -78,7 +81,23 @@ impl Session {
         };
     }
     pub fn start(&mut self, service: &ApplicationService) -> Result<(), String> {
-        let c = self.config.clone();
+        let Some(c) = self.config.clone() else {
+            let options = ManagedOptions {
+                poll_policy: PollPolicy::ReportRejectedMarker,
+                names: ReceivedNamePolicy::WindowsCString,
+                initialization_timeout: usb_handshake::DIAGNOSTIC_INITIALIZATION_TIMEOUT,
+            };
+            let result = self.owner.start_managed(service, options,
+                || StudioDesktopLease::discover(service),
+                |routes, inventory, options| {
+                    let publication = Publication::managed_desktop(inventory, options.poll_policy)
+                        .map_err(|e| OpenFailure { message: e.to_string(), cleanup: Ok(()) })?
+                        .with_initialization_diagnostic();
+                    open_control(routes, publication)
+                });
+            self.update(Some(service), None);
+            return result;
+        };
         let options = Options {
             cycles: c.cycles,
             poll_policy: PollPolicy::ReportRejectedMarker,
@@ -136,4 +155,15 @@ impl Session {
         self.update(None, Some(reason));
         r
     }
+}
+
+fn open_control(routes: &StudioDesktopLease, publication: Publication) -> Result<Handshake<NativeUsb>, OpenFailure> {
+    native_usb::open_publication_with_owned_playback(routes.sysfs(), routes.descriptors(), publication, true, routes.server_pid())
+        .map_err(|e| OpenFailure {
+            cleanup: match &e {
+                OpenError::Setup(f) if !f.cleanup.baseline_restored => Err("Desktop USB startup cleanup unverified.".into()),
+                _ => Ok(()),
+            },
+            message: e.to_string(),
+        })
 }

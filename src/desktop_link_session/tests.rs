@@ -401,3 +401,34 @@ fn another_lease_and_replayed_inventory_cannot_continue_a_desktop_epoch() {
         assert_eq!(shared.borrow().frames.len(), 1);
     }
 }
+
+#[test]
+fn managed_desktop_outlives_bounded_budget_and_releases_on_selection_loss() {
+    let shared = Rc::new(RefCell::new(Shared::default()));
+    shared.borrow_mut().replies.push_back(reply(1));
+    let mut service = service();
+    let mut owner = DesktopLinkSession::default();
+    let a = shared.clone();
+    let b = shared.clone();
+    owner.start_managed(&service, ManagedOptions {
+        poll_policy: session::PollPolicy::ReportRejectedMarker,
+        names: ReceivedNamePolicy::WindowsCString,
+        initialization_timeout: usb_handshake::MAX_TIMEOUT,
+    }, || Ok(Lease { shared: a, epoch: Rc::new(Cell::new(0)), nonce: 0 }),
+    |_, inventory, options| {
+        let p = Publication::managed_desktop(inventory, options.poll_policy).unwrap();
+        Ok(Handshake::prepare_publication(Fake::new(b), p).unwrap_or_else(|_| panic!("managed fake prepare")))
+    }).unwrap();
+    for _ in 0..42 { advance(&mut service); owner.tick(&service).unwrap(); }
+    assert_eq!(owner.status().phase, Phase::Running);
+    assert_eq!(owner.status().cycle_limit, None);
+    assert_eq!(owner.status().completed_cycles, 42);
+    assert_eq!(owner.status().assignment, Some(1));
+    assert_eq!(shared.borrow().frames.len(), 42);
+    service.select(&ApplicationId(ID.into()), "Different name").unwrap();
+    assert!(owner.check(&service).is_err());
+    assert_eq!(owner.status().phase, Phase::Stopped);
+    assert_eq!(&shared.borrow().events[1..], ["route-stop", "usb-release"]);
+    owner.stop().unwrap();
+    assert_eq!(shared.borrow().events.len(), 3);
+}

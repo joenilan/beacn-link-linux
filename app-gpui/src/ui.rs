@@ -63,6 +63,7 @@ pub struct Interface {
     channel: Option<u8>,
     settings: bool,
     catalog_open: bool,
+    studio_app: bool,
     appearance: crate::appearance::Appearance,
     tray_available: Option<bool>,
     feedback: Option<String>,
@@ -116,6 +117,11 @@ impl Interface {
                 });
             }
         });
+        let studio_app = match &connection {
+            #[cfg(all(any(feature = "studio", feature = "desktop-session-test"), target_os = "linux"))]
+            Connection::Studio | Connection::DesktopStudioSession(_) => true,
+            _ => false,
+        };
         Self {
             native_icon: None,
             worker: Worker::spawn(connection),
@@ -128,7 +134,8 @@ impl Interface {
             expanded: BTreeSet::new(),
             channel: None,
             settings: false,
-            catalog_open: true,
+            catalog_open: false,
+            studio_app,
             appearance: Default::default(),
             tray_available: None,
             feedback: None,
@@ -362,7 +369,7 @@ impl Interface {
                         Button::new(SharedString::from(format!("select-{}", id.0)))
                             .small()
                             .label(if selected { "Remove" } else { "Select" })
-                            .disabled(!live)
+                            .disabled(!live || (self.studio_app && !selected && (!self.snapshot.selected.is_empty() || app.streams.len() != 1)))
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.send(
                                     if selected {
@@ -1014,6 +1021,7 @@ fn launch(
                     #[cfg(all(feature = "ui-qualification", target_os = "linux"))]
                     let view = {
                         let mut view = view;
+                        if probe.is_some() { view.catalog_open = true; }
                         view.probe = probe.map(crate::qualification::Probe::new);
                         view
                     };

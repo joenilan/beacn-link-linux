@@ -16,6 +16,8 @@ pub enum Connection {
     Desktop,
     #[cfg(all(feature = "desktop-session-test", target_os = "linux"))]
     DesktopStudioSession(crate::desktop_session::Configuration),
+    #[cfg(all(feature = "desktop-session-test", target_os = "linux"))]
+    Studio,
     Private {
         runtime: PathBuf,
         core: String,
@@ -52,7 +54,12 @@ impl Worker {
                     *state = model.snapshot();
                 }
             };
-            let persistent = matches!(&connection, Connection::Desktop);
+            let persistent = match &connection {
+                Connection::Desktop => true,
+                #[cfg(all(feature = "desktop-session-test", target_os = "linux"))]
+                Connection::Studio => true,
+                _ => false,
+            };
             let mut preferences = None;
             let mut preference_error = None;
             let mut automatic = false; // explicit private fixtures remain manual
@@ -98,7 +105,7 @@ impl Worker {
                         catalog = Some(match &connection {
                             Connection::Desktop => NativeCatalog::desktop()?,
                             #[cfg(feature = "desktop-session-test")]
-                            Connection::DesktopStudioSession(_) => NativeCatalog::desktop()?,
+                            Connection::DesktopStudioSession(_) | Connection::Studio => NativeCatalog::desktop()?,
                             Connection::Private { runtime, core } => {
                                 NativeCatalog::connect(runtime, core)?
                             }

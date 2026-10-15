@@ -53,6 +53,25 @@ Check available disk before heavy builds and notify the owner below 25 GB.
 Never delete source, lockfiles, user data, or artifacts used by running processes.
 Build optimizations require measured benefit, not speculative flags.
 
+## Workspace and runtime hygiene
+Reuse the existing checkout, Linux working tree, build cache and review server.
+Do not create timestamped source copies, test directories, worktrees or branches
+for routine iterations. Isolate only when needed to preserve unrelated work.
+Use one current app executable and launcher. Keep compact evidence and manifests
+outside Git; do not retain a full binary copy for every check. Preserve existing
+source, lockfiles, settings/snapshots and evidence. Remove obsolete inactive
+generated build output as part of the work, after checking paths and processes.
+
+Use at most one task-owned review server. Reuse it, or restart that same server
+if unavailable. Close it after two hours; do not leave orphaned test displays,
+private buses, children or servers after checks. Verify PID, creation time and
+command before stopping anything. A user-facing LinX app is not a test server;
+leave it open when the owner is reviewing/testing it. Do not stop other projects.
+
+Develop runtime behavior in the native Rust/C owners and actual application.
+Scripts may build, snapshot and collect evidence; they must not stand in for
+application routing, playback, device/session ownership or a usable app lifecycle.
+
 ## Private material
 Do not commit proprietary binaries, raw captures, secrets, device serials,
 machine-specific endpoint GUIDs, host addresses or SSH configuration/key paths.

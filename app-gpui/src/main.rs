@@ -5,7 +5,7 @@ fn main() {
     let mut args: Vec<_> = std::env::args().skip(1).collect();
     if args == ["--help"] {
         println!(
-            "LinX - GPUI Kit preview\nRead-only application discovery; no USB or desktop apply.\nOptional: --private-runtime PATH --core NAME\nOptional: --software-renderer (Linux; installed Mesa CPU Vulkan, this process only)"
+            "LinX\nDefault: read-only application discovery.\n--studio: native Studio session (studio-enabled build); select one stereo app, Connect, assign it to first Link In on the streaming PC. Pause/Quit releases owned output.\nOptional: --private-runtime PATH --core NAME\nOptional: --software-renderer (Linux; installed Mesa CPU Vulkan, this process only)"
         );
         return;
     }
@@ -18,6 +18,8 @@ fn main() {
     }
     let connection = match args.as_slice() {
         [] => Connection::Desktop,
+        #[cfg(all(feature = "studio", target_os = "linux"))]
+        [flag] if flag == "--studio" => Connection::Studio,
         [a, r, b, c] if a == "--private-runtime" && b == "--core" => Connection::Private {
             runtime: PathBuf::from(r),
             core: c.clone(),

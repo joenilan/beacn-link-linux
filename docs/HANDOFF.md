@@ -1,6 +1,56 @@
 # LinX continuation handoff
 Updated 2026-10-15 UTC. Resume development; do not restart the investigation.
 
+## Latest checkpoint: actual Studio-enabled LinX executable open for owner testing
+
+The owner prioritizes a usable native app over further scripted test cycles.
+`app-gpui` now has an explicit `studio` build feature and `--studio` entry into
+the retained Rust/C desktop owner. The normal no-argument build remains read-only.
+This is the actual GUI main binary, not a qualification example or Python session
+controller. It discovers one unique supported Studio and its current eight-channel
+ALSA sink on the authenticated native desktop connection when Connect is pressed.
+No host address, serial, cached descriptor file or numeric endpoint is needed in
+the launcher. Descriptor/device/PCM identity and all later bridge guards remain.
+
+`DesktopLinkSession::start_managed` and `Publication::managed_desktop` retain the
+existing sealed desktop proof policy through Pause/Quit/failure instead of a
+40-cycle countdown. Bounded constructors and PCM qualification fuses remain
+bounded; only the explicit managed desktop owner lifts its observation-count fuse.
+Clock/owner/format/FD/capture/identity checks remain enforced. One existing stereo
+application and first Link In only; other apps and pairs remain unavailable in
+this desktop path. Selection loss or changed foreign graph stops safely; automatic
+hotplug/rebind, persisted selections and durable assignment continuity are unfinished.
+
+Compiled source `beacn-native-source-20261015T143148Z` passes 23 focused native
+library checks, including continued sealed publication past 40 cycles followed by
+selection-loss cleanup, unchanged bounded limits and managed PCM metadata checks.
+The offline actual GPUI main build with `studio` completed in 7.18 seconds. Native
+app SHA256 `145cf13e3709ffc63c5fd46dcd4e2252732a06d9b99f997f02f058e37f8c613b`.
+It was launched on the existing normal Debian GNOME session with no selection,
+no timed fixture and no automated USB/audio start. A user LinX launcher was added;
+no autostart entry or new remote desktop/review server was installed. Appearance
+still differs from the approved mockup and is **not** owner-approved or 1:1.
+Applications starts collapsed; select one stream, Connect, assign to first Link In
+in streaming-PC BEACN App, then Pause to restore its original output. Gain/mute/
+meters remain disabled. Physical acceptance of this managed main binary is pending
+the owner's direct interaction; do not equate unit/build/process liveness with it.
+
+The owner explicitly rejected excessive test directories, binary copies and stale
+servers. Follow the new AGENTS hygiene section. Use a fixed current Linux workspace
+and one app binary, retain small source manifests/evidence privately, and reuse a
+single review server only when needed, closing it after two hours. Do not invoke
+the old timestamp-copy staging helpers for another routine iteration. The current
+app executable is hard-linked instead of copied again. Inactive GPUI example and
+retired egui generated artifacts were removed after path/process checks, recovering
+about 31 GiB; approximately 33 GiB remains free. Source, lockfiles, snapshots and
+evidence were preserved. A stale exited-GUI wrapper/private bus/Xvfb was stopped;
+the expired original review server was closed. Do not close the owner-facing app
+while they are testing it. Do not resume unrelated Windows cleanup.
+
+Next: obtain direct app-window/audio/Pause feedback, fix any native failure in this
+same runtime, then match the approved Console's measured geometry and styling.
+No more repeated automatic physical test runs or claims of approved visual parity.
+
 ## Latest checkpoint: approved Console ported to native GPUI
 
 Read [gpui-interface.md](gpui-interface.md#native-console-qualification-2026-10-15).

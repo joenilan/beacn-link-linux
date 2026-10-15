@@ -2,7 +2,7 @@
 use crate::{
     catalog::ApplicationService,
     lifecycle::InventoryTracker,
-    link_session::{OpenFailure, Options, OwnedControlTransport, Phase},
+    link_session::{ManagedOptions, OpenFailure, Options, OwnedControlTransport, Phase},
     native_desktop_target::{DesktopRoutePublication, DesktopTarget},
     planner::{self, Inventory, Outcome},
     session::{PollReply, Session},
@@ -28,6 +28,31 @@ pub struct StudioDesktopLease {
     hardware: crate::executor::ObjectRef,
 }
 impl StudioDesktopLease {
+    /// Discover only a unique supported Studio, then pin descriptor bytes and a
+    /// current native sink on the same authenticated desktop connection.
+    pub fn discover(service: &ApplicationService) -> Result<Self, String> {
+        use std::{fs, io::Read};
+        let mut devices = Vec::new();
+        for entry in fs::read_dir("/sys/bus/usb/devices").map_err(|e| e.to_string())?.take(512) {
+            let path = entry.map_err(|e| e.to_string())?.path();
+            if fs::read_to_string(path.join("idVendor")).is_ok_and(|s| s.trim() == "33ae")
+                && fs::read_to_string(path.join("idProduct")).is_ok_and(|s| s.trim() == "4003") {
+                devices.push(path.canonicalize().map_err(|e| e.to_string())?);
+            }
+        }
+        if devices.len() != 1 { return Err("Connect one BEACN Studio to this Linux PC.".into()); }
+        let sysfs = devices.remove(0);
+        let mut expected = Vec::new();
+        fs::File::open(sysfs.join("descriptors")).map_err(|e| e.to_string())?
+            .take((crate::usb_descriptors::MAX_DESCRIPTOR_BYTES + 1) as u64)
+            .read_to_end(&mut expected).map_err(|e| e.to_string())?;
+        let mut lease = Self::connect(service, &sysfs, &expected, crate::executor::ObjectRef { id: 0, serial: 0 }, true)?;
+        lease.hardware = lease.target.studio_hardware(&sysfs)?;
+        lease.target.manage_playback_until_stop();
+        Ok(lease)
+    }
+    pub fn sysfs(&self) -> &Path { &self.sysfs }
+    pub fn descriptors(&self) -> &[u8] { &self.expected }
     pub fn connect(
         service: &ApplicationService,
         sysfs: &Path,
@@ -81,7 +106,7 @@ impl DesktopLease for StudioDesktopLease {
 pub struct Status {
     pub phase: Phase,
     pub completed_cycles: usize,
-    pub cycle_limit: usize,
+    pub cycle_limit: Option<usize>,
     pub assignment: Option<u8>,
     pub last_reply: Option<&'static str>,
     pub error: Option<String>,
@@ -93,7 +118,7 @@ impl Default for Status {
         Self {
             phase: Phase::Idle,
             completed_cycles: 0,
-            cycle_limit: 0,
+            cycle_limit: None,
             assignment: None,
             last_reply: None,
             error: None,
@@ -108,7 +133,7 @@ struct Active<L, T> {
     core: String,
     selection_revision: u64,
     tracker: InventoryTracker,
-    options: Options,
+    options: ManagedOptions,
 }
 pub struct DesktopLinkSession<L: DesktopLease, T: OwnedControlTransport> {
     active: Option<Active<L, T>>,
@@ -141,10 +166,37 @@ impl<L: DesktopLease, T: OwnedControlTransport> DesktopLinkSession<L, T> {
         factory: impl FnOnce() -> Result<L, String>,
         transport: impl FnOnce(&L, &Inventory, Options) -> Result<T, OpenFailure>,
     ) -> Result<(), String> {
+        options.validate()?;
+        self.start_with(service, Some(options.cycles), ManagedOptions {
+            poll_policy: options.poll_policy,
+            names: options.names,
+            initialization_timeout: options.initialization_timeout,
+        }, factory, |routes, inventory| transport(routes, inventory, options))
+    }
+    /// Explicit app lifetime: retain the same sealed desktop/USB owners until
+    /// Pause, Quit, stream loss or failed proof. Bounded callers stay bounded.
+    pub fn start_managed(
+        &mut self,
+        service: &ApplicationService,
+        options: ManagedOptions,
+        factory: impl FnOnce() -> Result<L, String>,
+        transport: impl FnOnce(&L, &Inventory, ManagedOptions) -> Result<T, OpenFailure>,
+    ) -> Result<(), String> {
+        Options { cycles: 1, poll_policy: options.poll_policy, names: options.names,
+            initialization_timeout: options.initialization_timeout }.validate()?;
+        self.start_with(service, None, options, factory, |routes, inventory| transport(routes, inventory, options))
+    }
+    fn start_with(
+        &mut self,
+        service: &ApplicationService,
+        cycle_limit: Option<usize>,
+        options: ManagedOptions,
+        factory: impl FnOnce() -> Result<L, String>,
+        transport: impl FnOnce(&L, &Inventory) -> Result<T, OpenFailure>,
+    ) -> Result<(), String> {
         if matches!(self.status.phase, Phase::Running | Phase::NeedsReview) {
             return Err("Desktop session running or cleanup unverified.".into());
         }
-        options.validate()?;
         let inventory = service.inventory().ok_or("Desktop selection absent.")?;
         if inventory.applications.len() != 1 || inventory.applications[0].streams.len() != 1 {
             return Err("Desktop session needs one selected live stream.".into());
@@ -157,7 +209,7 @@ impl<L: DesktopLease, T: OwnedControlTransport> DesktopLinkSession<L, T> {
         let mut tracker = InventoryTracker::default();
         tracker.advance(inventory).map_err(|e| e.to_string())?;
         self.status = Status {
-            cycle_limit: options.cycles,
+            cycle_limit,
             ..Status::default()
         };
         let mut routes = match factory() {
@@ -191,7 +243,7 @@ impl<L: DesktopLease, T: OwnedControlTransport> DesktopLinkSession<L, T> {
                 return Err(error);
             }
         };
-        let opened = match transport(&routes, proof.inventory(), options) {
+        let opened = match transport(&routes, proof.inventory()) {
             Ok(t) => t,
             Err(f) => {
                 self.status.error = Some(f.message.clone());
@@ -336,8 +388,11 @@ impl<L: DesktopLease, T: OwnedControlTransport> DesktopLinkSession<L, T> {
             Ok((assignment, label)) => {
                 self.status.assignment = Some(assignment);
                 self.status.last_reply = Some(label);
-                self.status.completed_cycles += 1;
-                if self.status.completed_cycles == self.status.cycle_limit {
+                self.status.completed_cycles = match self.status.completed_cycles.checked_add(1) {
+                    Some(n) => n,
+                    None => return self.fail("Desktop session cycle counter exhausted.".into()),
+                };
+                if Some(self.status.completed_cycles) == self.status.cycle_limit {
                     self.stop()?;
                 }
                 Ok(())
