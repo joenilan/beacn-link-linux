@@ -45,13 +45,34 @@ fn main() {
         let hidden = args.iter().any(|a| a == "--start-hidden");
         let rest: Vec<_> = args.iter().filter(|a| *a != "--start-hidden").collect();
         if rest.len() == 1 && rest[0] == "--studio" {
+            use beacn_linx_gpui::single_instance::{claim, Claim};
+            // Before anything touches PipeWire, the Studio or the control
+            // socket: a second launch only asks the running LinX to show.
+            let instance = match claim(hidden) {
+                Ok(Claim::Primary(instance)) => Some(instance),
+                Ok(Claim::Running(Ok(()))) => {
+                    eprintln!(
+                        "LinX is already running{}",
+                        if hidden { "." } else { "; showing it." }
+                    );
+                    return;
+                }
+                Ok(Claim::Running(Err(error))) => {
+                    eprintln!("LinX is already running but did not answer: {error}");
+                    std::process::exit(1);
+                }
+                Err(error) => {
+                    eprintln!("LinX single-instance check unavailable: {error}");
+                    None
+                }
+            };
             apply_software_renderer(software == 1);
             // Arguments to reuse for launch at login.
             let mut login = vec!["--studio".to_string()];
             if software == 1 {
                 login.push("--software-renderer".into());
             }
-            beacn_linx_gpui::link_ui::run(hidden, login);
+            beacn_linx_gpui::link_ui::run(hidden, login, instance);
             return;
         }
     }

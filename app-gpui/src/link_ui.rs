@@ -48,6 +48,8 @@ pub(crate) struct LinkCore {
     autostart: bool,
     #[cfg(all(feature = "status-tray", target_os = "linux"))]
     tray: beacn_linx_core::tray::Tray,
+    /// Single-instance guard; later launches ask through it to show.
+    instance: Option<crate::single_instance::Instance>,
 }
 impl Global for LinkCore {}
 impl LinkCore {
@@ -1020,7 +1022,11 @@ pub(crate) fn console_height(window: &Window) -> Pixels {
 
 /// Tray-resident app: closing the window keeps LinX routing in the tray.
 /// Without a tray host, closing the window quits so LinX never runs hidden.
-pub fn run(start_hidden: bool, login_args: Vec<String>) {
+pub fn run(
+    start_hidden: bool,
+    login_args: Vec<String>,
+    instance: Option<crate::single_instance::Instance>,
+) {
     crate::shutdown::install();
     application().with_assets(crate::ui::Assets).run(move |cx| {
         init(cx);
@@ -1033,6 +1039,7 @@ pub fn run(start_hidden: bool, login_args: Vec<String>) {
             autostart: beacn_linx_core::autostart::enabled(),
             #[cfg(all(feature = "status-tray", target_os = "linux"))]
             tray: beacn_linx_core::tray::Tray::spawn(),
+            instance,
         });
         cx.on_app_quit(|cx| {
             LinkCore::stop(cx);
@@ -1130,6 +1137,17 @@ fn reveal_if_no_tray(cx: &mut App) {
 /// Mirror status into the tray and handle its menu. True requests Quit.
 fn tray_tick(cx: &mut App) -> bool {
     reveal_if_no_tray(cx);
+    // Another launch of LinX: show this window instead (a hidden login
+    // launch only confirms LinX is running).
+    let requests = cx
+        .global::<LinkCore>()
+        .instance
+        .as_ref()
+        .map(|i| i.requests())
+        .unwrap_or_default();
+    if requests.contains(&crate::single_instance::Request::Show) {
+        open_console(cx);
+    }
     #[cfg(all(feature = "status-tray", target_os = "linux"))]
     {
         use beacn_linx_core::tray;

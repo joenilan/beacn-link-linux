@@ -44,6 +44,9 @@ Windows.
 - Live stereo levels for every channel, plus working faders and mute that set
   what this PC sends on each Link Out. They stay in sync with the channel's
   volume in your desktop sound settings.
+- One LinX per desktop session: launching it again (application menu,
+  terminal, login autostart) shows the running window instead of starting a
+  second copy that would compete for the Studio.
 - Closing the window keeps LinX running in the system tray (or minimized,
   on desktops without a tray). Optional launch at login starts it hidden and
   connected. Pause or Quit returns every application to the
