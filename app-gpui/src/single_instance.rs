@@ -36,10 +36,11 @@ pub struct Instance {
 }
 
 /// A request from a later launch.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
-    /// Bring the window up (an ordinary launch).
-    Show,
+    /// Bring the window up (an ordinary launch), with the launcher's
+    /// xdg-activation token when it gave one, so Wayland raises the window.
+    Show(Option<String>),
     /// A hidden launch (login autostart): nothing to show.
     Hidden,
 }
@@ -78,7 +79,13 @@ pub fn claim(hidden: bool) -> io::Result<Claim> {
         }
         Err(fs::TryLockError::WouldBlock) => Ok(Claim::Running(forward(
             &socket,
-            if hidden { Request::Hidden } else { Request::Show },
+            if hidden {
+                Request::Hidden
+            } else {
+                Request::Show(std::env::var("XDG_ACTIVATION_TOKEN").ok().filter(|t| {
+                    !t.is_empty() && t.len() < 256 && t.bytes().all(|b| b.is_ascii_graphic())
+                }))
+            },
         ))),
         Err(fs::TryLockError::Error(error)) => Err(error),
     }
@@ -97,10 +104,12 @@ fn forward(socket: &PathBuf, request: Request) -> io::Result<()> {
     };
     stream.set_write_timeout(Some(Duration::from_secs(2)))?;
     stream.set_read_timeout(Some(Duration::from_secs(2)))?;
-    stream.write_all(match request {
-        Request::Show => b"show\n",
-        Request::Hidden => b"hidden\n",
-    })?;
+    let line = match request {
+        Request::Show(Some(token)) => format!("show {token}\n"),
+        Request::Show(None) => "show\n".to_owned(),
+        Request::Hidden => "hidden\n".to_owned(),
+    };
+    stream.write_all(line.as_bytes())?;
     // Wait for the acknowledgement so the request is never lost.
     let mut reply = [0u8; 3];
     stream.read_exact(&mut reply)?;
@@ -114,12 +123,17 @@ impl Instance {
         while let Ok((mut stream, _)) = self.listener.accept() {
             let _ = stream.set_nonblocking(false);
             let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
-            let mut line = [0u8; 16];
+            let mut line = [0u8; 300];
             let n = stream.read(&mut line).unwrap_or(0);
-            let request = if line[..n].starts_with(b"hidden") {
+            let text = String::from_utf8_lossy(&line[..n]);
+            let text = text.trim_end();
+            let request = if text.starts_with("hidden") {
                 Request::Hidden
             } else {
-                Request::Show
+                let token = text.strip_prefix("show ").map(str::trim).filter(|t| {
+                    !t.is_empty() && t.bytes().all(|b| b.is_ascii_graphic())
+                });
+                Request::Show(token.map(str::to_owned))
             };
             let _ = stream.write_all(b"ok\n");
             out.push(request);

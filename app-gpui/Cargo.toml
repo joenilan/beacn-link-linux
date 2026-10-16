@@ -32,3 +32,11 @@ serde_json = "1"
 
 [profile.dev]
 debug = 1
+
+# Raise the window from the tray on Wayland (see vendor/README-LINX-PATCHES.md).
+[target.'cfg(target_os = "linux")'.dependencies]
+gpui-fast-linux = "=0.1.8"
+
+[patch.crates-io]
+ksni = { path = "../vendor/ksni" }
+gpui-fast-linux = { path = "../vendor/gpui-fast-linux" }

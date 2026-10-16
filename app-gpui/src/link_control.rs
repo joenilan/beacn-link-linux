@@ -279,6 +279,7 @@ impl LinkInterface {
             "drawers":{"applications":self.catalog_open,"settings":self.settings,"channel":self.channel},
             "search":self.search.read(cx).value().to_string(),
             "appearance":{"light":self.appearance.light,"accent":self.appearance.accent.label()},
+            "window_active":window.is_window_active(),
             "size":{"width":f32::from(window.viewport_size().width),
                     "height":f32::from(window.viewport_size().height),
                     "console_width":f32::from(crate::link_ui::console_width(window)),

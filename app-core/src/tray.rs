@@ -17,8 +17,13 @@ struct View {
 struct Item {
     view: View,
     actions: Arc<AtomicU8>,
+    /// xdg-activation token from the tray host for the latest click.
+    token: Arc<Mutex<Option<String>>>,
 }
 impl ksni::Tray for Item {
+    fn provide_xdg_activation_token(&mut self, token: String) {
+        *self.token.lock().unwrap() = Some(token);
+    }
     fn id(&self) -> String {
         "beacn-linx".into()
     }
@@ -103,6 +108,7 @@ impl ksni::Tray for Item {
 pub struct Tray {
     view: Arc<Mutex<Option<View>>>,
     actions: Arc<AtomicU8>,
+    token: Arc<Mutex<Option<String>>>,
     availability: Arc<Mutex<Option<bool>>>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
@@ -120,11 +126,14 @@ impl Tray {
         let view = Arc::new(Mutex::new(Some(initial)));
         let actions = Arc::new(AtomicU8::new(0));
         let availability = Arc::new(Mutex::new(None));
-        let (state, flags, ready) = (view.clone(), actions.clone(), availability.clone());
+        let token = Arc::new(Mutex::new(None));
+        let (state, flags, ready, click) =
+            (view.clone(), actions.clone(), availability.clone(), token.clone());
         let thread = std::thread::spawn(move || {
             let handle = match (Item {
                 view: initial,
                 actions: flags,
+                token: click,
             })
             .spawn()
             {
@@ -156,6 +165,7 @@ impl Tray {
         Self {
             view,
             actions,
+            token,
             availability,
             thread: Some(thread),
         }
@@ -165,6 +175,11 @@ impl Tray {
     }
     pub fn actions(&self) -> u8 {
         self.actions.swap(0, Ordering::AcqRel)
+    }
+    /// Activation token the tray host supplied with the latest click, if any
+    /// (KDE Plasma; lets the window be raised on Wayland).
+    pub fn take_activation_token(&self) -> Option<String> {
+        self.token.lock().unwrap().take()
     }
     pub fn available(&self) -> Option<bool> {
         *self.availability.lock().unwrap()

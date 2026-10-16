@@ -1146,7 +1146,13 @@ fn tray_tick(cx: &mut App) -> bool {
         .as_ref()
         .map(|i| i.requests())
         .unwrap_or_default();
-    if requests.contains(&crate::single_instance::Request::Show) {
+    if let Some(token) = requests.iter().find_map(|r| match r {
+        crate::single_instance::Request::Show(token) => Some(token.clone()),
+        crate::single_instance::Request::Hidden => None,
+    }) {
+        if let Some(token) = token {
+            gpui_linux::set_pending_activation_token(token);
+        }
         open_console(cx);
     }
     #[cfg(all(feature = "status-tray", target_os = "linux"))]
@@ -1163,6 +1169,11 @@ fn tray_tick(cx: &mut App) -> bool {
             return true;
         }
         if actions & tray::SHOW != 0 {
+            // Wayland: raise with the click's activation token, not just
+            // request attention.
+            if let Some(token) = cx.global::<LinkCore>().tray.take_activation_token() {
+                gpui_linux::set_pending_activation_token(token);
+            }
             open_console(cx);
         }
         // The tray host went away while the window was closed: quit rather
