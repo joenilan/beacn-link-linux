@@ -82,6 +82,8 @@ pub fn strip(
     accent: u32,
     meter: Option<crate::meter::Display>,
     level: Option<(Level, OnLevel)>,
+    // Link Out level for this pair: None hides the row, Some(None) is silent.
+    link_out: Option<Option<crate::meter::Display>>,
     choose: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> Stateful<Div> {
     let colors = Appearance {
@@ -348,11 +350,14 @@ pub fn strip(
                     None => button.into_any_element(),
                 }
             })
+            .when_some(link_out, |column, display| {
+                column.child(out_meter(pair, display, dark, rail, colors.muted))
+            })
             .child(
                 div()
                     .id(well_id)
-                    .mt(px(13.))
-                    .pt(px(10.))
+                    .mt(px(if link_out.is_some() { 8. } else { 13. }))
+                    .pt(px(if link_out.is_some() { 8. } else { 10. }))
                     .border_t_1()
                     .border_color(rgb(if dark { 0x383b40 } else { colors.line }))
                     .cursor_pointer()
@@ -543,6 +548,75 @@ fn fader_block(
                 .child(meter_rail(0, meter, dark, rail))
                 .child(meter_rail(1, meter, dark, rail)),
         )
+}
+
+/// What the Studio sends on this pair's Link Out: one slim horizontal bar
+/// (louder side), with the same colours and peak marker as the Link In rails.
+fn out_meter(
+    pair: u8,
+    meter: Option<crate::meter::Display>,
+    dark: bool,
+    rail: u32,
+    muted: u32,
+) -> Div {
+    let fraction = |db: f32| (db.clamp(-60.0, 0.0) + 60.0) / 60.0;
+    let mut bar = div()
+        .id(format!("link-out-{pair}"))
+        .relative()
+        .flex_1()
+        .h(px(4.))
+        .rounded(px(2.))
+        .overflow_hidden()
+        .bg(rgb(rail));
+    if let Some(display) = meter {
+        let rms_db = display.rms_db[0].max(display.rms_db[1]);
+        let peak_db = display.peak_db[0].max(display.peak_db[1]);
+        let color = if rms_db >= -6.0 {
+            if dark { 0xff514a } else { 0xd8292f }
+        } else if rms_db >= -18.0 {
+            if dark { 0xffc04f } else { 0xc17a00 }
+        } else if dark {
+            0x61d889
+        } else {
+            0x168044
+        };
+        if rms_db > -60.0 {
+            bar = bar.child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .top_0()
+                    .bottom_0()
+                    .w(relative(fraction(rms_db)))
+                    .bg(rgb(color)),
+            );
+        }
+        if peak_db > -60.0 {
+            bar = bar.child(
+                div()
+                    .absolute()
+                    .top_0()
+                    .bottom_0()
+                    .left(relative(fraction(peak_db)))
+                    .w(px(1.5))
+                    .bg(rgb(if dark { 0xf2f4f5 } else { 0x243039 })),
+            );
+        }
+    }
+    div()
+        .mt(px(9.))
+        .h(px(10.))
+        .flex()
+        .items_center()
+        .gap(px(6.))
+        .child(
+            div()
+                .flex_shrink_0()
+                .text_size(px(9.))
+                .text_color(rgb(if dark { 0xa0a8b1 } else { muted }))
+                .child("OUT"),
+        )
+        .child(bar)
 }
 
 fn meter_rail(channel: usize, meter: Option<crate::meter::Display>, dark: bool, rail: u32) -> Div {

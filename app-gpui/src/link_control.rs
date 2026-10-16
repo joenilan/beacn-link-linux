@@ -229,7 +229,9 @@ impl LinkInterface {
                 let level = v.levels[i];
                 json!({"channel":i+1,"display":m.display.map(|d| json!({
                     "rms_dbfs":d.rms_db,"peak_dbfs":d.peak_db,"hold_dbfs":d.hold_db})),
-                    "level":{"known":level.known,"volume":level.volume,"mute":level.mute}})
+                    "level":{"known":level.known,"volume":level.volume,"mute":level.mute},
+                    "link_out":self.out_meters[i].display.map(|d| json!({
+                        "rms_dbfs":d.rms_db,"peak_dbfs":d.peak_db,"hold_dbfs":d.hold_db}))})
             })
             .collect::<Vec<_>>();
         json!({

@@ -76,6 +76,8 @@ pub struct LinkInterface {
     pub(crate) appearance: crate::appearance::Appearance,
     pub(crate) feedback: Option<String>,
     meters: [ChannelMeter; 4],
+    /// What the Studio sends on Link Out 1..4.
+    out_meters: [ChannelMeter; 4],
     /// Level just set from the UI, shown until PipeWire echoes it.
     pending_levels: [Option<(crate::console::Level, Instant)>; 4],
     _poll: Task<()>,
@@ -143,6 +145,7 @@ impl LinkInterface {
             appearance: Default::default(),
             feedback: None,
             meters: Default::default(),
+            out_meters: Default::default(),
             pending_levels: [None; 4],
             _poll: poll,
             #[cfg(all(feature = "native-control", target_os = "linux"))]
@@ -181,6 +184,23 @@ impl LinkInterface {
             // Only meter channels that carry an application.
             let used = next.apps.iter().any(|a| a.channel as usize == index + 1);
             let reading = slot.filter(|_| used).and_then(|s| s.read());
+            let sample = meter.freshness.accept(reading, now);
+            let display = meter
+                .ballistics
+                .update(sample.map(|r| (r.peak, r.rms)), now);
+            changed |= display != meter.display;
+            meter.display = display;
+        }
+        for (index, meter) in self.out_meters.iter_mut().enumerate() {
+            let slot = next.out_meters[index].as_ref();
+            let key = slot.map(|s| std::sync::Arc::as_ptr(s) as usize);
+            if key != meter.slot {
+                *meter = ChannelMeter {
+                    slot: key,
+                    ..Default::default()
+                };
+            }
+            let reading = slot.and_then(|s| s.read());
             let sample = meter.freshness.accept(reading, now);
             let display = meter
                 .ballistics
@@ -536,6 +556,10 @@ impl Render for LinkInterface {
                     p.channels[(pair - 1) as usize],
                     self.meters[(pair - 1) as usize].display,
                     level,
+                    self.view
+                        .link_out
+                        .complete()
+                        .then_some(self.out_meters[(pair - 1) as usize].display),
                     cx.listener(move |this, _, _, cx| {
                         let same = this.catalog_open && this.channel == pair;
                         this.channel = pair;

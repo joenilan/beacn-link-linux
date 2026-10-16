@@ -233,7 +233,8 @@ pub fn parse(raw: &str) -> Result<Snapshot, String> {
 /// manager then returns their streams to the desktop default output.
 pub struct LinkBus {
     raw: *mut c_void,
-    meters: [Arc<Mailbox>; CHANNELS],
+    /// Link In 1..4, then Link Out 1..4 (native order).
+    meters: [Arc<Mailbox>; CHANNELS * 2],
     buffer: Vec<u8>,
 }
 // The C owner serializes every entry point on its own thread loop lock.
@@ -241,7 +242,7 @@ unsafe impl Send for LinkBus {}
 
 impl LinkBus {
     pub fn open() -> Result<Self, String> {
-        let meters: [Arc<Mailbox>; CHANNELS] = Default::default();
+        let meters: [Arc<Mailbox>; CHANNELS * 2] = Default::default();
         let pointers = meters.each_ref().map(Arc::as_ptr);
         let raw = unsafe { lb_open(pointers.as_ptr()) };
         if raw.is_null() {
@@ -334,6 +335,12 @@ impl LinkBus {
         (1..=CHANNELS as u8)
             .contains(&channel)
             .then(|| self.meters[channel as usize - 1].clone())
+    }
+    /// Level of what the Studio sends on Link Out pair 1..4.
+    pub fn out_meter(&self, channel: u8) -> Option<Arc<Mailbox>> {
+        (1..=CHANNELS as u8)
+            .contains(&channel)
+            .then(|| self.meters[CHANNELS + channel as usize - 1].clone())
     }
 }
 impl Drop for LinkBus {

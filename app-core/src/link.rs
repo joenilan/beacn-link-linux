@@ -64,6 +64,8 @@ pub struct LinkView {
     pub message: Option<String>,
     pub apps: Vec<LinkApp>,
     pub meters: [Option<Arc<Mailbox>>; CHANNELS as usize],
+    /// What the Studio sends on Link Out 1..4.
+    pub out_meters: [Option<Arc<Mailbox>>; CHANNELS as usize],
     pub levels: [beacn_link_protocol::link_bus::Level; CHANNELS as usize],
     pub exchanges: u64,
     pub last_reply: Option<&'static str>,
@@ -324,6 +326,7 @@ fn run(rx: mpsc::Receiver<LinkCommand>, latest: Arc<Mutex<LinkView>>, ending: Ar
         } else {
             view.apps.clear();
             view.meters = Default::default();
+            view.out_meters = Default::default();
             view.levels = Default::default();
             view.audio_ready = false;
             view.studio = false;
@@ -340,6 +343,7 @@ fn run(rx: mpsc::Receiver<LinkCommand>, latest: Arc<Mutex<LinkView>>, ending: Ar
     view.phase = Phase::Paused;
     view.apps.clear();
     view.meters = Default::default();
+    view.out_meters = Default::default();
     view.last_reply = None;
     view.beacn = Beacn::default();
     view.link_out = LinkOut::default();
@@ -375,6 +379,7 @@ fn fill(view: &mut LinkView, service: &LinkService) {
         .collect();
     for channel in 1..=CHANNELS {
         view.meters[channel as usize - 1] = service.meter(channel);
+        view.out_meters[channel as usize - 1] = service.out_meter(channel);
     }
 }
 

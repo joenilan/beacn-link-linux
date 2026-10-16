@@ -43,6 +43,8 @@
 #endif
 
 #define LB_CHANNELS 4
+/* Metered stereo pairs: Link In 1..4, then Link Out 1..4. */
+#define LB_METERS (LB_CHANNELS * 2)
 #define LB_OWNER "linx.link-bus"
 #define LB_BACKOFF_MIN_MS 1000
 #define LB_BACKOFF_MAX_MS 15000
@@ -105,11 +107,11 @@ struct lb_meter_side {
 struct lb_meter {
   struct pw_filter *filter;
   struct spa_hook listener;
-  void *ports[LB_CHANNELS * 2];
-  struct meter_mailbox *mailbox[LB_CHANNELS];
-  uint64_t frames[LB_CHANNELS];
+  void *ports[LB_METERS * 2];
+  struct meter_mailbox *mailbox[LB_METERS];
+  uint64_t frames[LB_METERS];
   uint32_t window_frames;
-  struct lb_meter_side window[LB_CHANNELS];
+  struct lb_meter_side window[LB_METERS];
 };
 
 struct link_bus {
@@ -139,6 +141,7 @@ struct link_bus {
   struct lb_owned sources[LB_CHANNELS];
   struct lb_owned capture;
   struct lb_owned out_links[LB_CHANNELS * 2];
+  struct lb_owned out_meter_links[LB_CHANNELS * 2];
   bool capture_configured;
   /* The Studio card's session-manager profile. LinX switches it off (not
    * saved) while it owns the device and restores the previous one after. */
@@ -500,6 +503,7 @@ static void lb_global_remove(void *data, uint32_t id) {
     lb_owned_forget(&b->bridges[i], id);
     lb_owned_forget(&b->meter_links[i], id);
     lb_owned_forget(&b->out_links[i], id);
+    lb_owned_forget(&b->out_meter_links[i], id);
   }
   if (b->adapter.bound && b->adapter.id == id) {
     lb_owned_forget(&b->adapter, id);
@@ -550,6 +554,7 @@ static void lb_core_error(void *data, uint32_t id, int seq, int res,
     lb_owned_error(&b->bridges[i], id, res, message);
     lb_owned_error(&b->meter_links[i], id, res, message);
     lb_owned_error(&b->out_links[i], id, res, message);
+    lb_owned_error(&b->out_meter_links[i], id, res, message);
   }
   lb_owned_error(&b->adapter, id, res, message);
   lb_owned_error(&b->capture, id, res, message);
@@ -845,7 +850,7 @@ static void lb_meter_process(void *data, struct spa_io_position *position) {
   uint32_t n = (uint32_t)position->clock.duration;
   uint32_t rate = position->clock.rate.num ? position->clock.rate.denom / position->clock.rate.num : 0;
   if (rate < 8000 || rate > 384000) return;
-  for (int c = 0; c < LB_CHANNELS; c++) {
+  for (int c = 0; c < LB_METERS; c++) {
     for (int side = 0; side < 2; side++) {
       const float *in = pw_filter_get_dsp_buffer(m->ports[c * 2 + side], n);
       float peak = 0.f;
@@ -865,7 +870,7 @@ static void lb_meter_process(void *data, struct spa_io_position *position) {
   }
   m->window_frames += n;
   if (m->window_frames < rate / 25) return;
-  for (int c = 0; c < LB_CHANNELS; c++) {
+  for (int c = 0; c < LB_METERS; c++) {
     struct meter_mailbox *box = m->mailbox[c];
     if (box) {
       atomic_fetch_add(&box->sequence, 1);
@@ -889,6 +894,12 @@ static void lb_meter_process(void *data, struct spa_io_position *position) {
 static const struct pw_filter_events lb_meter_events = {
     .version = PW_VERSION_FILTER_EVENTS, .process = lb_meter_process};
 
+/* Meter port i: link<N>_FL/FR for Link In pairs, out<N>_FL/FR for Link Out. */
+static void lb_meter_port_name(int i, char *port, size_t size) {
+  int pair = i / 2;
+  snprintf(port, size, "%s%d_%s", pair < LB_CHANNELS ? "link" : "out",
+           pair % LB_CHANNELS + 1, i % 2 ? "FR" : "FL");
+}
 static bool lb_meter_start(struct link_bus *b) {
   struct lb_meter *m = &b->meter;
   char name[80];
@@ -902,9 +913,9 @@ static bool lb_meter_start(struct link_bus *b) {
                         "state.restore-target", "false", LB_OWNER, b->token, NULL));
   if (!m->filter) return false;
   pw_filter_add_listener(m->filter, &m->listener, &lb_meter_events, m);
-  for (int i = 0; i < LB_CHANNELS * 2; i++) {
+  for (int i = 0; i < LB_METERS * 2; i++) {
     char port[32];
-    snprintf(port, sizeof(port), "link%d_%s", i / 2 + 1, i % 2 ? "FR" : "FL");
+    lb_meter_port_name(i, port, sizeof(port));
     m->ports[i] = pw_filter_add_port(m->filter, PW_DIRECTION_INPUT,
         PW_FILTER_PORT_FLAG_MAP_BUFFERS, 0,
         pw_properties_new(PW_KEY_FORMAT_DSP, "32 bit float mono audio",
@@ -921,14 +932,14 @@ static void lb_meter_stop(struct link_bus *b) {
    * realtime callback) before releasing its hooks; never edit them first. */
   if (m->filter) pw_filter_destroy(m->filter);
   m->filter = NULL;
-  for (int c = 0; c < LB_CHANNELS; c++)
+  for (int c = 0; c < LB_METERS; c++)
     if (m->mailbox[c]) atomic_store(&m->mailbox[c]->valid, 0);
 }
 static struct lb_object *lb_meter_port(struct link_bus *b, int index) {
   uint32_t node = b->meter.filter ? pw_filter_get_node_id(b->meter.filter) : SPA_ID_INVALID;
   if (node == SPA_ID_INVALID) return NULL;
   char port[32];
-  snprintf(port, sizeof(port), "link%d_%s", index / 2 + 1, index % 2 ? "FR" : "FL");
+  lb_meter_port_name(index, port, sizeof(port));
   for (struct lb_object *o = b->objects; o; o = o->next)
     if (o->kind == LB_PORT && o->node == node && o->direction == PW_DIRECTION_INPUT &&
         spa_streq(lb_prop(o, PW_KEY_PORT_NAME), port))
@@ -965,6 +976,8 @@ static void lb_reconcile(struct link_bus *b) {
       struct lb_object *in =
           source ? lb_port(b, source->id, PW_DIRECTION_INPUT, side ? "FR" : "FL", false) : NULL;
       lb_ensure_link(b, &b->out_links[i * 2 + side], out, in, false);
+      lb_ensure_link(b, &b->out_meter_links[i * 2 + side], out,
+                     lb_meter_port(b, (LB_CHANNELS + i) * 2 + side), true);
     }
   }
   /* Studio transport: optional; recreated with backoff when busy, absent or
@@ -999,6 +1012,7 @@ static void lb_reconcile(struct link_bus *b) {
 }
 
 /* ---------- public API ---------- */
+/* mailboxes: LB_METERS entries, Link In 1..4 then Link Out 1..4 (or NULL). */
 struct link_bus *lb_open(struct meter_mailbox **mailboxes) {
   pw_init(NULL, NULL);
   struct link_bus *b = calloc(1, sizeof(*b));
@@ -1009,7 +1023,7 @@ struct link_bus *lb_open(struct meter_mailbox **mailboxes) {
   b->off_index = -1;
   b->profile_restore = -1;
   snprintf(b->token, sizeof(b->token), "linx-%u", (unsigned)getpid());
-  for (int c = 0; c < LB_CHANNELS; c++) b->meter.mailbox[c] = mailboxes ? mailboxes[c] : NULL;
+  for (int c = 0; c < LB_METERS; c++) b->meter.mailbox[c] = mailboxes ? mailboxes[c] : NULL;
   b->loop = pw_thread_loop_new("linx-link-bus", NULL);
   if (!b->loop) { free(b); return NULL; }
   b->context = pw_context_new(pw_thread_loop_get_loop(b->loop),
@@ -1052,6 +1066,7 @@ void lb_close(struct link_bus *b) {
     lb_owned_reset(&b->meter_links[i]);
     lb_owned_reset(&b->bridges[i]);
     lb_owned_reset(&b->out_links[i]);
+    lb_owned_reset(&b->out_meter_links[i]);
   }
   lb_owned_reset(&b->adapter);
   lb_owned_reset(&b->capture);

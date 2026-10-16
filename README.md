@@ -39,6 +39,7 @@ Windows.
   (such as OBS application audio) do not disturb the links.
 - Application names are published to BEACN App, and assignments made there
   move the application.
+- A slim level bar per strip for what the Studio sends back on each Link Out.
 - Live stereo levels for every channel, plus working faders and mute that set
   what this PC sends on each Link In. They stay in sync with the channel's
   volume in your desktop sound settings.

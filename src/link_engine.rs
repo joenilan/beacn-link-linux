@@ -533,6 +533,9 @@ impl LinkService {
     pub fn meter(&self, channel: u8) -> Option<Arc<Mailbox>> {
         self.bus.meter(channel)
     }
+    pub fn out_meter(&self, channel: u8) -> Option<Arc<Mailbox>> {
+        self.bus.out_meter(channel)
+    }
 
     fn scan_studio(&mut self) {
         if Instant::now() < self.studio_scan {

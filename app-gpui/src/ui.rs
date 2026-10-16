@@ -751,6 +751,7 @@ impl Render for Interface {
                         .filter(|(active_pair, _)| *active_pair == pair)
                         .map(|(_, levels)| levels),
                     None,
+                    None,
                     cx.listener(move |this, _, window, cx| {
                         let same = this.catalog_open && this.channel == Some(pair);
                         this.channel = Some(pair);
