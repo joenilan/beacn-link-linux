@@ -41,10 +41,11 @@ Windows.
   output it used before.
 - Light and dark themes, with five accent palettes.
 
-Hardware status: the new channel engine has passed software checks on
-Debian 13 with PipeWire 1.4.2 and the actual GUI. It still needs testing with
-the Studio attached (audio on each channel, BEACN App names and remote
-assignment, unplug/replug). See [Link Console](docs/link-console.md).
+Tested with BEACN Studio and BEACN App on Debian 13 (PipeWire 1.4.2):
+audio on all four channels, assignment from either side, media pause,
+faders and mute, and Studio unplug/replug. See
+[how LinX works](docs/link-console.md) for details and what is not yet
+covered.
 
 ## Current limits
 

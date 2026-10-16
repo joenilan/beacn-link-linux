@@ -559,9 +559,13 @@ impl LinkService {
                 }
             }
         }
-        self.state.host = self
+        let host = self
             .host_seen
             .is_some_and(|at| at.elapsed() < HOST_TIMEOUT);
+        if host != self.state.host {
+            eprintln!("LinX BEACN App {}", if host { "connected" } else { "not answering" });
+        }
+        self.state.host = host;
         commands
     }
 

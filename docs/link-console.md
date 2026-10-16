@@ -40,13 +40,24 @@ Behavior:
 
 ## Verified
 
-Software checks on Debian 13 (PipeWire 1.4.2, WirePlumber 0.5.8) with the
-actual GUI: assignment, a capture tap, media pause/resume, Pause and
-reconnect, channel moves, Off, faders and mute against a test tone, and
-close to the dock. WirePlumber's saved application settings matched their
-starting values afterwards.
+With BEACN Studio on a Debian 13 laptop (PipeWire 1.4.2, WirePlumber 0.5.8)
+and BEACN App on the Windows streaming PC, listened to on the streaming PC:
 
-Pending with the Studio attached: audio on each Link In, names and
-assignments in BEACN App, unplug and replug, a long session, desktops with a
-tray host, and distributions whose BEACN UCM profile splits the Studio into
-separate Link outputs.
+- Firefox moved through Link In 1–4 from LinX: heard on each channel, moves
+  within about a second, the 96-kHz transport running continuously, and
+  BEACN App showing the same channel.
+- Assignments made in BEACN App moved Firefox within a second.
+- Short and 45-second media pauses kept Link 1; when Firefox recreated its
+  stream, LinX routed the new stream to Link 1 before it played.
+- Fader levels and mute applied to the channel.
+- Unplugging and replugging the Studio recovered on its own within about
+  1.5 s, with the assignment kept.
+- Closing and reopening BEACN App did not interrupt audio.
+
+Software checks with the actual GUI also cover capture taps, Pause and
+reconnect, Off, close to the dock, launch at login and a 15-minute churn soak
+with stable memory; saved application settings matched afterwards.
+
+Not yet covered: desktops with a tray host, multi-hour sessions, and
+distributions whose BEACN UCM profile splits the Studio into separate Link
+outputs.
