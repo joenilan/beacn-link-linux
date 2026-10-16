@@ -178,6 +178,52 @@ pub fn remote_commands(
     out
 }
 
+/// A move of a LinX-placed stream made outside LinX.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DesktopMove {
+    /// Retargeted to another Link channel.
+    Channel { key: String, id: (u32, u64), channel: u8 },
+    /// Retargeted away from LinX (the caller confirms the new output).
+    Away { key: String, id: (u32, u64) },
+}
+
+/// Moves made outside LinX since the last pass. `wrote` holds the channel
+/// LinX placed each stream on (streams found on their application's
+/// remembered channel count as placed); `observed` the last seen target. A
+/// change counts only after the stream had settled on LinX's placement, so
+/// LinX's own pending writes (a reassignment not yet echoed) are never
+/// mistaken for the user's.
+pub fn desktop_moves(
+    streams: &[Stream],
+    remembered: &BTreeMap<String, u8>,
+    wrote: &mut BTreeMap<(u32, u64), u8>,
+    observed: &mut BTreeMap<(u32, u64), u8>,
+) -> Vec<DesktopMove> {
+    let live: BTreeSet<_> = streams.iter().map(|s| (s.node, s.serial)).collect();
+    wrote.retain(|id, _| live.contains(id));
+    observed.retain(|id, _| live.contains(id));
+    let mut moves = Vec::new();
+    for stream in streams.iter().filter(|s| s.info && s.movable) {
+        let id = (stream.node, stream.serial);
+        let key = stream.app_key();
+        let now = stream.target_channel;
+        if now != 0 && !wrote.contains_key(&id) && remembered.get(&key) == Some(&now) {
+            wrote.insert(id, now);
+        }
+        let before = observed.insert(id, now);
+        let Some(&placed) = wrote.get(&id) else { continue };
+        if before != Some(placed) || now == placed {
+            continue;
+        }
+        moves.push(if now != 0 {
+            DesktopMove::Channel { key, id, channel: now }
+        } else {
+            DesktopMove::Away { key, id }
+        });
+    }
+    moves
+}
+
 /// Routes needed to honor remembered channels for streams not yet settled.
 /// Each stream is settled once (or after repeated failures), so a later manual
 /// move from a desktop volume control is respected until the user assigns
@@ -498,6 +544,10 @@ pub struct LinkService {
     generation: Option<u64>,
     /// Local assignments published as intended until the graph confirms them.
     intent: BTreeMap<String, (u8, Instant)>,
+    /// Link In channel LinX last wrote as each stream's target.
+    wrote: BTreeMap<(u32, u64), u8>,
+    /// Target channel each stream was last observed with (0 = not LinX).
+    observed: BTreeMap<(u32, u64), u8>,
     studio: Option<Studio>,
     control: ControlThread,
     studio_scan: Instant,
@@ -512,6 +562,8 @@ impl LinkService {
             remembered,
             previous: BTreeMap::new(),
             handled: BTreeSet::new(),
+            wrote: BTreeMap::new(),
+            observed: BTreeMap::new(),
             attempts: BTreeMap::new(),
             generation: None,
             intent: BTreeMap::new(),
@@ -658,6 +710,7 @@ impl LinkService {
                 .iter()
                 .flat_map(|a| a.streams.iter().cloned())
                 .collect();
+            self.learn_desktop_moves(&streams);
             let routes = pending_routes(&streams, &self.remembered, &self.handled);
             for (stream, channel) in &routes {
                 let id = (stream.node, stream.serial);
@@ -665,6 +718,7 @@ impl LinkService {
                 match self.bus.route(stream, *channel) {
                     Ok(()) => {
                         self.handled.insert(id);
+                        self.wrote.insert(id, *channel);
                     }
                     Err(error) => {
                         let tries = self.attempts.entry(id).or_default();
@@ -740,13 +794,50 @@ impl LinkService {
             if let Err(error) = routed {
                 result = Err(error);
             }
-            self.handled.insert((stream.node, stream.serial));
+            let id = (stream.node, stream.serial);
+            self.handled.insert(id);
+            if channel == 0 {
+                self.wrote.remove(&id);
+            } else {
+                self.wrote.insert(id, channel);
+            }
         }
         if channel == 0 {
             self.previous.remove(key);
         }
         let _ = self.observe();
         result
+    }
+
+    /// Adopt moves made outside LinX (a desktop volume control): a stream
+    /// that had settled where LinX put it and is now targeted elsewhere by
+    /// someone else changes its application's remembered channel, or makes
+    /// LinX forget the application when moved off LinX, so later streams of
+    /// that application (new tabs, resumed media) follow the user's choice.
+    fn learn_desktop_moves(&mut self, streams: &[Stream]) {
+        for change in desktop_moves(streams, &self.remembered, &mut self.wrote, &mut self.observed) {
+            match change {
+                DesktopMove::Channel { key, id, channel } => {
+                    eprintln!("LinX: {key} moved to Link channel {channel} outside LinX; remembering it");
+                    self.remembered.insert(key.clone(), channel);
+                    self.intent.remove(&key);
+                    self.wrote.insert(id, channel);
+                }
+                DesktopMove::Away { key, id } => {
+                    // Only an explicit target on another output counts; a
+                    // cleared target is not a user choice.
+                    let Some(stream) = streams.iter().find(|s| (s.node, s.serial) == id) else {
+                        continue;
+                    };
+                    let Some(name) = self.bus.target_name(stream) else { continue };
+                    eprintln!("LinX: {key} moved to {name} outside LinX; no longer assigned");
+                    self.remembered.remove(&key);
+                    self.intent.remove(&key);
+                    self.previous.remove(&key);
+                    self.wrote.remove(&id);
+                }
+            }
+        }
     }
 
     /// Record the output an app used before LinX first moves one of its
@@ -891,6 +982,61 @@ mod tests {
             pairs(&received),
             vec![("Brave".to_owned(), 2), ("Spotify".to_owned(), 0)]
         );
+    }
+    #[test]
+    fn desktop_moves_are_learned_only_from_settled_placements() {
+        let stream = |target: u8| Stream {
+            node: 7,
+            serial: 70,
+            info: true,
+            movable: true,
+            app: "Brave".into(),
+            target_channel: target,
+            channel: target,
+            ..Default::default()
+        };
+        let remembered: BTreeMap<String, u8> = [("Brave".to_owned(), 4)].into();
+        let (mut wrote, mut observed) = (BTreeMap::new(), BTreeMap::new());
+        // Restored onto its remembered channel: counts as LinX's placement.
+        assert!(desktop_moves(&[stream(4)], &remembered, &mut wrote, &mut observed).is_empty());
+        // The user moves it to the speakers: LinX must let go.
+        assert_eq!(
+            desktop_moves(&[stream(0)], &remembered, &mut wrote, &mut observed),
+            vec![DesktopMove::Away { key: "Brave".into(), id: (7, 70) }]
+        );
+        // Or to another Link channel: remembered there.
+        let (mut wrote, mut observed) = (BTreeMap::new(), BTreeMap::new());
+        desktop_moves(&[stream(4)], &remembered, &mut wrote, &mut observed);
+        assert_eq!(
+            desktop_moves(&[stream(2)], &remembered, &mut wrote, &mut observed),
+            vec![DesktopMove::Channel { key: "Brave".into(), id: (7, 70), channel: 2 }]
+        );
+    }
+    #[test]
+    fn linx_reassignment_in_flight_is_not_a_desktop_move() {
+        let stream = |target: u8| Stream {
+            node: 7,
+            serial: 70,
+            info: true,
+            movable: true,
+            app: "Brave".into(),
+            target_channel: target,
+            ..Default::default()
+        };
+        let mut remembered: BTreeMap<String, u8> = [("Brave".to_owned(), 4)].into();
+        let (mut wrote, mut observed) = (BTreeMap::new(), BTreeMap::new());
+        desktop_moves(&[stream(4)], &remembered, &mut wrote, &mut observed);
+        // LinX (or BEACN App) reassigns to 1; the snapshot still shows 4.
+        remembered.insert("Brave".into(), 1);
+        wrote.insert((7, 70), 1);
+        assert!(desktop_moves(&[stream(4)], &remembered, &mut wrote, &mut observed).is_empty());
+        // The write lands: settled, still nothing to learn.
+        assert!(desktop_moves(&[stream(1)], &remembered, &mut wrote, &mut observed).is_empty());
+        // Streams that never had a LinX placement are left alone.
+        let (mut wrote, mut observed) = (BTreeMap::new(), BTreeMap::new());
+        let none = BTreeMap::new();
+        desktop_moves(&[stream(0)], &none, &mut wrote, &mut observed);
+        assert!(desktop_moves(&[stream(3)], &none, &mut wrote, &mut observed).is_empty());
     }
     #[test]
     fn remote_commands_follow_windows_semantics() {
