@@ -3,7 +3,7 @@
 ### Unofficial BEACN Link app for Linux
 
 LinX is an independent Linux desktop app that does what BEACN Link does on
-Windows: it gives the gaming PC four Link In channels on BEACN Studio, and
+Windows: it gives the gaming PC four Link Out channels on BEACN Studio, and
 sends applications to them. BEACN App on the Windows streaming PC sees each
 application and its channel, and can move it.
 
@@ -22,10 +22,11 @@ Windows.
 
 ## What works today
 
-- Four persistent channels, **LinX Link In** and **LinX Link 2–4 In** (BEACN's
-  own pair names), bridged to the Studio's Link
+- Four persistent channels, **LinX Link Out** and **LinX Link 2–4 Out** (the
+  names BEACN's Windows driver uses on the gaming PC; BEACN App on the
+  streaming PC shows them as Link In … Link 4 In), bridged to the Studio's Link
   In pairs at 96 kHz. They also appear in your desktop sound settings.
-- Four Link Out inputs, **LinX Link Out** and **LinX Link 2–4 Out**, carrying
+- Four return inputs, **LinX Link In** and **LinX Link 2–4 In**, carrying
   what BEACN App sends to this PC (for example your microphone), for Discord
   and other applications.
 - LinX owns the whole Studio while it runs: it switches the desktop's own
@@ -39,9 +40,9 @@ Windows.
   (such as OBS application audio) do not disturb the links.
 - Application names are published to BEACN App, and assignments made there
   move the application.
-- A slim level bar per strip for what the Studio sends back on each Link Out.
+- A slim IN level bar per strip for what the Studio sends back on that pair.
 - Live stereo levels for every channel, plus working faders and mute that set
-  what this PC sends on each Link In. They stay in sync with the channel's
+  what this PC sends on each Link Out. They stay in sync with the channel's
   volume in your desktop sound settings.
 - Closing the window keeps LinX running in the system tray (or minimized,
   on desktops without a tray). Optional launch at login starts it hidden and
@@ -83,7 +84,7 @@ cargo run --features studio -- --studio
 
 Click a channel's application box, then pick 1–4 next to an application.
 **Off** returns it to its previous output. You can also choose
-"LinX Link In" or "LinX Link N In" as an application's output in your desktop sound settings.
+"LinX Link Out" or "LinX Link N Out" as an application's output in your desktop sound settings.
 Audio works as is. For the BEACN App connection (names and remote
 assignment), your desktop account needs access to the Studio's USB device; if
 LinX reports the BEACN App link as unavailable, install

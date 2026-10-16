@@ -76,7 +76,7 @@ pub struct LinkInterface {
     pub(crate) appearance: crate::appearance::Appearance,
     pub(crate) feedback: Option<String>,
     meters: [ChannelMeter; 4],
-    /// What the Studio sends on Link Out 1..4.
+    /// What the Studio sends back on each pair (Windows: Link In 1..4).
     out_meters: [ChannelMeter; 4],
     /// Level just set from the UI, shown until PipeWire echoes it.
     pending_levels: [Option<(crate::console::Level, Instant)>; 4],
@@ -287,7 +287,7 @@ impl LinkInterface {
                     .border_color(rgb(if current { p.channels[channel as usize - 1] } else { p.line }))
                     .bg(rgb(if current { p.surface } else { p.well }))
                     .text_color(rgb(if current { p.channels[channel as usize - 1] } else { p.muted }))
-                    .tooltip(format!("Send to Link In {channel}"))
+                    .tooltip(format!("Send to {}", crate::console::link_name(channel)))
                     .child(div().text_size(px(11.)).child(channel.to_string()))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         cx.stop_propagation();
@@ -834,7 +834,7 @@ impl Render for LinkInterface {
                         div()
                             .text_size(px(11.))
                             .text_color(rgb(p.muted))
-                            .child("Apps keep their channel when paused or restarted. Faders and mute set what this PC sends on each Link In; the streaming PC's mix is unchanged."),
+                            .child("Apps keep their channel when paused or restarted. Faders and mute set what this PC sends on each Link Out; the streaming PC's mix is unchanged."),
                     )
                     .child(div().text_xs().text_color(rgb(p.muted)).child("Appearance"))
                     .child(

@@ -62,12 +62,13 @@ fn db_at(track: Bounds<Pixels>, y: Pixels) -> f32 {
     }
 }
 
-/// BEACN's own name for a Link In pair, as BEACN App shows it.
+/// A pair's name on the gaming PC, as BEACN's Windows driver names it: apps
+/// play into "Link Out" (BEACN App on the streaming PC shows it as "Link In").
 pub fn link_name(pair: u8) -> String {
     if pair == 1 {
-        "Link In".into()
+        "Link Out".into()
     } else {
-        format!("Link {pair} In")
+        format!("Link {pair} Out")
     }
 }
 
@@ -82,7 +83,7 @@ pub fn strip(
     accent: u32,
     meter: Option<crate::meter::Display>,
     level: Option<(Level, OnLevel)>,
-    // Link Out level for this pair: None hides the row, Some(None) is silent.
+    // Return level for this pair: None hides the row, Some(None) is silent.
     link_out: Option<Option<crate::meter::Display>>,
     choose: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> Stateful<Div> {
@@ -550,7 +551,7 @@ fn fader_block(
         )
 }
 
-/// What the Studio sends on this pair's Link Out: one slim horizontal bar
+/// What the Studio sends back on this pair (Windows: "Link In"): one slim bar
 /// (louder side), with the same colours and peak marker as the Link In rails.
 fn out_meter(
     pair: u8,
@@ -614,7 +615,7 @@ fn out_meter(
                 .flex_shrink_0()
                 .text_size(px(9.))
                 .text_color(rgb(if dark { 0xa0a8b1 } else { muted }))
-                .child("OUT"),
+                .child("IN"),
         )
         .child(bar)
 }

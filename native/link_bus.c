@@ -1,9 +1,11 @@
-/* Persistent Link In channel bus.
+/* Persistent BEACN Link channel bus (send and return pairs).
  *
  * LinX mirrors BEACN Link on Windows, where the Studio driver exposes four
  * permanent "Link N Out" playback endpoints and applications are routed by
  * pointing them at one of those endpoints. Here LinX owns four persistent
- * stereo sinks ("LinX Link In 1..4") for the lifetime of a connection and
+ * stereo sinks ("LinX Link Out", "LinX Link 2..4 Out", the Windows driver's
+ * names on the gaming PC; node names linx_link_in_N stay stable) for the
+ * lifetime of a connection and
  * bridges each sink's monitor to its Studio AUX pair through one retained
  * 96-kHz adapter. Applications are routed only by writing their stream's
  * `target.object` in the session manager's default metadata, exactly like a
@@ -699,11 +701,11 @@ static struct lb_object *lb_link_between(struct link_bus *b, uint32_t out_port,
 static void lb_create_sink(struct link_bus *b, int index) {
   char name[64], description[64], channel[16];
   snprintf(name, sizeof(name), "linx_link_in_%d", index + 1);
-  /* BEACN's own pair names, as BEACN App shows them. */
+  /* Pair names as BEACN's Windows driver gives them on the gaming PC. */
   if (index == 0)
-    snprintf(description, sizeof(description), "LinX Link In");
+    snprintf(description, sizeof(description), "LinX Link Out");
   else
-    snprintf(description, sizeof(description), "LinX Link %d In", index + 1);
+    snprintf(description, sizeof(description), "LinX Link %d Out", index + 1);
   snprintf(channel, sizeof(channel), "%d", index + 1);
   struct pw_properties *p = pw_properties_new(
       "factory.name", "support.null-audio-sink",
@@ -745,11 +747,11 @@ static void lb_create_adapter(struct link_bus *b) {
 static void lb_create_source(struct link_bus *b, int index) {
   char name[64], description[64], channel[16];
   snprintf(name, sizeof(name), "linx_link_out_%d", index + 1);
-  /* BEACN's own pair names, as BEACN App shows them. */
+  /* The Studio's return pairs, named as on Windows ("Link In"). */
   if (index == 0)
-    snprintf(description, sizeof(description), "LinX Link Out");
+    snprintf(description, sizeof(description), "LinX Link In");
   else
-    snprintf(description, sizeof(description), "LinX Link %d Out", index + 1);
+    snprintf(description, sizeof(description), "LinX Link %d In", index + 1);
   snprintf(channel, sizeof(channel), "%d", index + 1);
   struct pw_properties *p = pw_properties_new(
       "factory.name", "support.null-audio-sink",
@@ -768,7 +770,7 @@ static void lb_create_capture(struct link_bus *b) {
   snprintf(path, sizeof(path), "hw:%d,0", b->card);
   struct pw_properties *p = pw_properties_new(
       "factory.name", "api.alsa.pcm.source",
-      PW_KEY_NODE_NAME, name, PW_KEY_NODE_DESCRIPTION, "LinX Studio Link Out transport",
+      PW_KEY_NODE_NAME, name, PW_KEY_NODE_DESCRIPTION, "LinX Studio return transport",
       PW_KEY_MEDIA_CLASS, "Audio/Source", PW_KEY_NODE_AUTOCONNECT, "false",
       "node.driver", "true", "priority.driver", "2999", "node.pause-on-idle", "false",
       "api.alsa.path", path, "api.alsa.use-chmap", "false",
