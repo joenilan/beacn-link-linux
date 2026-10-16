@@ -2,7 +2,7 @@
 //! publishes a plain view for the UI. Channel choices persist per application
 //! so media pauses, new streams and restarts keep their Link In channel.
 use beacn_link_protocol::{
-    link_bus::Transport,
+    link_bus::{LinkOut, Transport},
     link_engine::{Beacn, Control, LinkService},
     metering::Mailbox,
 };
@@ -69,6 +69,8 @@ pub struct LinkView {
     pub last_reply: Option<&'static str>,
     /// Diagnostics: what LinX and BEACN App last exchanged.
     pub beacn: Beacn,
+    /// The Studio's Link Out pairs as LinX sources.
+    pub link_out: LinkOut,
 }
 impl LinkView {
     pub fn apps_on(&self, channel: u8) -> impl Iterator<Item = &LinkApp> {
@@ -330,6 +332,7 @@ fn run(rx: mpsc::Receiver<LinkCommand>, latest: Arc<Mutex<LinkView>>, ending: Ar
             view.host = false;
             view.last_reply = None;
             view.beacn = Beacn::default();
+            view.link_out = LinkOut::default();
         }
         publish(&view);
     }
@@ -339,6 +342,7 @@ fn run(rx: mpsc::Receiver<LinkCommand>, latest: Arc<Mutex<LinkView>>, ending: Ar
     view.meters = Default::default();
     view.last_reply = None;
     view.beacn = Beacn::default();
+    view.link_out = LinkOut::default();
     publish(&view);
 }
 
@@ -355,6 +359,7 @@ fn fill(view: &mut LinkView, service: &LinkService) {
     view.exchanges = state.exchanges;
     view.last_reply = state.last_reply;
     view.beacn = state.beacn.clone();
+    view.link_out = state.bus.link_out.clone();
     view.levels = state.bus.levels;
     view.apps = state
         .apps

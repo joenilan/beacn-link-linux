@@ -259,6 +259,15 @@ impl LinkInterface {
                     .map(|r| json!({"at_ms":r.at_ms,"key":r.key,"channel":r.channel,"error":r.error}))
                     .collect::<Vec<_>>()
             },
+            "link_out":{
+                "complete":v.link_out.complete(),
+                "sources_ready":v.link_out.sources_ready,
+                "transport":format!("{:?}",v.link_out.transport),
+                "links":v.link_out.links,
+                "profile":v.link_out.profile,
+                "profile_owned":v.link_out.profile_owned,
+                "error":v.link_out.error
+            },
             "message":v.message,
             "feedback":self.feedback,
             "auto_connect":v.auto_connect,

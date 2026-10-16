@@ -33,7 +33,7 @@ components are refused.
 
 | Operation | Behavior |
 | --- | --- |
-| `state`, `components` | Phase, status, Studio/transport/BEACN App state, applications with their observed and remembered channels, per-channel level and meter, visible components with bounds. In link mode, `beacn` holds what LinX publishes to BEACN App (`published`), the records BEACN App last returned (`received`, `received_at_ms`), when it last answered (`host_seen_at_ms`, `last_reply`) and the last eight remote assignments with any error (`remote`) |
+| `state`, `components` | Phase, status, Studio/transport/BEACN App state, applications with their observed and remembered channels, per-channel level and meter, visible components with bounds. In link mode, `beacn` holds what LinX publishes to BEACN App (`published`), the records BEACN App last returned (`received`, `received_at_ms`), when it last answered (`host_seen_at_ms`, `last_reply`) and the last eight remote assignments with any error (`remote`). `link_out` reports the four Link Out sources, the Studio capture transport, links, and the Studio's session profile (`profile_owned` while LinX holds it off) |
 | `click` with `target` | Click the named component |
 | `text` with `target`, `text` | Replace the application search text (up to 1024 bytes) |
 | `scroll` with `target`, `delta` | Wheel event inside the app (faders move 1 dB per step) |

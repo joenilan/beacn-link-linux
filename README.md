@@ -25,6 +25,12 @@ Windows.
 - Four persistent channels, **LinX Link In** and **LinX Link 2–4 In** (BEACN's
   own pair names), bridged to the Studio's Link
   In pairs at 96 kHz. They also appear in your desktop sound settings.
+- Four Link Out inputs, **LinX Link Out** and **LinX Link 2–4 Out**, carrying
+  what BEACN App sends to this PC (for example your microphone), for Discord
+  and other applications.
+- LinX owns the whole Studio while it runs: it switches the desktop's own
+  Studio devices off (without saving that choice) and hands the Studio back
+  on Pause or Quit.
 - Any number of applications, each on any channel. Moving an application
   between channels is a single redirect; nothing is torn down.
 - Applications keep their channel through media pause/resume, new browser
@@ -53,13 +59,11 @@ covered.
 Faders, mute and meters act on what this PC sends. LinX does not control
 the streaming PC's mix.
 There is no installer yet, and no Windows version.
-Distributions whose BEACN UCM profile splits the Studio into separate Link
-outputs (alsa-ucm-conf 1.2.15 and later, for example Fedora 44) expose their
-own Studio outputs on the same device. If one of them is playing when LinX
-starts, LinX reports the Studio as busy. On Fedora 44 setting the Studio's
-card profile to Off (`wpctl set-profile <Studio device id> 0`, or "Off" in
-the desktop sound settings) lets LinX own it; audio, names and remote
-assignment then work.
+Tested on Debian 13 (PipeWire 1.4.2) and Fedora 44 (PipeWire 1.6.2,
+WirePlumber 0.5.13, split BEACN UCM profile). If LinX ends without Pause or
+Quit (a crash), the Studio's desktop profile stays off until the next login
+or replug. After a WirePlumber restart while LinX runs, the desktop's own
+Studio devices return only after a replug or new login.
 
 ## Try it
 

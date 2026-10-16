@@ -27,6 +27,7 @@
 #include <pipewire/pipewire.h>
 #include <spa/param/audio/format-utils.h>
 #include <spa/param/port-config.h>
+#include <spa/param/profile.h>
 #include <spa/param/props.h>
 #include <spa/pod/parser.h>
 #include <spa/utils/string.h>
@@ -56,7 +57,7 @@ _Static_assert(sizeof(struct meter_mailbox) == 32 &&
                    offsetof(struct meter_mailbox, frames) == 24,
                "Rust meter mailbox layout mismatch");
 
-enum { LB_NODE = 1, LB_PORT, LB_LINK, LB_CLIENT };
+enum { LB_NODE = 1, LB_PORT, LB_LINK, LB_CLIENT, LB_DEVICE };
 
 struct lb_object {
   uint32_t id, kind;
@@ -134,6 +135,23 @@ struct link_bus {
   bool adapter_configured;
   int card;
   struct lb_meter meter;
+  /* Link Out: the Studio's capture pairs as four LinX sources. */
+  struct lb_owned sources[LB_CHANNELS];
+  struct lb_owned capture;
+  struct lb_owned out_links[LB_CHANNELS * 2];
+  bool capture_configured;
+  /* The Studio card's session-manager profile. LinX switches it off (not
+   * saved) while it owns the device and restores the previous one after. */
+  struct pw_proxy *device;
+  struct spa_hook device_listener;
+  uint32_t device_id;
+  int profile_index;     /* current, -1 unknown */
+  char profile_name[64];
+  int off_index;         /* the card's "off" profile, -1 unknown or none */
+  int profile_restore;   /* profile to restore, -1 none */
+  bool profile_asserted; /* switched off once for this card/device */
+  int reasserts;
+  int64_t device_bound_ms;
 };
 
 static int64_t lb_millis(void) {
@@ -197,6 +215,147 @@ static int lb_metadata_property(void *data, uint32_t subject, const char *key,
 static const struct pw_metadata_events lb_metadata_events = {
     .version = PW_VERSION_METADATA_EVENTS, .property = lb_metadata_property};
 
+/* ---------- Studio card profile ---------- */
+static void lb_device_param(void *data, int seq, uint32_t id, uint32_t index, uint32_t next,
+                            const struct spa_pod *param) {
+  struct link_bus *b = data;
+  (void)seq; (void)index; (void)next;
+  if ((id != SPA_PARAM_Profile && id != SPA_PARAM_EnumProfile) || !param) return;
+  int32_t idx = -1;
+  const char *name = NULL;
+  if (spa_pod_parse_object(param, SPA_TYPE_OBJECT_ParamProfile, NULL,
+                           SPA_PARAM_PROFILE_index, SPA_POD_Int(&idx),
+                           SPA_PARAM_PROFILE_name, SPA_POD_OPT_String(&name)) < 0)
+    return;
+  if (id == SPA_PARAM_EnumProfile) {
+    if (spa_streq(name, "off")) b->off_index = idx;
+    return;
+  }
+  b->profile_index = idx;
+  snprintf(b->profile_name, sizeof(b->profile_name), "%s", name ? name : "");
+}
+/* Re-read the profile (and the profile list) whenever the device reports
+ * them changed, like wpctl/pw-cli: a subscription alone is not reliable for
+ * devices owned by the session manager. */
+static void lb_device_info(void *data, const struct pw_device_info *info) {
+  struct link_bus *b = data;
+  if (!b->device || !(info->change_mask & PW_DEVICE_CHANGE_MASK_PARAMS)) return;
+  for (uint32_t i = 0; i < info->n_params; i++) {
+    uint32_t id = info->params[i].id;
+    if ((id != SPA_PARAM_Profile && id != SPA_PARAM_EnumProfile) ||
+        !(info->params[i].flags & SPA_PARAM_INFO_READ))
+      continue;
+    if (info->params[i].user == 0 && b->profile_index >= 0 && b->off_index >= 0) continue;
+    pw_device_enum_params((struct pw_device *)b->device, 0, id, 0, UINT32_MAX, NULL);
+  }
+}
+static const struct pw_device_events lb_device_events = {
+    .version = PW_VERSION_DEVICE_EVENTS, .info = lb_device_info, .param = lb_device_param};
+
+/* Lock held. Ask the session manager for one profile without saving it, so
+ * its stored choice stays the user's. */
+static void lb_device_set_profile(struct link_bus *b, int index) {
+  if (!b->device || index < 0) return;
+  uint8_t buf[256];
+  struct spa_pod_builder pb = SPA_POD_BUILDER_INIT(buf, sizeof(buf));
+  struct spa_pod *param = spa_pod_builder_add_object(
+      &pb, SPA_TYPE_OBJECT_ParamProfile, SPA_PARAM_Profile,
+      SPA_PARAM_PROFILE_index, SPA_POD_Int(index),
+      SPA_PARAM_PROFILE_save, SPA_POD_Bool(false));
+  if (param) pw_device_set_param((struct pw_device *)b->device, SPA_PARAM_Profile, 0, param);
+}
+/* Lock held. Drop the bound Studio device; restore its profile when asked and
+ * LinX changed it. */
+static void lb_device_release(struct link_bus *b, bool restore) {
+  if (b->device) {
+    /* Only undo LinX's own change: a profile picked since is left alone. */
+    if (restore && b->profile_restore >= 0 && b->off_index >= 0 &&
+        b->profile_index == b->off_index)
+      lb_device_set_profile(b, b->profile_restore);
+    spa_hook_remove(&b->device_listener);
+    pw_proxy_destroy(b->device);
+  }
+  b->device = NULL;
+  b->device_id = 0;
+  b->profile_index = -1;
+  b->profile_name[0] = 0;
+  b->off_index = -1;
+  b->profile_restore = -1;
+  b->profile_asserted = false;
+  b->reasserts = 0;
+}
+/* The ALSA card's id ("Link" for the Studio), which session managers use in
+ * the device's object.path ("alsa:acp:Link"). */
+static bool lb_card_id(int card, char *out, size_t size) {
+  char path[64];
+  snprintf(path, sizeof(path), "/proc/asound/card%d/id", card);
+  FILE *f = fopen(path, "re");
+  if (!f) return false;
+  bool ok = fgets(out, (int)size, f) != NULL;
+  fclose(f);
+  if (!ok) return false;
+  out[strcspn(out, "\r\n")] = 0;
+  return out[0] != 0;
+}
+static bool lb_is_card_device(struct lb_object *o, const char *id) {
+  const char *path = lb_prop(o, PW_KEY_OBJECT_PATH);
+  if (o->kind != LB_DEVICE || !spa_streq(lb_prop(o, "device.api"), "alsa") || !path ||
+      strncmp(path, "alsa:", 5) != 0)
+    return false;
+  const char *last = strrchr(path, ':');
+  return last && spa_streq(last + 1, id);
+}
+/* Lock held. Bind the session manager's device for the selected Studio card
+ * and switch its profile off once, so its own Studio nodes release the
+ * device to LinX. A profile the user picks afterwards is left alone. */
+static void lb_device_own(struct link_bus *b) {
+  if (b->card < 0) return;
+  if (!b->device) {
+    char id[64];
+    if (!lb_card_id(b->card, id, sizeof(id))) return;
+    for (struct lb_object *o = b->objects; o; o = o->next) {
+      if (!lb_is_card_device(o, id)) continue;
+      b->device = pw_registry_bind(b->registry, o->id, PW_TYPE_INTERFACE_Device,
+                                   PW_VERSION_DEVICE, 0);
+      if (!b->device) return;
+      b->device_id = o->id;
+      b->device_bound_ms = lb_millis();
+      b->profile_index = b->off_index = -1;
+      pw_proxy_add_object_listener(b->device, &b->device_listener, &lb_device_events, b);
+      pw_device_enum_params((struct pw_device *)b->device, 0, SPA_PARAM_EnumProfile, 0,
+                            UINT32_MAX, NULL);
+      pw_device_enum_params((struct pw_device *)b->device, 0, SPA_PARAM_Profile, 0,
+                            UINT32_MAX, NULL);
+      return; /* the profiles arrive asynchronously */
+    }
+    return;
+  }
+  /* A card without an "off" profile is never switched. */
+  if (b->profile_index < 0 || b->off_index < 0) return;
+  bool off = b->profile_index == b->off_index;
+  if (!b->profile_asserted) {
+    b->profile_asserted = true;
+    if (off) return; /* already off: nothing of ours to restore */
+    b->profile_restore = b->profile_index;
+    lb_device_set_profile(b, b->off_index);
+    return;
+  }
+  /* The session manager may apply its saved profile just after LinX starts;
+   * switch off again briefly, never later (then it is the user's choice). */
+  if (!off && lb_millis() - b->device_bound_ms < 5000 && b->reasserts < 3) {
+    b->reasserts++;
+    b->profile_restore = b->profile_index;
+    lb_device_set_profile(b, b->off_index);
+  }
+}
+/* Lock held. While the Studio's session-manager nodes are being released,
+ * hold back LinX's own transports instead of failing on a busy device. */
+static bool lb_device_settling(struct link_bus *b) {
+  if (!b->device) return false;
+  if (b->off_index >= 0 && b->profile_index == b->off_index) return false;
+  return lb_millis() - b->device_bound_ms < 3000;
+}
+
 /* ---------- registry cache ---------- */
 static struct lb_object *lb_find(struct link_bus *b, uint32_t id) {
   for (struct lb_object *o = b->objects; o; o = o->next)
@@ -247,6 +406,7 @@ static void lb_global(void *data, uint32_t id, uint32_t permissions,
                   : spa_streq(type, PW_TYPE_INTERFACE_Port)   ? LB_PORT
                   : spa_streq(type, PW_TYPE_INTERFACE_Link)   ? LB_LINK
                   : spa_streq(type, PW_TYPE_INTERFACE_Client) ? LB_CLIENT
+                  : spa_streq(type, PW_TYPE_INTERFACE_Device) ? LB_DEVICE
                                                               : 0;
   if (!kind || !props || lb_find(b, id)) return;
   struct lb_object *o = calloc(1, sizeof(*o));
@@ -332,15 +492,24 @@ static void lb_global_remove(void *data, uint32_t id) {
     b->metadata = NULL;
     b->metadata_id = 0;
   }
-  for (int i = 0; i < LB_CHANNELS; i++) lb_owned_forget(&b->sinks[i], id);
+  for (int i = 0; i < LB_CHANNELS; i++) {
+    lb_owned_forget(&b->sinks[i], id);
+    lb_owned_forget(&b->sources[i], id);
+  }
   for (int i = 0; i < LB_CHANNELS * 2; i++) {
     lb_owned_forget(&b->bridges[i], id);
     lb_owned_forget(&b->meter_links[i], id);
+    lb_owned_forget(&b->out_links[i], id);
   }
   if (b->adapter.bound && b->adapter.id == id) {
     lb_owned_forget(&b->adapter, id);
     b->adapter_configured = false;
   }
+  if (b->capture.bound && b->capture.id == id) {
+    lb_owned_forget(&b->capture, id);
+    b->capture_configured = false;
+  }
+  if (b->device && id == b->device_id) lb_device_release(b, false);
 }
 static const struct pw_registry_events lb_registry_events = {
     .version = PW_VERSION_REGISTRY_EVENTS,
@@ -373,12 +542,17 @@ static void lb_core_error(void *data, uint32_t id, int seq, int res,
     pw_thread_loop_signal(b->loop, false);
     return;
   }
-  for (int i = 0; i < LB_CHANNELS; i++) lb_owned_error(&b->sinks[i], id, res, message);
+  for (int i = 0; i < LB_CHANNELS; i++) {
+    lb_owned_error(&b->sinks[i], id, res, message);
+    lb_owned_error(&b->sources[i], id, res, message);
+  }
   for (int i = 0; i < LB_CHANNELS * 2; i++) {
     lb_owned_error(&b->bridges[i], id, res, message);
     lb_owned_error(&b->meter_links[i], id, res, message);
+    lb_owned_error(&b->out_links[i], id, res, message);
   }
   lb_owned_error(&b->adapter, id, res, message);
+  lb_owned_error(&b->capture, id, res, message);
 }
 static const struct pw_core_events lb_core_events = {
     .version = PW_VERSION_CORE_EVENTS, .done = lb_core_done, .error = lb_core_error};
@@ -559,8 +733,68 @@ static void lb_create_adapter(struct link_bus *b) {
       "wireplumber.is-virtual", "true", "node.hidden", "true",
       "state.restore-props", "false", "state.restore-target", "false",
       "priority.session", "0", NULL);
+  pw_properties_setf(p, PW_KEY_NODE_GROUP, "linx-studio-%u", (unsigned)getpid());
   b->adapter_configured = false;
   lb_owned_create(b, &b->adapter, "adapter", PW_TYPE_INTERFACE_Node, PW_VERSION_NODE, p);
+}
+static void lb_create_source(struct link_bus *b, int index) {
+  char name[64], description[64], channel[16];
+  snprintf(name, sizeof(name), "linx_link_out_%d", index + 1);
+  /* BEACN's own pair names, as BEACN App shows them. */
+  if (index == 0)
+    snprintf(description, sizeof(description), "LinX Link Out");
+  else
+    snprintf(description, sizeof(description), "LinX Link %d Out", index + 1);
+  snprintf(channel, sizeof(channel), "%d", index + 1);
+  struct pw_properties *p = pw_properties_new(
+      "factory.name", "support.null-audio-sink",
+      PW_KEY_NODE_NAME, name, PW_KEY_NODE_DESCRIPTION, description,
+      PW_KEY_NODE_NICK, description, PW_KEY_MEDIA_CLASS, "Audio/Source/Virtual",
+      PW_KEY_NODE_AUTOCONNECT, "false", "priority.session", "0",
+      "audio.channels", "2", "audio.position", "[ FL FR ]",
+      "device.icon-name", "audio-input-microphone",
+      "linx.link-out", channel, NULL);
+  lb_owned_create(b, &b->sources[index], "adapter", PW_TYPE_INTERFACE_Node,
+                  PW_VERSION_NODE, p);
+}
+static void lb_create_capture(struct link_bus *b) {
+  char name[64], path[32];
+  snprintf(name, sizeof(name), "linx_studio_link_out_%u", (unsigned)getpid());
+  snprintf(path, sizeof(path), "hw:%d,0", b->card);
+  struct pw_properties *p = pw_properties_new(
+      "factory.name", "api.alsa.pcm.source",
+      PW_KEY_NODE_NAME, name, PW_KEY_NODE_DESCRIPTION, "LinX Studio Link Out transport",
+      PW_KEY_MEDIA_CLASS, "Audio/Source", PW_KEY_NODE_AUTOCONNECT, "false",
+      "node.driver", "true", "priority.driver", "2999", "node.pause-on-idle", "false",
+      "api.alsa.path", path, "api.alsa.use-chmap", "false",
+      "audio.rate", "96000", "audio.allowed-rates", "[ 96000 ]",
+      "audio.format", "F32LE", "audio.channels", "8",
+      "audio.position", "[ AUX0 AUX1 AUX2 AUX3 AUX4 AUX5 AUX6 AUX7 ]",
+      "wireplumber.is-virtual", "true", "node.hidden", "true",
+      "state.restore-props", "false", "state.restore-target", "false",
+      "priority.session", "0", NULL);
+  pw_properties_setf(p, PW_KEY_NODE_GROUP, "linx-studio-%u", (unsigned)getpid());
+  b->capture_configured = false;
+  lb_owned_create(b, &b->capture, "adapter", PW_TYPE_INTERFACE_Node, PW_VERSION_NODE, p);
+}
+/* Lock held. Expose the adapter's AUX channels as DSP ports (out: capture). */
+static bool lb_configure_ports(struct lb_owned *x, enum spa_direction direction) {
+  uint8_t fbuf[1024], buf[2048];
+  struct spa_pod_builder fb = SPA_POD_BUILDER_INIT(fbuf, sizeof(fbuf));
+  struct spa_pod_builder pb = SPA_POD_BUILDER_INIT(buf, sizeof(buf));
+  struct spa_audio_info_raw info = {.format = SPA_AUDIO_FORMAT_F32P, .rate = 96000,
+                                    .channels = 8};
+  for (int i = 0; i < 8; i++) info.position[i] = SPA_AUDIO_CHANNEL_AUX0 + i;
+  struct spa_pod *format = spa_format_audio_raw_build(&fb, SPA_PARAM_Format, &info);
+  struct spa_pod *config = spa_pod_builder_add_object(
+      &pb, SPA_TYPE_OBJECT_ParamPortConfig, SPA_PARAM_PortConfig,
+      SPA_PARAM_PORT_CONFIG_direction, SPA_POD_Id(direction),
+      SPA_PARAM_PORT_CONFIG_mode, SPA_POD_Id(SPA_PARAM_PORT_CONFIG_MODE_dsp),
+      SPA_PARAM_PORT_CONFIG_monitor, SPA_POD_Bool(false),
+      SPA_PARAM_PORT_CONFIG_control, SPA_POD_Bool(false),
+      SPA_PARAM_PORT_CONFIG_format, SPA_POD_Pod(format));
+  return config && x->proxy &&
+         pw_node_set_param((struct pw_node *)x->proxy, SPA_PARAM_PortConfig, 0, config) >= 0;
 }
 static void lb_configure_adapter(struct link_bus *b) {
   uint8_t fbuf[1024], buf[2048];
@@ -704,15 +938,42 @@ static struct lb_object *lb_meter_port(struct link_bus *b, int index) {
 
 /* ---------- reconcile ---------- */
 static void lb_reconcile(struct link_bus *b) {
-  for (int i = 0; i < LB_CHANNELS; i++)
+  for (int i = 0; i < LB_CHANNELS; i++) {
     if (lb_owned_due(&b->sinks[i])) lb_create_sink(b, i);
+    if (lb_owned_due(&b->sources[i])) lb_create_source(b, i);
+  }
+  lb_device_own(b);
+  bool settling = lb_device_settling(b);
+  if (b->card >= 0 && !settling) {
+    if (lb_owned_due(&b->capture)) lb_create_capture(b);
+    if (lb_owned_node(b, &b->capture) && !b->capture_configured)
+      b->capture_configured = lb_configure_ports(&b->capture, SPA_DIRECTION_OUTPUT);
+  } else if (b->card < 0 && b->capture.proxy) {
+    lb_owned_reset(&b->capture);
+    b->capture_configured = false;
+  }
+  struct lb_object *capture = lb_owned_node(b, &b->capture);
+  for (int i = 0; i < LB_CHANNELS; i++) {
+    struct lb_object *source = lb_owned_node(b, &b->sources[i]);
+    for (int side = 0; side < 2; side++) {
+      struct lb_object *out = NULL;
+      if (capture && b->capture_configured) {
+        char aux[8];
+        snprintf(aux, sizeof(aux), "AUX%d", i * 2 + side);
+        out = lb_port(b, capture->id, PW_DIRECTION_OUTPUT, aux, false);
+      }
+      struct lb_object *in =
+          source ? lb_port(b, source->id, PW_DIRECTION_INPUT, side ? "FR" : "FL", false) : NULL;
+      lb_ensure_link(b, &b->out_links[i * 2 + side], out, in, false);
+    }
+  }
   /* Studio transport: optional; recreated with backoff when busy, absent or
    * in error (unplug, xrun recovery failure). */
-  if (b->card >= 0) {
+  if (b->card >= 0 && !settling) {
     if (lb_owned_due(&b->adapter)) lb_create_adapter(b);
     struct lb_object *adapter = lb_owned_node(b, &b->adapter);
     if (adapter && !b->adapter_configured) lb_configure_adapter(b);
-  } else if (b->adapter.proxy) {
+  } else if (b->card < 0 && b->adapter.proxy) {
     lb_owned_reset(&b->adapter);
     b->adapter_configured = false;
   }
@@ -744,6 +1005,9 @@ struct link_bus *lb_open(struct meter_mailbox **mailboxes) {
   if (!b) return NULL;
   b->card = -1;
   b->done = -1;
+  b->profile_index = -1;
+  b->off_index = -1;
+  b->profile_restore = -1;
   snprintf(b->token, sizeof(b->token), "linx-%u", (unsigned)getpid());
   for (int c = 0; c < LB_CHANNELS; c++) b->meter.mailbox[c] = mailboxes ? mailboxes[c] : NULL;
   b->loop = pw_thread_loop_new("linx-link-bus", NULL);
@@ -787,9 +1051,17 @@ void lb_close(struct link_bus *b) {
   for (int i = 0; i < LB_CHANNELS * 2; i++) {
     lb_owned_reset(&b->meter_links[i]);
     lb_owned_reset(&b->bridges[i]);
+    lb_owned_reset(&b->out_links[i]);
   }
   lb_owned_reset(&b->adapter);
-  for (int i = 0; i < LB_CHANNELS; i++) lb_owned_reset(&b->sinks[i]);
+  lb_owned_reset(&b->capture);
+  for (int i = 0; i < LB_CHANNELS; i++) {
+    lb_owned_reset(&b->sinks[i]);
+    lb_owned_reset(&b->sources[i]);
+  }
+  /* Release the device first, then hand the profile back. */
+  if (b->core && !b->broken) lb_sync(b);
+  lb_device_release(b, !b->broken);
   if (b->core && !b->broken) lb_sync(b);
   if (b->metadata) {
     spa_hook_remove(&b->metadata_listener);
@@ -827,6 +1099,13 @@ void lb_set_card(struct link_bus *b, int card) {
     b->adapter.retry_ms = 0;
     b->adapter.error[0] = 0;
     b->adapter_configured = false;
+    lb_owned_reset(&b->capture);
+    b->capture.failures = 0;
+    b->capture.retry_ms = 0;
+    b->capture.error[0] = 0;
+    b->capture_configured = false;
+    if (b->core && !b->broken) lb_sync(b);
+    lb_device_release(b, !b->broken);
     b->card = card;
   }
   pw_thread_loop_unlock(b->loop);
@@ -912,6 +1191,8 @@ static const char *lb_identity(struct link_bus *b, struct lb_object *node, const
  *   bus <healthy> <metadata> <sinks_ready> <card> <transport> <links>
  *       <generation> <hex error>
  *     transport: 0 none, 1 starting, 2 ready (idle), 3 running, 4 error
+ *   out <sources_ready> <transport> <links> <profile_owned> <hex profile>
+ *       <hex error>   (Link Out: capture transport coded like the bus's)
  *   stream <node> <serial> <client> <pid> <state> <channel> <dont_move>
  *          <target_channel> <info> <hex app name> <hex binary> <hex media name>
  *          <hex node name>
@@ -947,6 +1228,27 @@ int lb_snapshot(struct link_bus *b, char *out, size_t size) {
                       : b->error;
   lb_hex(&buf, &left, error);
   lb_put(&buf, &left, "\n");
+  {
+    int sources = 0, out_links = 0;
+    for (int i = 0; i < LB_CHANNELS; i++)
+      if (lb_owned_node(b, &b->sources[i])) sources++;
+    for (int i = 0; i < LB_CHANNELS * 2; i++)
+      if (b->out_links[i].bound && !b->out_links[i].failed) out_links++;
+    struct lb_object *capture = lb_owned_node(b, &b->capture);
+    int out_transport = 0;
+    if (b->card >= 0) {
+      if (b->capture.error[0] && !capture) out_transport = 4;
+      else if (!capture || !b->capture_configured) out_transport = 1;
+      else out_transport = b->capture.state == PW_NODE_STATE_RUNNING ? 3 : 2;
+    }
+    lb_put(&buf, &left, "out\t%d\t%d\t%d\t%d\t", sources, out_transport, out_links,
+           b->profile_restore >= 0 && b->off_index >= 0 &&
+               b->profile_index == b->off_index);
+    lb_hex(&buf, &left, b->profile_name);
+    lb_put(&buf, &left, "\t");
+    lb_hex(&buf, &left, b->capture.error);
+    lb_put(&buf, &left, "\n");
+  }
   for (int i = 0; i < LB_CHANNELS; i++) {
     struct lb_owned *x = &b->sinks[i];
     bool known = x->level_known && lb_owned_node(b, x);

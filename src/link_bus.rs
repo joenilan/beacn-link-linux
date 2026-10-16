@@ -50,6 +50,28 @@ pub enum Transport {
     Error,
 }
 
+/// The Studio's Link Out pairs, published as four LinX sources.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct LinkOut {
+    pub sources_ready: usize,
+    /// The Studio capture transport feeding them.
+    pub transport: Transport,
+    pub links: usize,
+    /// LinX switched the Studio's session profile off and restores it later.
+    pub profile_owned: bool,
+    /// The Studio card's current session profile ("off" while LinX owns it).
+    pub profile: String,
+    pub error: Option<String>,
+}
+impl LinkOut {
+    /// All four Link Out sources carry the Studio's capture pairs.
+    pub fn complete(&self) -> bool {
+        self.sources_ready == CHANNELS
+            && matches!(self.transport, Transport::Ready | Transport::Running)
+            && self.links == CHANNELS * 2
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct BusStatus {
     pub healthy: bool,
@@ -62,6 +84,7 @@ pub struct BusStatus {
     pub generation: u64,
     pub error: Option<String>,
     pub levels: [Level; CHANNELS],
+    pub link_out: LinkOut,
 }
 impl BusStatus {
     /// All four channels can carry audio to the Studio.
@@ -125,6 +148,16 @@ fn int<T: std::str::FromStr>(text: &str) -> Result<T, String> {
     text.parse().map_err(|_| format!("Invalid bus number {text:?}."))
 }
 
+fn transport(code: &str) -> Transport {
+    match code {
+        "1" => Transport::Starting,
+        "2" => Transport::Ready,
+        "3" => Transport::Running,
+        "4" => Transport::Error,
+        _ => Transport::Off,
+    }
+}
+
 pub fn parse(raw: &str) -> Result<Snapshot, String> {
     let mut snapshot = Snapshot::default();
     let mut seen_bus = false;
@@ -139,19 +172,25 @@ pub fn parse(raw: &str) -> Result<Snapshot, String> {
                     metadata: f[2] == "1",
                     sinks_ready: int(f[3])?,
                     card: u32::try_from(card).ok(),
-                    transport: match f[5] {
-                        "1" => Transport::Starting,
-                        "2" => Transport::Ready,
-                        "3" => Transport::Running,
-                        "4" => Transport::Error,
-                        _ => Transport::Off,
-                    },
+                    transport: transport(f[5]),
                     bridge_links: int(f[6])?,
                     generation: int(f[7])?,
                     error: (!error.is_empty()).then_some(error),
                     levels: snapshot.status.levels,
+                    link_out: snapshot.status.link_out.clone(),
                 };
                 seen_bus = true;
+            }
+            "out" if f.len() == 7 => {
+                let error = unhex(f[6])?;
+                snapshot.status.link_out = LinkOut {
+                    sources_ready: int(f[1])?,
+                    transport: transport(f[2]),
+                    links: int(f[3])?,
+                    profile_owned: f[4] == "1",
+                    profile: unhex(f[5])?,
+                    error: (!error.is_empty()).then_some(error),
+                };
             }
             "level" if f.len() == 5 => {
                 let channel: usize = int(f[1])?;
@@ -353,6 +392,25 @@ mod tests {
         let s = parse("bus\t1\t1\t4\t2\t4\t0\t0\t\n").unwrap();
         assert_eq!(s.status.transport, Transport::Error);
         assert!(!s.status.complete());
+    }
+    #[test]
+    fn parses_link_out_status() {
+        let raw = format!(
+            "bus\t1\t1\t4\t2\t3\t8\t0\t\nout\t4\t3\t8\t1\t{}\t\n",
+            hex("off")
+        );
+        let s = parse(&raw).unwrap();
+        let out = &s.status.link_out;
+        assert!(out.complete());
+        assert_eq!(out.transport, Transport::Running);
+        assert!(out.profile_owned);
+        assert_eq!(out.profile, "off");
+        assert_eq!(out.error, None);
+        let raw = format!("bus\t1\t1\t4\t2\t3\t8\t0\t\nout\t4\t4\t0\t0\t\t{}\n", hex("busy"));
+        let out = parse(&raw).unwrap().status.link_out;
+        assert!(!out.complete());
+        assert_eq!(out.transport, Transport::Error);
+        assert_eq!(out.error.as_deref(), Some("busy"));
     }
     #[test]
     fn app_key_falls_back_to_binary_then_node() {
