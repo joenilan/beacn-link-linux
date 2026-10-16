@@ -20,7 +20,7 @@ source /root/.cargo/env
 rustup toolchain install --profile minimal "$TOOLCHAIN" 2>&1 | grep -v -E "^(info|  )" || true
 
 cd /src
-CARGO_TARGET_DIR=/target cargo build --release --locked --features studio \
+CARGO_TARGET_DIR=/target cargo build --release --locked --features studio,native-control \
   --manifest-path app-gpui/Cargo.toml --bin beacn-linx-gpui
 BIN=/target/release/beacn-linx-gpui
 

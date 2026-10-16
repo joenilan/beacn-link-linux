@@ -27,7 +27,7 @@ software, device firmware or proprietary fonts.
 ## Build the packages
 
 ```sh
-packaging/release.sh [--accept-declared-licenses]
+packaging/release.sh
 ```
 
 From a clean checkout of the release commit this builds, in
@@ -42,10 +42,11 @@ From a clean checkout of the release commit this builds, in
 All packages install `/usr/bin/linx` (tarball: `~/.local` or `/usr/local`), the
 desktop entry and icon, and the udev rule. GitHub Actions stay disabled;
 publish the reviewed files with `gh release create v<version> ... --notes-file`.
-`--accept-declared-licenses` is for dependencies whose crate archive has no
-license file: it appends the standard SPDX text (`packaging/licenses`,
-license-list-data v3.27.0) of each declared license, marked as such. Decide
-on that before publishing.
+For dependencies whose crate archive has no license file, the notices list the
+declared license expression and append the standard SPDX text
+(`packaging/licenses`, license-list-data v3.27.0), marked as such. Packages are
+built with `studio,native-control`: the control socket stays off unless LinX
+is started with `--control-socket`.
 
 ## Collect dependency notices
 

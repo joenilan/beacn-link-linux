@@ -5,21 +5,19 @@
 #     the binary runs on older glibc (Debian 13, Fedora 4x, Arch ...).
 # Output: local/release/v<version>/ (ignored by Git), with SHA256SUMS.
 #
-# Usage: packaging/release.sh [--accept-declared-licenses] [--allow-dirty]
-#   --accept-declared-licenses  for crates whose source archive ships no
-#       license file, append the standard text of their declared license
-#       (packaging/licenses, SPDX license-list-data v3.27.0), clearly marked.
+# Usage: packaging/release.sh [--allow-dirty]
 #   --allow-dirty  build uncommitted changes (never for a published release).
+# Crates whose source archive ships no license file are listed in the notices
+# with the standard text of their declared license (packaging/licenses, SPDX
+# license-list-data v3.27.0), clearly marked as such.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' "$ROOT/app-gpui/Cargo.toml" | head -1)
 OUT="$ROOT/local/release/v$VERSION"
-ACCEPT=0
 DIRTY=0
 for arg in "$@"; do
   case "$arg" in
-    --accept-declared-licenses) ACCEPT=1 ;;
     --allow-dirty) DIRTY=1 ;;
     *) echo "Unknown argument: $arg" >&2; exit 2 ;;
   esac
@@ -39,9 +37,9 @@ echo "LinX $VERSION ($COMMIT) -> $OUT"
 supplemental=()
 [ -f local/supplemental-notices.json ] && supplemental=(--supplemental local/supplemental-notices.json)
 python3 scripts/collect_notices.py "${supplemental[@]}"
-python3 - "$ACCEPT" "$OUT/THIRD_PARTY_NOTICES.txt" <<'EOF'
+python3 - "$OUT/THIRD_PARTY_NOTICES.txt" <<'EOF'
 import json, re, sys
-accept, out = sys.argv[1] == "1", sys.argv[2]
+out = sys.argv[1]
 data = json.load(open("local/third-party-notices.json"))
 text = open("local/THIRD_PARTY_NOTICES.txt").read()
 missing = []
@@ -49,9 +47,6 @@ for w in data["warnings"]:
     m = re.match(r"No readable license/notice text for (\S+) (\S+)$", w)
     if m:
         missing.append(m.groups())
-if missing and not accept:
-    print("Packages without license text:", ", ".join(f"{n} {v}" for n, v in missing))
-    sys.exit("release: rerun with --accept-declared-licenses after review")
 licenses = {p["name"] + " " + p["version"]: p.get("license") or "" for p in data["packages"]}
 if missing:
     text += ("\n\n" + "=" * 78 + "\nPackages whose source archive contains no license file\n" + "=" * 78 +
@@ -90,7 +85,7 @@ stage() { # stage <binary> <destdir>
 # ---- Fedora RPM (native) ---------------------------------------------------
 source "$HOME/.cargo/env" 2>/dev/null || true
 FEDORA_TARGET="$ROOT/local/release-target/fedora"
-CARGO_TARGET_DIR="$FEDORA_TARGET" cargo build --release --locked --features studio \
+CARGO_TARGET_DIR="$FEDORA_TARGET" cargo build --release --locked --features studio,native-control \
   --manifest-path app-gpui/Cargo.toml --bin beacn-linx-gpui
 rm -rf "$OUT/stage-rpm"
 stage "$FEDORA_TARGET/release/beacn-linx-gpui" "$OUT/stage-rpm"

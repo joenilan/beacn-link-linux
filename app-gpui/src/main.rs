@@ -28,7 +28,7 @@ fn main() {
     }
     if args == ["--help"] {
         println!(
-            "LinX\nDefault: read-only application discovery.\n--studio: Link Console (studio-enabled build); four persistent Link In channels, any application on any channel, BEACN App publication. Closing the window keeps LinX in the tray.\n--studio-legacy: earlier single-application desktop session.\n--start-hidden: with --studio, start in the tray (minimized without one).\nOptional: --private-runtime PATH --core NAME\nOptional: --software-renderer (Linux; installed Mesa CPU Vulkan, this process only)\nDeveloper builds: --control-socket PATH (private local component control; off by default)"
+            "LinX\nDefault: read-only application discovery.\n--studio: Link Console (studio-enabled build); four Link Out channels and four Link In returns on BEACN Studio, any application on any channel, BEACN App publication. One LinX per session: launching it again shows the running window. Closing the window keeps LinX in the tray.\n--studio-legacy: earlier single-application desktop session.\n--start-hidden: with --studio, start in the tray (minimized without one).\nOptional: --private-runtime PATH --core NAME\nOptional: --software-renderer (Linux; installed Mesa CPU Vulkan, this process only)\nOptional: --control-socket PATH (private same-user diagnostics and screenshots; off unless given)"
         );
         return;
     }
@@ -39,7 +39,7 @@ fn main() {
     if software == 1 {
         args.retain(|a| a != "--software-renderer");
     }
-    // The Link Console: persistent Link In channels (default Studio mode).
+    // The Link Console: persistent Link channels (default Studio mode).
     #[cfg(all(feature = "link", target_os = "linux"))]
     {
         let hidden = args.iter().any(|a| a == "--start-hidden");
