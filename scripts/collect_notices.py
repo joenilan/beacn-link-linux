@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "app-gpui" / "Cargo.toml"
 PLATFORM = "x86_64-unknown-linux-gnu"
 MAX_TEXT = 1024 * 1024
-LICENSE_NAMES = ("LICENSE*", "COPYING*", "NOTICE*")
+LICENSE_NAMES = ("LICENSE*", "LICENCE*", "UNLICENSE*", "COPYING*", "NOTICE*")
 MAX_SUPPLEMENTAL = 32 * 1024 * 1024
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -225,11 +225,10 @@ def collect() -> tuple[list[dict], list[str], list[dict | None]]:
             warnings.append(f"Resolved package metadata missing: {package_id}")
             continue
         crate_root = Path(package["manifest_path"]).resolve().parent
-        try:
-            crate_root.relative_to(repo)
+        # LinX's own crates need no notice; vendored (patched) third-party
+        # crates under vendor/ do.
+        if crate_root.is_relative_to(repo) and not crate_root.is_relative_to(repo / "vendor"):
             continue
-        except ValueError:
-            pass
         files: dict[str, str] = {}
         problems: dict[str, str] = {}
         candidates: set[Path] = set()
