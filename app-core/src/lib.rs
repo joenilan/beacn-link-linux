@@ -1,3 +1,4 @@
+pub mod autostart;
 pub mod continuity;
 pub mod icon;
 #[cfg(all(feature = "link", target_os = "linux"))]

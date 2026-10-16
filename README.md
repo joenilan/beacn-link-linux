@@ -36,7 +36,8 @@ Windows.
   what this PC sends on each Link In. They stay in sync with the channel's
   volume in your desktop sound settings.
 - Closing the window keeps LinX running in the system tray (or minimized,
-  on desktops without a tray). Pause or Quit returns every application to the
+  on desktops without a tray). Optional launch at login starts it hidden and
+  connected. Pause or Quit returns every application to the
   output it used before.
 - Light and dark themes, with five accent palettes.
 
@@ -49,7 +50,7 @@ assignment, unplug/replug). See [Link Console](docs/link-console.md).
 
 Faders, mute and meters act on what this PC sends. LinX does not control
 the streaming PC's mix.
-There is no installer or launch-at-login yet, and no Windows version.
+There is no installer yet, and no Windows version.
 Distributions whose BEACN UCM profile splits the Studio into separate Link
 outputs (alsa-ucm-conf 1.2.15 and later) are untested.
 

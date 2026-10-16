@@ -41,6 +41,11 @@ fn status_of(view: &LinkView) -> Status {
 /// its window is closed; the tray reopens it.
 pub(crate) struct LinkCore {
     pub(crate) worker: LinkWorker,
+    /// Arguments used for launch at login.
+    login_args: Vec<String>,
+    /// Started hidden and no window shown yet.
+    hidden_since: Option<std::time::Instant>,
+    autostart: bool,
     #[cfg(all(feature = "status-tray", target_os = "linux"))]
     tray: beacn_linx_core::tray::Tray,
 }
@@ -642,6 +647,23 @@ impl Render for LinkInterface {
                             })),
                     )
                     .child(
+                        Switch::new("launch-at-login")
+                            .small()
+                            .label("Start LinX when you log in")
+                            .checked(cx.global::<LinkCore>().autostart)
+                            .on_change(cx.listener(|this, enabled: &bool, _, cx| {
+                                let args = cx.global::<LinkCore>().login_args.clone();
+                                match beacn_linx_core::autostart::set(*enabled, &args) {
+                                    Ok(()) => {
+                                        cx.global_mut::<LinkCore>().autostart = *enabled;
+                                        this.feedback = None;
+                                    }
+                                    Err(error) => this.feedback = Some(error),
+                                }
+                                cx.notify();
+                            })),
+                    )
+                    .child(
                         div()
                             .text_size(px(11.))
                             .text_color(rgb(p.muted))
@@ -810,7 +832,7 @@ fn open_console(cx: &mut App) {
 
 /// Tray-resident app: closing the window keeps LinX routing in the tray.
 /// Without a tray host, closing the window quits so LinX never runs hidden.
-pub fn run() {
+pub fn run(start_hidden: bool, login_args: Vec<String>) {
     crate::shutdown::install();
     application().with_assets(crate::ui::Assets).run(move |cx| {
         init(cx);
@@ -818,6 +840,9 @@ pub fn run() {
         cx.set_quit_mode(QuitMode::Explicit);
         cx.set_global(LinkCore {
             worker: LinkWorker::spawn(),
+            login_args,
+            hidden_since: start_hidden.then(std::time::Instant::now),
+            autostart: beacn_linx_core::autostart::enabled(),
             #[cfg(all(feature = "status-tray", target_os = "linux"))]
             tray: beacn_linx_core::tray::Tray::spawn(),
         });
@@ -833,7 +858,9 @@ pub fn run() {
             }
         })
         .detach();
-        open_console(cx);
+        if !start_hidden {
+            open_console(cx);
+        }
         cx.spawn(async move |cx| {
             loop {
                 cx.background_executor()
@@ -880,8 +907,41 @@ fn tray_available(cx: &App) -> bool {
     }
 }
 
+/// Started hidden: stay in the tray; without a tray host (or if none has
+/// answered after a few seconds), show the window minimized instead.
+fn reveal_if_no_tray(cx: &mut App) {
+    let Some(since) = cx.global::<LinkCore>().hidden_since else {
+        return;
+    };
+    let tray = {
+        #[cfg(all(feature = "status-tray", target_os = "linux"))]
+        {
+            cx.global::<LinkCore>().tray.available()
+        }
+        #[cfg(not(all(feature = "status-tray", target_os = "linux")))]
+        {
+            Some(false)
+        }
+    };
+    match tray {
+        Some(true) => cx.global_mut::<LinkCore>().hidden_since = None,
+        Some(false) => {}
+        None if since.elapsed() < Duration::from_secs(4) => return,
+        None => {}
+    }
+    if tray == Some(true) {
+        return;
+    }
+    cx.global_mut::<LinkCore>().hidden_since = None;
+    open_console(cx);
+    if let Some(window) = cx.windows().first().copied() {
+        let _ = window.update(cx, |_, window, _| window.minimize_window());
+    }
+}
+
 /// Mirror status into the tray and handle its menu. True requests Quit.
 fn tray_tick(cx: &mut App) -> bool {
+    reveal_if_no_tray(cx);
     #[cfg(all(feature = "status-tray", target_os = "linux"))]
     {
         use beacn_linx_core::tray;

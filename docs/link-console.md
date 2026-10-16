@@ -35,7 +35,8 @@ Behavior:
 - Pause and Quit return every moved application to the output it used before.
   No WirePlumber changes are required.
 - Closing the window keeps LinX in the system tray, or minimized where the
-  desktop has no tray.
+  desktop has no tray. "Start LinX when you log in" writes a standard entry in
+  `~/.config/autostart`; at login LinX starts with `--start-hidden`.
 
 ## Verified
 

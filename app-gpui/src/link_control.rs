@@ -164,6 +164,7 @@ impl LinkInterface {
             "applications-3",
             "applications-4",
             "auto-connect",
+            "launch-at-login",
             "theme-dark",
             "theme-light",
             "quit-app",

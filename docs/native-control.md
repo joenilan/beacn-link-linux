@@ -47,7 +47,7 @@ Component IDs: `session`, `settings`, `applications`, `applications-2` to
 `applications-4`, `fader-1` to `fader-4`, `mute-1` to `mute-4`,
 `route-<0..4>-<app id>` (0 is Off; the app id is in `state`), `search-input`,
 `application-list`, `auto-connect`, `theme-dark`, `theme-light`,
-`accent-mint/blue/violet/amber/rose` and `quit-app`.
+`accent-mint/blue/violet/amber/rose`, `launch-at-login` and `quit-app`.
 
 Meter values in `state` are aggregates (RMS, peak, hold in dBFS); no audio
 samples are exposed. The controller must remove the previous screenshot file

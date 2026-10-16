@@ -28,7 +28,7 @@ fn main() {
     }
     if args == ["--help"] {
         println!(
-            "LinX\nDefault: read-only application discovery.\n--studio: Link Console (studio-enabled build); four persistent Link In channels, any application on any channel, BEACN App publication. Closing the window keeps LinX in the tray.\n--studio-legacy: earlier single-application desktop session.\nOptional: --private-runtime PATH --core NAME\nOptional: --software-renderer (Linux; installed Mesa CPU Vulkan, this process only)\nDeveloper builds: --control-socket PATH (private local component control; off by default)"
+            "LinX\nDefault: read-only application discovery.\n--studio: Link Console (studio-enabled build); four persistent Link In channels, any application on any channel, BEACN App publication. Closing the window keeps LinX in the tray.\n--studio-legacy: earlier single-application desktop session.\n--start-hidden: with --studio, start in the tray (minimized without one).\nOptional: --private-runtime PATH --core NAME\nOptional: --software-renderer (Linux; installed Mesa CPU Vulkan, this process only)\nDeveloper builds: --control-socket PATH (private local component control; off by default)"
         );
         return;
     }
@@ -41,10 +41,19 @@ fn main() {
     }
     // The Link Console: persistent Link In channels (default Studio mode).
     #[cfg(all(feature = "link", target_os = "linux"))]
-    if args.as_slice() == ["--studio"] {
-        apply_software_renderer(software == 1);
-        beacn_linx_gpui::link_ui::run();
-        return;
+    {
+        let hidden = args.iter().any(|a| a == "--start-hidden");
+        let rest: Vec<_> = args.iter().filter(|a| *a != "--start-hidden").collect();
+        if rest.len() == 1 && rest[0] == "--studio" {
+            apply_software_renderer(software == 1);
+            // Arguments to reuse for launch at login.
+            let mut login = vec!["--studio".to_string()];
+            if software == 1 {
+                login.push("--software-renderer".into());
+            }
+            beacn_linx_gpui::link_ui::run(hidden, login);
+            return;
+        }
     }
     let connection = match args.as_slice() {
         [] => Connection::Desktop,
