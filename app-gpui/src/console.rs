@@ -62,6 +62,15 @@ fn db_at(track: Bounds<Pixels>, y: Pixels) -> f32 {
     }
 }
 
+/// BEACN's own name for a Link In pair, as BEACN App shows it.
+pub fn link_name(pair: u8) -> String {
+    if pair == 1 {
+        "Link In".into()
+    } else {
+        format!("Link {pair} In")
+    }
+}
+
 /// Render one static Console strip. The application well owns the only click
 /// handler; the disabled fader and mute decoration cannot trigger selection.
 pub fn strip(
@@ -81,21 +90,13 @@ pub fn strip(
     }
     .colors();
     let dark = !light;
-    let title = match pair {
-        1 => "Game",
-        2 => "Voice",
-        3 => "Music",
-        4 => "Browser",
-        _ => "Channel",
-    };
+    let title = link_name(pair);
     let route = if pending_name.is_some() {
-        "Waiting for audio".to_string()
+        "Waiting for audio"
     } else if names.is_empty() {
-        "Not linked".to_string()
-    } else if pair == 1 {
-        "Link In".to_string()
+        "Not linked"
     } else {
-        format!("Link {pair} In")
+        "Linked"
     };
     let well_id = if pair == 1 {
         "applications".to_string()

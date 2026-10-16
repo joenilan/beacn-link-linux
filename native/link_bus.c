@@ -520,7 +520,11 @@ static struct lb_object *lb_link_between(struct link_bus *b, uint32_t out_port,
 static void lb_create_sink(struct link_bus *b, int index) {
   char name[64], description[64], channel[16];
   snprintf(name, sizeof(name), "linx_link_in_%d", index + 1);
-  snprintf(description, sizeof(description), "LinX Link In %d", index + 1);
+  /* BEACN's own pair names, as BEACN App shows them. */
+  if (index == 0)
+    snprintf(description, sizeof(description), "LinX Link In");
+  else
+    snprintf(description, sizeof(description), "LinX Link %d In", index + 1);
   snprintf(channel, sizeof(channel), "%d", index + 1);
   struct pw_properties *p = pw_properties_new(
       "factory.name", "support.null-audio-sink",

@@ -22,7 +22,8 @@ Windows.
 
 ## What works today
 
-- Four persistent channels, **LinX Link In 1–4**, bridged to the Studio's Link
+- Four persistent channels, **LinX Link In** and **LinX Link 2–4 In** (BEACN's
+  own pair names), bridged to the Studio's Link
   In pairs at 96 kHz. They also appear in your desktop sound settings.
 - Any number of applications, each on any channel. Moving an application
   between channels is a single redirect; nothing is torn down.
@@ -53,7 +54,12 @@ Faders, mute and meters act on what this PC sends. LinX does not control
 the streaming PC's mix.
 There is no installer yet, and no Windows version.
 Distributions whose BEACN UCM profile splits the Studio into separate Link
-outputs (alsa-ucm-conf 1.2.15 and later) are untested.
+outputs (alsa-ucm-conf 1.2.15 and later, for example Fedora 44) expose their
+own Studio outputs on the same device. If one of them is playing when LinX
+starts, LinX reports the Studio as busy. On Fedora 44 setting the Studio's
+card profile to Off (`wpctl set-profile <Studio device id> 0`, or "Off" in
+the desktop sound settings) lets LinX own it; audio, names and remote
+assignment then work.
 
 ## Try it
 
@@ -72,7 +78,7 @@ cargo run --features studio -- --studio
 
 Click a channel's application box, then pick 1–4 next to an application.
 **Off** returns it to its previous output. You can also choose
-"LinX Link In N" as an application's output in your desktop sound settings.
+"LinX Link In" or "LinX Link N In" as an application's output in your desktop sound settings.
 Audio works as is. For the BEACN App connection (names and remote
 assignment), your desktop account needs access to the Studio's USB device; if
 LinX reports the BEACN App link as unavailable, install

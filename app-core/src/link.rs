@@ -3,7 +3,7 @@
 //! so media pauses, new streams and restarts keep their Link In channel.
 use beacn_link_protocol::{
     link_bus::Transport,
-    link_engine::{Control, LinkService},
+    link_engine::{Beacn, Control, LinkService},
     metering::Mailbox,
 };
 use std::{
@@ -66,6 +66,9 @@ pub struct LinkView {
     pub meters: [Option<Arc<Mailbox>>; CHANNELS as usize],
     pub levels: [beacn_link_protocol::link_bus::Level; CHANNELS as usize],
     pub exchanges: u64,
+    pub last_reply: Option<&'static str>,
+    /// Diagnostics: what LinX and BEACN App last exchanged.
+    pub beacn: Beacn,
 }
 impl LinkView {
     pub fn apps_on(&self, channel: u8) -> impl Iterator<Item = &LinkApp> {
@@ -325,6 +328,8 @@ fn run(rx: mpsc::Receiver<LinkCommand>, latest: Arc<Mutex<LinkView>>, ending: Ar
             view.transport = Transport::Off;
             view.control = Control::Absent;
             view.host = false;
+            view.last_reply = None;
+            view.beacn = Beacn::default();
         }
         publish(&view);
     }
@@ -332,6 +337,8 @@ fn run(rx: mpsc::Receiver<LinkCommand>, latest: Arc<Mutex<LinkView>>, ending: Ar
     view.phase = Phase::Paused;
     view.apps.clear();
     view.meters = Default::default();
+    view.last_reply = None;
+    view.beacn = Beacn::default();
     publish(&view);
 }
 
@@ -346,6 +353,8 @@ fn fill(view: &mut LinkView, service: &LinkService) {
     view.host = state.host;
     view.control_error = state.control_error.clone();
     view.exchanges = state.exchanges;
+    view.last_reply = state.last_reply;
+    view.beacn = state.beacn.clone();
     view.levels = state.bus.levels;
     view.apps = state
         .apps

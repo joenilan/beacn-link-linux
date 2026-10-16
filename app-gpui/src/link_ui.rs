@@ -249,8 +249,8 @@ impl LinkInterface {
         let status = match (app.channel, app.running) {
             (0, true) => "Playing · desktop output".to_owned(),
             (0, false) => "Desktop output".to_owned(),
-            (n, true) => format!("Link {n} · playing"),
-            (n, false) => format!("Link {n}"),
+            (n, true) => format!("{} · playing", crate::console::link_name(n)),
+            (n, false) => crate::console::link_name(n),
         };
         let mut chips = div().flex().items_center().gap(px(4.));
         for channel in 1..=4u8 {
@@ -888,11 +888,7 @@ impl Render for LinkInterface {
             let filtering = !self.search.read(cx).value().is_empty();
             let rows = apps.iter().map(|app| self.row(app, cx)).collect::<Vec<_>>();
             let pair = self.channel;
-            let title = if pair == 1 {
-                "Send to Link In".to_owned()
-            } else {
-                format!("Send to Link {pair} In")
-            };
+            let title = format!("Send to {}", crate::console::link_name(pair));
             body = body.child(self.scrim("applications-scrim", cx)).child(
                 panel(&p)
                     .id("applications-panel")

@@ -245,6 +245,20 @@ impl LinkInterface {
             "control_error":v.control_error,
             "audio_error":v.audio_error,
             "exchanges":v.exchanges,
+            "beacn":{
+                "last_reply":v.last_reply,
+                "host_seen_at_ms":v.beacn.host_seen_at_ms,
+                "published":v.beacn.published.iter()
+                    .map(|(name, channel)| json!({"name":name,"channel":channel}))
+                    .collect::<Vec<_>>(),
+                "received":v.beacn.received.iter()
+                    .map(|(name, channel)| json!({"name":name,"channel":channel}))
+                    .collect::<Vec<_>>(),
+                "received_at_ms":v.beacn.received_at_ms,
+                "remote":v.beacn.remote.iter()
+                    .map(|r| json!({"at_ms":r.at_ms,"key":r.key,"channel":r.channel,"error":r.error}))
+                    .collect::<Vec<_>>()
+            },
             "message":v.message,
             "feedback":self.feedback,
             "auto_connect":v.auto_connect,

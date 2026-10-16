@@ -8,7 +8,7 @@ Windows. The earlier single-application session remains as `--studio-legacy`.
 
 | Owner | Role |
 |---|---|
-| `native/link_bus.c` | PipeWire client on a `pw_thread_loop`. Owns four sinks `linx_link_in_1..4` ("LinX Link In N"), one 96-kHz 8-channel ALSA transport on the Studio (`hw:N,0`, AUX0–7), links from each sink's monitor to its Link In pair, and an 8-port level meter. Every 500 ms it recreates anything owned that disappeared or failed, with backoff. Routes applications only by writing `target.object` in the session manager's `default` metadata, like a desktop volume control. |
+| `native/link_bus.c` | PipeWire client on a `pw_thread_loop`. Owns four sinks `linx_link_in_1..4` ("LinX Link In", "LinX Link N In", BEACN's pair names), one 96-kHz 8-channel ALSA transport on the Studio (`hw:N,0`, AUX0–7), links from each sink's monitor to its Link In pair, and an 8-port level meter. Every 500 ms it recreates anything owned that disappeared or failed, with backoff. Routes applications only by writing `target.object` in the session manager's `default` metadata, like a desktop volume control. |
 | `src/link_bus.rs` | FFI and snapshot parsing. A short PipeWire stall is distinguished from a lost connection. |
 | `src/link_engine.rs` | `LinkService`: groups streams into applications, keeps per-application channel memory, restores each app's previous output on Off and Pause, publishes playing applications to BEACN App and applies its assignments on a separate USB thread. |
 | `src/native_usb.rs` (`ControlUsb`) | BEACN Link control interface (interface 3 only; audio stays with the kernel driver). |
@@ -25,7 +25,7 @@ Behavior:
   not hide a route.
 - Faders and mute set each LinX sink's volume and mute. The Studio transport
   and meters read the post-fader signal, and the same level is the
-  "LinX Link In N" volume in desktop sound settings, in both directions. The
+  "LinX Link In" / "LinX Link N In" volume in desktop sound settings, in both directions. The
   fader spans 0 to −60 dB plus a silent stop; the wheel moves 1 dB.
 - Playing applications are published to BEACN App every 500 ms; assignments
   1–4 made there move the application. "BEACN App connected" means it

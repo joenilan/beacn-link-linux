@@ -293,6 +293,48 @@ pub struct State {
     pub control_error: Option<String>,
     pub last_reply: Option<&'static str>,
     pub exchanges: u64,
+    pub beacn: Beacn,
+}
+
+/// What LinX and BEACN App last exchanged, for diagnostics only.
+#[derive(Debug, Clone, Default)]
+pub struct Beacn {
+    /// Name and Link In (0 = unassigned) LinX publishes, in wire order.
+    pub published: Vec<(String, u8)>,
+    /// Records BEACN App last returned, and when (Unix milliseconds).
+    pub received: Vec<(String, u8)>,
+    pub received_at_ms: Option<u64>,
+    /// When BEACN App last answered an exchange (Unix milliseconds).
+    pub host_seen_at_ms: Option<u64>,
+    /// Recent remote assignments, oldest first.
+    pub remote: Vec<RemoteAssignment>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RemoteAssignment {
+    pub at_ms: u64,
+    pub key: String,
+    pub channel: u8,
+    pub error: Option<String>,
+}
+
+const REMOTE_LOG: usize = 8;
+
+fn pairs(records: &[Record]) -> Vec<(String, u8)> {
+    records
+        .iter()
+        .map(|r| {
+            // Received names are NUL-terminated inside a fixed-width field.
+            let name = r.name.split(|&b| b == 0).next().unwrap_or_default();
+            (String::from_utf8_lossy(name).into_owned(), r.assignment.byte())
+        })
+        .collect()
+}
+
+fn unix_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
 }
 
 const CONTROL_RETRY: Duration = Duration::from_secs(3);
@@ -528,8 +570,10 @@ impl LinkService {
     /// Hand the current list to the control thread and collect its results.
     fn exchange(&mut self) -> Vec<(String, u8)> {
         let intent = self.intent_map();
+        let list = records_for(&self.state.apps, &intent);
+        self.state.beacn.published = pairs(&list);
         if let Ok(mut records) = self.control.records.lock() {
-            *records = records_for(&self.state.apps, &intent);
+            *records = list;
         }
         let mut commands: Vec<(String, u8)> = Vec::new();
         while let Ok(event) = self.control.events.try_recv() {
@@ -548,9 +592,12 @@ impl LinkService {
                     self.state.last_reply = Some(label);
                     if host {
                         self.host_seen = Some(Instant::now());
+                        self.state.beacn.host_seen_at_ms = Some(unix_ms());
                     }
                 }
                 ControlEvent::Remote(published, received) => {
+                    self.state.beacn.received = pairs(&received);
+                    self.state.beacn.received_at_ms = Some(unix_ms());
                     for command in remote_commands(&self.state.apps, &published, &received) {
                         if !commands.iter().any(|(k, _)| k == &command.0) {
                             commands.push(command);
@@ -639,8 +686,14 @@ impl LinkService {
         self.state.studio = self.studio.is_some();
         for (key, channel) in self.exchange() {
             eprintln!("LinX remote assignment: {key} -> {channel}");
-            if let Err(error) = self.assign(&key, channel) {
+            let error = self.assign(&key, channel).err();
+            if let Some(error) = &error {
                 eprintln!("LinX remote assignment failed: {error}");
+            }
+            let log = &mut self.state.beacn.remote;
+            log.push(RemoteAssignment { at_ms: unix_ms(), key, channel, error });
+            if log.len() > REMOTE_LOG {
+                log.remove(0);
             }
         }
         Ok(())
@@ -826,6 +879,15 @@ mod tests {
         let intent = BTreeMap::from([("Playing".to_string(), 4)]);
         let out = records_for(&apps, &intent);
         assert!(out.iter().any(|r| r.name == b"Playing" && r.assignment.byte() == 4));
+    }
+    #[test]
+    fn diagnostic_names_stop_at_the_field_terminator() {
+        // As received from BEACN App: NUL, then stale bytes in the field.
+        let received = [rec(b"Brave\0\xff\xfe\x10\x20", 2), rec(b"Spotify", 0)];
+        assert_eq!(
+            pairs(&received),
+            vec![("Brave".to_owned(), 2), ("Spotify".to_owned(), 0)]
+        );
     }
     #[test]
     fn remote_commands_follow_windows_semantics() {
