@@ -97,7 +97,7 @@ impl BusStatus {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Stream {
     pub node: u32,
     pub serial: u64,
@@ -118,14 +118,33 @@ pub struct Stream {
 }
 impl Stream {
     /// Per-application identity, matching the session manager's own
-    /// per-application stream memory where possible.
+    /// per-application stream memory where possible. Engine names that many
+    /// applications share ("Chromium" for every Electron app, the WebRTC
+    /// voice engine) fall through to the process, as BEACN Link on Windows
+    /// names sessions by their process image.
     pub fn app_key(&self) -> String {
-        [&self.app, &self.binary, &self.node_name]
+        let app = specific_app_name(&self.app);
+        let key = [app.as_deref(), Some(self.binary.as_str()), Some(self.node_name.as_str())]
             .into_iter()
-            .find(|s| !s.trim().is_empty())
-            .cloned()
-            .unwrap_or_else(|| format!("pid {}", self.pid))
+            .flatten()
+            .map(|s| s.trim())
+            .find(|s| !s.is_empty())
+            .map(|s| s.strip_suffix(".exe").filter(|s| !s.is_empty()).unwrap_or(s).to_owned());
+        key.unwrap_or_else(|| format!("pid {}", self.pid))
     }
+}
+
+/// The application's own name, or None when it is only the audio engine's.
+/// ALSA bridges name the program in brackets ("ALSA plug-in [game]").
+fn specific_app_name(name: &str) -> Option<String> {
+    let name = name.trim();
+    for bridge in ["ALSA plug-in [", "PipeWire ALSA ["] {
+        if let Some(inner) = name.strip_prefix(bridge).and_then(|s| s.strip_suffix(']')) {
+            return Some(inner.to_owned()).filter(|s| !s.trim().is_empty());
+        }
+    }
+    const ENGINES: [&str; 4] = ["chromium", "chromium input", "electron", "webrtc voiceengine"];
+    (!name.is_empty() && !ENGINES.contains(&name.to_lowercase().as_str())).then(|| name.to_owned())
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -427,10 +446,30 @@ mod tests {
             hex("node")
         );
         let s = parse(&raw).unwrap();
-        assert_eq!(s.streams[0].app_key(), "game.exe");
+        // Like BEACN Link on Windows, the image's ".exe" is not part of the name.
+        assert_eq!(s.streams[0].app_key(), "game");
         assert!(!s.streams[0].movable);
         assert!(!s.streams[0].running);
         assert!(!s.streams[0].info);
+    }
+    #[test]
+    fn engine_names_fall_through_to_the_process() {
+        let stream = |app: &str, binary: &str| Stream {
+            app: app.into(),
+            binary: binary.into(),
+            node_name: "node".into(),
+            ..Default::default()
+        };
+        assert_eq!(stream("Chromium", "Discord").app_key(), "Discord");
+        assert_eq!(stream("chromium input", "signal-desktop").app_key(), "signal-desktop");
+        assert_eq!(stream("WEBRTC VoiceEngine", "firefox").app_key(), "firefox");
+        assert_eq!(stream("ALSA plug-in [mpg123]", "mpg123").app_key(), "mpg123");
+        assert_eq!(stream("PipeWire ALSA [Game.exe]", "wine64").app_key(), "Game");
+        assert_eq!(stream("", "Game.exe").app_key(), "Game");
+        // Real application names are kept as they are.
+        assert_eq!(stream("Spotify", "spotify").app_key(), "Spotify");
+        assert_eq!(stream("Brave", "brave").app_key(), "Brave");
+        assert_eq!(stream("Chromium", "").app_key(), "node");
     }
     #[test]
     fn rejects_missing_status_and_malformed_records() {
