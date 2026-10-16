@@ -63,7 +63,7 @@ BEACN App on the Windows streaming PC. The GPUI app uses the Rust 1.99.0
 toolchain pinned in `app-gpui/rust-toolchain.toml`. The native build needs a
 C compiler, `pkg-config`, PipeWire/SPA development headers 1.0 or newer
 (`libpipewire-0.3-dev` on Debian/Ubuntu, `pipewire-devel` on Fedora) and
-libusb 1.0.27 or newer.
+libusb 1.0.27 or newer (`libusb-1.0-0-dev` / `libusb1-devel`).
 
 ```sh
 cd app-gpui
@@ -78,6 +78,11 @@ assignment), your desktop account needs access to the Studio's USB device; if
 LinX reports the BEACN App link as unavailable, install
 [`integrations/udev/70-linx-beacn-studio.rules`](integrations/udev/70-linx-beacn-studio.rules)
 to `/etc/udev/rules.d/` and replug the Studio.
+
+LinX shows its status in the system tray. KDE Plasma, Cinnamon, Xfce and
+Ubuntu's GNOME have one; on stock GNOME (Debian, Fedora Workstation) install
+the AppIndicator extension (`gnome-shell-extension-appindicator`), then log
+out and back in. Without a tray, closing the window minimizes LinX instead.
 
 ## Screenshots
 
