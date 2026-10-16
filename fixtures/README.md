@@ -11,4 +11,4 @@ These fixtures were constructed by hand; none is a device or session capture.
 - pipewire.synthetic.json: one fictional client and two playback nodes;
   metadata names/IDs are synthetic, and `game` is an explicit planner binding.
 
-Fixture names are fictional. See docs/offline-codec.md for use and limits.
+Fixture names are fictional.

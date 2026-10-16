@@ -39,7 +39,6 @@ fn empty(generation: u64) -> GraphSnapshot {
         links: vec![],
     }
 }
-/// Tagged TSV rows are documented in docs/pipewire-graph.md.
 /// All records are caller metadata; graph tags never populate the receipt ledger.
 pub fn preparation_from_tsv(generation: u64, text: &str) -> Result<PreparationInput, String> {
     if text.len() > MAX_GRAPH_TSV_BYTES {

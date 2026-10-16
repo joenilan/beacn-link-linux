@@ -260,18 +260,6 @@ def collect() -> tuple[list[dict], list[str], list[dict | None]]:
         records.append(record)
         package_sources.append({"commit": read_vcs_commit(crate_root)})
 
-    wireplumber = ROOT / "integrations" / "wireplumber" / "LICENSE"
-    text, error = safe_text(wireplumber, ROOT.resolve())
-    if error:
-        warnings.append(f"LinX WirePlumber integration notice unavailable: {error}")
-    else:
-        records.append({
-            "name": "LinX WirePlumber integration (upstream component)",
-            "version": None, "license": "MIT", "repository": None,
-            "licenseFiles": {"integrations/wireplumber/LICENSE": text or ""},
-            "fileProblems": {},
-        })
-        package_sources.append(None)
     return records, warnings, package_sources
 
 

@@ -58,10 +58,10 @@ outputs (alsa-ucm-conf 1.2.15 and later) are untested.
 This is a development build path, not an installer. Use a Linux desktop with
 PipeWire and WirePlumber, connect BEACN Studio to the Linux PC, and run
 BEACN App on the Windows streaming PC. The GPUI app uses the Rust 1.99.0
-toolchain pinned in `app-gpui/rust-toolchain.toml`. The native build needs
-PipeWire/SPA development headers 1.0 or newer and libusb 1.0.27 or newer; see
-the [PipeWire build notes](docs/native-executor.md) and
-[USB requirements](docs/native-usb-handshake.md).
+toolchain pinned in `app-gpui/rust-toolchain.toml`. The native build needs a
+C compiler, `pkg-config`, PipeWire/SPA development headers 1.0 or newer
+(`libpipewire-0.3-dev` on Debian/Ubuntu, `pipewire-devel` on Fedora) and
+libusb 1.0.27 or newer.
 
 ```sh
 cd app-gpui
@@ -95,12 +95,8 @@ and BEACN Link are referenced only to identify the compatibility target.
 
 ## Further reading
 
-- [Link Console design and evidence](docs/link-console.md)
-- [Current handoff and runtime evidence](docs/HANDOFF.md)
+- [How LinX works](docs/link-console.md)
 - [Contributing](CONTRIBUTING.md)
+- [Developer control socket](docs/native-control.md)
+- [Screenshots](docs/screenshots.md)
 - [Release preparation](docs/releasing.md)
-- [Native GPUI interface](docs/gpui-interface.md)
-- [Native desktop session](docs/native-desktop-session.md)
-- [Native meter behavior and evidence](docs/native-meters.md)
-- [Protocol and compatibility research](docs/protocol.md)
-- [Phased research plan](docs/research-plan.md)

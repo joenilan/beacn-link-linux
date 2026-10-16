@@ -486,7 +486,7 @@ impl DesktopTarget {
             _single_thread: PhantomData,
         };
         if unsafe { bcl_desktop_cache_guard(owner.session) } != 1 {
-            return Err("LinX's WirePlumber target-cache guard is missing or inactive. See docs/wireplumber-integration.md.".into());
+            return Err("LinX's WirePlumber target-cache guard is missing or inactive. Use the default --studio mode.".into());
         }
         let observed = owner.observe()?;
         if observed.inventory.applications != owner.expected_apps {
