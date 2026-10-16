@@ -57,7 +57,7 @@ pub fn entry(program: &str, args: &[String]) -> String {
         .collect::<Vec<_>>()
         .join(" ");
     format!(
-        "[Desktop Entry]\nType=Application\nName=LinX\nComment=Unofficial BEACN Link for Linux\nExec={exec}\nIcon=audio-card\nTerminal=false\nX-GNOME-Autostart-enabled=true\nX-LinX-Autostart=1\n"
+        "[Desktop Entry]\nType=Application\nName=LinX\nComment=Unofficial BEACN Link for Linux\nExec={exec}\nIcon=io.github.linx\nTerminal=false\nX-GNOME-Autostart-enabled=true\nX-LinX-Autostart=1\n"
     )
 }
 

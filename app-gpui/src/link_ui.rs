@@ -73,7 +73,6 @@ pub struct LinkInterface {
     pub(crate) channel: u8,
     pub(crate) settings: bool,
     pub(crate) catalog_open: bool,
-    expanded_window: Option<(Size<Pixels>, Size<Pixels>)>,
     pub(crate) appearance: crate::appearance::Appearance,
     pub(crate) feedback: Option<String>,
     meters: [ChannelMeter; 4],
@@ -89,6 +88,9 @@ impl LinkInterface {
         // Closing never stops routing: to the tray when there is one,
         // otherwise minimized to the dock. Quit is explicit.
         window.on_window_should_close(cx, |window, cx| close_requested(window, cx));
+        // No invisible shadow margin around the self-drawn window: the
+        // console uses the whole window, resize edges sit inside it.
+        window.set_client_inset(px(0.));
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Find an application"));
         cx.subscribe_in(&search, window, |_, _, _: &InputEvent, _, cx| cx.notify())
             .detach();
@@ -138,7 +140,6 @@ impl LinkInterface {
             channel: 1,
             settings: false,
             catalog_open: false,
-            expanded_window: None,
             appearance: Default::default(),
             feedback: None,
             meters: Default::default(),
@@ -228,28 +229,6 @@ impl LinkInterface {
         cx.notify();
     }
 
-    fn fit_drawers(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.catalog_open || self.settings {
-            let current = window.viewport_size();
-            if self.expanded_window.is_none() && current.height <= px(650.) {
-                let available = window
-                    .display(cx)
-                    .map(|d| d.bounds().size.height - px(80.))
-                    .unwrap_or(px(820.));
-                let desired = if self.catalog_open { px(820.) } else { px(740.) };
-                let expanded = size(current.width, desired.min(available).max(current.height));
-                if expanded.height > current.height {
-                    self.expanded_window = Some((current, expanded));
-                    window.resize(expanded);
-                }
-            }
-        } else if let Some((original, expanded)) = self.expanded_window.take() {
-            if window.viewport_size() == expanded {
-                window.resize(original);
-            }
-        }
-    }
-
     pub(crate) fn filtered_apps(&self, cx: &App) -> Vec<LinkApp> {
         let filter = self.search.read(cx).value().to_lowercase();
         let mut apps: Vec<LinkApp> = self
@@ -291,6 +270,7 @@ impl LinkInterface {
                     .tooltip(format!("Send to Link In {channel}"))
                     .child(div().text_size(px(11.)).child(channel.to_string()))
                     .on_click(cx.listener(move |this, _, _, cx| {
+                        cx.stop_propagation();
                         this.send(LinkCommand::Assign(key.clone(), channel), cx)
                     })),
             );
@@ -308,6 +288,7 @@ impl LinkInterface {
                 .tooltip("Return to the desktop output")
                 .child(div().text_size(px(11.)).child("Off"))
                 .on_click(cx.listener(move |this, _, _, cx| {
+                    cx.stop_propagation();
                     this.send(LinkCommand::Assign(key.clone(), 0), cx)
                 })),
         );
@@ -316,6 +297,8 @@ impl LinkInterface {
         } else {
             p.muted
         };
+        let key = app.key.clone();
+        let target = self.channel;
         div()
             .id(SharedString::from(format!("app-{id}")))
             .flex()
@@ -325,6 +308,13 @@ impl LinkInterface {
             .py_2()
             .border_b_1()
             .border_color(rgb(p.line))
+            .cursor_pointer()
+            .hover(|row| row.bg(rgb(p.surface)))
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.send(LinkCommand::Assign(key.clone(), target), cx);
+                this.catalog_open = false;
+                cx.notify();
+            }))
             .child(
                 div()
                     .size_8()
@@ -359,8 +349,150 @@ impl LinkInterface {
                     ),
             )
             .child(chips)
+            .test_support()
             .into_any_element()
     }
+}
+
+/// Invisible edges and corners for resizing the undecorated window.
+fn resize_handles() -> Vec<AnyElement> {
+    const EDGE: f32 = 5.0;
+    const CORNER: f32 = 12.0;
+    let handle = |id: &'static str, edge: ResizeEdge, cursor: CursorStyle| {
+        div()
+            .id(id)
+            .absolute()
+            .cursor(cursor)
+            .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                cx.stop_propagation();
+                window.start_window_resize(edge);
+            })
+    };
+    vec![
+        handle("resize-top", ResizeEdge::Top, CursorStyle::ResizeUpDown)
+            .top_0().left(px(CORNER)).right(px(CORNER)).h(px(EDGE)).into_any_element(),
+        handle("resize-bottom", ResizeEdge::Bottom, CursorStyle::ResizeUpDown)
+            .bottom_0().left(px(CORNER)).right(px(CORNER)).h(px(EDGE)).into_any_element(),
+        handle("resize-left", ResizeEdge::Left, CursorStyle::ResizeLeftRight)
+            .left_0().top(px(CORNER)).bottom(px(CORNER)).w(px(EDGE)).into_any_element(),
+        handle("resize-right", ResizeEdge::Right, CursorStyle::ResizeLeftRight)
+            .right_0().top(px(CORNER)).bottom(px(CORNER)).w(px(EDGE)).into_any_element(),
+        handle("resize-top-left", ResizeEdge::TopLeft, CursorStyle::ResizeUpLeftDownRight)
+            .top_0().left_0().size(px(CORNER)).into_any_element(),
+        handle("resize-top-right", ResizeEdge::TopRight, CursorStyle::ResizeUpRightDownLeft)
+            .top_0().right_0().size(px(CORNER)).into_any_element(),
+        handle("resize-bottom-left", ResizeEdge::BottomLeft, CursorStyle::ResizeUpRightDownLeft)
+            .bottom_0().left_0().size(px(CORNER)).into_any_element(),
+        handle("resize-bottom-right", ResizeEdge::BottomRight, CursorStyle::ResizeUpLeftDownRight)
+            .bottom_0().right_0().size(px(CORNER)).into_any_element(),
+    ]
+}
+
+impl LinkInterface {
+    /// LinX's own window controls: minimize and close (close keeps LinX
+    /// running in the tray, or minimizes without one).
+    fn window_buttons(&self) -> Div {
+        let p = self.appearance.colors();
+        let control = |id: &'static str, glyph: &'static str, tip: &'static str| {
+            Button::new(id)
+                .ghost()
+                .small()
+                .size(px(29.))
+                .p_0()
+                .ml(px(4.))
+                .rounded(px(5.))
+                .text_color(rgb(p.muted))
+                .tooltip(tip)
+                .child(div().text_size(px(13.)).child(glyph))
+        };
+        div()
+            .flex()
+            .items_center()
+            .ml(px(6.))
+            .pl(px(6.))
+            .border_l_1()
+            .border_color(rgb(p.line))
+            .child(
+                control("minimize-window", "—", "Minimize")
+                    .on_click(|_, window, _| window.minimize_window()),
+            )
+            .child(
+                control("close-window", "✕", "Close (LinX keeps running)").on_click(
+                    |_, window, cx| {
+                        if close_requested(window, cx) {
+                            window.remove_window();
+                        }
+                    },
+                ),
+            )
+    }
+
+    /// Dimmed backdrop behind a panel; clicking it closes the panel.
+    fn scrim(&self, id: &'static str, cx: &mut Context<Self>) -> Stateful<Div> {
+        div()
+            .id(id)
+            .absolute()
+            .occlude()
+            .top_0()
+            .left_0()
+            .right_0()
+            .bottom_0()
+            .rounded(px(10.))
+            .bg(rgba(if self.appearance.light { 0x1b232a40 } else { 0x0000008c }))
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.catalog_open = false;
+                this.settings = false;
+                cx.notify();
+            }))
+    }
+}
+
+fn panel(p: &crate::appearance::Colors) -> Div {
+    div()
+        .absolute()
+        // Block clicks from reaching the console beneath the panel.
+        .occlude()
+        .flex()
+        .flex_col()
+        .bg(rgb(p.background))
+        .border_1()
+        .border_color(rgb(p.line))
+        .rounded(px(10.))
+        .shadow_lg()
+}
+
+fn panel_header(
+    title: &str,
+    close_id: &'static str,
+    p: &crate::appearance::Colors,
+    cx: &mut Context<LinkInterface>,
+) -> Div {
+    div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .child(
+            div()
+                .text_size(px(13.))
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(rgb(p.text))
+                .child(title.to_owned()),
+        )
+        .child(
+            Button::new(close_id)
+                .ghost()
+                .small()
+                .size(px(24.))
+                .p_0()
+                .text_color(rgb(p.muted))
+                .icon(IconName::Close)
+                .tooltip("Close")
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.catalog_open = false;
+                    this.settings = false;
+                    cx.notify();
+                })),
+        )
 }
 
 impl Render for LinkInterface {
@@ -404,11 +536,11 @@ impl Render for LinkInterface {
                     p.channels[(pair - 1) as usize],
                     self.meters[(pair - 1) as usize].display,
                     level,
-                    cx.listener(move |this, _, window, cx| {
+                    cx.listener(move |this, _, _, cx| {
                         let same = this.catalog_open && this.channel == pair;
                         this.channel = pair;
                         this.catalog_open = !same;
-                        this.fit_drawers(window, cx);
+                        this.settings = false;
                         cx.notify();
                     }),
                 ));
@@ -418,6 +550,7 @@ impl Render for LinkInterface {
         let tool_color = if self.appearance.light { 0x43515b } else { 0xcdd1d7 };
         let mut body = div()
             .id("linx-window")
+            .relative()
             .size_full()
             .overflow_y_scroll()
             .flex()
@@ -432,6 +565,7 @@ impl Render for LinkInterface {
             .child(
                 div()
                     .id("console-header")
+                    .on_mouse_down(MouseButton::Left, |_, window, _| window.start_window_move())
                     .flex_shrink_0()
                     .h(px(57.))
                     .px(px(20.))
@@ -477,6 +611,11 @@ impl Render for LinkInterface {
                             .child(crate::ui::tracked("STUDIO", 9., 0.9)),
                     )
                     .child(div().flex_1())
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .child(
                         div()
                             .flex()
@@ -546,11 +685,13 @@ impl Render for LinkInterface {
                                     .size(px(13.))
                                     .text_color(rgb(tool_color)),
                             )
-                            .on_click(cx.listener(|this, _, window, cx| {
+                            .on_click(cx.listener(|this, _, _, cx| {
                                 this.settings = !this.settings;
-                                this.fit_drawers(window, cx);
+                                this.catalog_open = false;
                                 cx.notify();
                             })),
+                    )
+                    .child(self.window_buttons())
                     ),
             )
             .child(
@@ -630,17 +771,15 @@ impl Render for LinkInterface {
                         })),
                 );
             }
-            body = body.child(
-                div()
-                    .mx_4()
-                    .mb_3()
-                    .p_3()
-                    .border_1()
-                    .border_color(rgb(p.line))
-                    .rounded_md()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
+            body = body.child(self.scrim("settings-scrim", cx)).child(
+                panel(&p)
+                    .id("settings-panel")
+                    .top(px(62.))
+                    .right(px(14.))
+                    .w(px(340.))
+                    .p_4()
+                    .gap_3()
+                    .child(panel_header("Settings", "close-settings", &p, cx))
                     .child(
                         Switch::new("auto-connect")
                             .small()
@@ -742,51 +881,49 @@ impl Render for LinkInterface {
                     .child(beacn_linx_core::model::label(&message)),
             );
         }
+        body = body.children(resize_handles());
         if self.catalog_open {
             let apps = self.filtered_apps(cx);
             let empty = apps.is_empty();
             let filtering = !self.search.read(cx).value().is_empty();
             let rows = apps.iter().map(|app| self.row(app, cx)).collect::<Vec<_>>();
             let pair = self.channel;
-            body = body.child(
-                div()
-                    .mx_3()
-                    .mb_3()
-                    .border_t_1()
-                    .border_color(rgb(p.line))
-                    .pt_2()
-                    .flex()
-                    .flex_col()
+            let title = if pair == 1 {
+                "Send to Link In".to_owned()
+            } else {
+                format!("Send to Link {pair} In")
+            };
+            body = body.child(self.scrim("applications-scrim", cx)).child(
+                panel(&p)
+                    .id("applications-panel")
+                    .top(px(62.))
+                    .left(px(14.))
+                    .right(px(14.))
+                    .max_h(px(470.))
+                    .p_3()
                     .gap_2()
+                    .child(panel_header(&title, "close-applications", &p, cx))
+                    .child(
+                        Input::new(&self.search)
+                            .id("search-input")
+                            .small()
+                            .cleanable(true)
+                            .prefix(gpui_kit::component::Icon::new(IconName::Search).small()),
+                    )
                     .child(
                         div()
-                            .flex()
-                            .items_center()
-                            .gap_3()
-                            .px_1()
-                            .child(div().text_xs().text_color(rgb(p.muted)).child(if pair == 1 {
-                                "APPLICATIONS → LINK IN".to_owned()
-                            } else {
-                                format!("APPLICATIONS → LINK {pair} IN")
-                            }))
-                            .child(
-                                div().flex_1().child(
-                                    Input::new(&self.search)
-                                        .id("search-input")
-                                        .small()
-                                        .cleanable(true)
-                                        .prefix(gpui_kit::component::Icon::new(IconName::Search).small()),
-                                ),
-                            ),
+                            .text_size(px(10.))
+                            .text_color(rgb(p.muted))
+                            .child("Click an application to send it here, or pick any channel with 1–4."),
                     )
                     .child(
                         div()
                             .id("application-list")
-                            .max_h(px(260.))
                             .min_h(px(52.))
+                            .max_h(px(340.))
                             .overflow_y_scroll()
                             .bg(rgb(p.well))
-                            .rounded_sm()
+                            .rounded(px(6.))
                             .children(rows)
                             .when(empty, |el| {
                                 el.child(div().p_3().text_xs().text_color(rgb(p.muted)).child(
@@ -821,10 +958,17 @@ fn open_console(cx: &mut App) {
                     cx,
                 ))),
                 window_min_size: Some(size(px(420.), px(380.))),
+                // LinX draws its own title bar: drag the header to move,
+                // its own minimize/close buttons, edges to resize.
                 titlebar: Some(TitlebarOptions {
                     title: Some("LinX".into()),
+                    appears_transparent: true,
                     ..Default::default()
                 }),
+                window_decorations: Some(WindowDecorations::Client),
+                window_background: WindowBackgroundAppearance::Transparent,
+                // Matches io.github.linx.desktop so docks show LinX's icon.
+                app_id: Some("io.github.linx".into()),
                 ..Default::default()
             },
             cx,

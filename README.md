@@ -79,6 +79,11 @@ LinX reports the BEACN App link as unavailable, install
 [`integrations/udev/70-linx-beacn-studio.rules`](integrations/udev/70-linx-beacn-studio.rules)
 to `/etc/udev/rules.d/` and replug the Studio.
 
+To add LinX to your application menu, copy
+[`integrations/desktop/io.github.linx.desktop`](integrations/desktop/io.github.linx.desktop)
+to `~/.local/share/applications/` (adjust `Exec` to where you put the `linx`
+binary) and `io.github.linx.svg` to `~/.local/share/icons/hicolor/scalable/apps/`.
+
 LinX shows its status in the system tray. KDE Plasma, Cinnamon, Xfce and
 Ubuntu's GNOME have one; on stock GNOME (Debian, Fedora Workstation) install
 the AppIndicator extension (`gnome-shell-extension-appindicator`), then log

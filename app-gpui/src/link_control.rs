@@ -175,6 +175,12 @@ impl LinkInterface {
             "accent-rose",
             "search-input",
             "application-list",
+            "close-applications",
+            "close-settings",
+            "applications-scrim",
+            "settings-scrim",
+            "minimize-window",
+            "close-window",
         ]
         .map(str::to_owned)
         .to_vec();
@@ -184,6 +190,7 @@ impl LinkInterface {
         }
         for app in &self.view.apps {
             let id = key_id(&app.key);
+            ids.push(format!("app-{id}"));
             for channel in 0..=4 {
                 ids.push(format!("route-{channel}-{id}"));
             }

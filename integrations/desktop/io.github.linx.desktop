@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=LinX
+GenericName=BEACN Link for Linux
+Comment=Send applications to BEACN Studio's Link In channels
+Exec=linx --studio
+Icon=io.github.linx
+Terminal=false
+Categories=AudioVideo;Audio;Mixer;
+Keywords=BEACN;Studio;Link;audio;
+StartupWMClass=io.github.linx
