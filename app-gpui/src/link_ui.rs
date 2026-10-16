@@ -96,8 +96,12 @@ impl LinkInterface {
         let controlled_window = window.window_handle();
         let poll = cx.spawn(async move |weak, cx| {
             loop {
+                // Fast polling only while a meter can move.
                 let active = weak
-                    .update(cx, |this, _| this.view.phase == Phase::Running)
+                    .update(cx, |this, _| {
+                        this.view.phase == Phase::Running
+                            && this.view.apps.iter().any(|a| a.running && a.channel > 0)
+                    })
                     .unwrap_or(false);
                 cx.background_executor()
                     .timer(Duration::from_millis(if active { 33 } else { 100 }))
