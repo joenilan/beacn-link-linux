@@ -291,8 +291,9 @@ pub fn strip(
                     .gap(px(4.))
                     .child(
                         div()
-                            .w(px(46.))
+                            .w(px(58.))
                             .text_right()
+                            .whitespace_nowrap()
                             .text_size(px(18.))
                             .font_weight(gpui_kit::FontWeight::MEDIUM)
                             .text_color(rgb(if dark { 0xe5e7e8 } else { colors.text }))
@@ -357,8 +358,10 @@ pub fn strip(
             .child(
                 div()
                     .id(well_id)
-                    .mt(px(if link_out.is_some() { 8. } else { 13. }))
-                    .pt(px(if link_out.is_some() { 8. } else { 10. }))
+                    // The IN row sits in the gap above the divider, so the
+                    // strip keeps its height and nothing below it moves.
+                    .mt(px(if link_out.is_some() { 0. } else { 13. }))
+                    .pt(px(10.))
                     .border_t_1()
                     .border_color(rgb(if dark { 0x383b40 } else { colors.line }))
                     .cursor_pointer()
@@ -605,8 +608,7 @@ fn out_meter(
         }
     }
     div()
-        .mt(px(9.))
-        .h(px(10.))
+        .h(px(13.))
         .flex()
         .items_center()
         .gap(px(6.))

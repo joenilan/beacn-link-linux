@@ -90,9 +90,6 @@ impl LinkInterface {
         // Closing never stops routing: to the tray when there is one,
         // otherwise minimized to the dock. Quit is explicit.
         window.on_window_should_close(cx, |window, cx| close_requested(window, cx));
-        // No invisible shadow margin around the self-drawn window: the
-        // console uses the whole window, resize edges sit inside it.
-        window.set_client_inset(px(0.));
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Find an application"));
         cx.subscribe_in(&search, window, |_, _, _: &InputEvent, _, cx| cx.notify())
             .detach();
@@ -524,7 +521,7 @@ impl Render for LinkInterface {
             self.native_icon = Some(status);
         }
         let connected = matches!(self.view.phase, Phase::Running | Phase::Retrying | Phase::Starting);
-        let narrow = f32::from(window.viewport_size().width) < 700.;
+        let narrow = f32::from(console_width(window)) < 700.;
         let mut bank = div()
             .id("console-bank")
             .mx(px(13.))
@@ -972,12 +969,17 @@ fn open_console(cx: &mut App) {
     }
     open_window(
             WindowOptions {
+                // The console is designed at 788x568; the window adds the
+                // client-side shadow margin around it so nothing scrolls.
                 window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
                     None,
-                    size(px(788.), px(568.)),
+                    size(px(788. + 2. * FRAME_SHADOW), px(568. + 2. * FRAME_SHADOW)),
                     cx,
                 ))),
-                window_min_size: Some(size(px(420.), px(380.))),
+                window_min_size: Some(size(
+                    px(420. + 2. * FRAME_SHADOW),
+                    px(380. + 2. * FRAME_SHADOW),
+                )),
                 // LinX draws its own title bar: drag the header to move,
                 // its own minimize/close buttons, edges to resize.
                 titlebar: Some(TitlebarOptions {
@@ -996,6 +998,24 @@ fn open_console(cx: &mut App) {
         )
         .expect("open LinX window");
     cx.activate(true);
+}
+
+/// GPUI Kit's window border draws a client-side shadow margin of this size on
+/// every side on Linux (gpui-component `window_border` SHADOW_SIZE) and sets
+/// the platform inset to match; elsewhere it draws none.
+#[cfg(target_os = "linux")]
+const FRAME_SHADOW: f32 = 20.0;
+#[cfg(not(target_os = "linux"))]
+const FRAME_SHADOW: f32 = 0.0;
+
+/// Width available to the console inside the window's shadow margin.
+pub(crate) fn console_width(window: &Window) -> Pixels {
+    let inset = window.client_inset().unwrap_or(px(0.));
+    window.viewport_size().width - inset * 2.
+}
+pub(crate) fn console_height(window: &Window) -> Pixels {
+    let inset = window.client_inset().unwrap_or(px(0.));
+    window.viewport_size().height - inset * 2.
 }
 
 /// Tray-resident app: closing the window keeps LinX routing in the tray.

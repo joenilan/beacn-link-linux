@@ -280,7 +280,9 @@ impl LinkInterface {
             "search":self.search.read(cx).value().to_string(),
             "appearance":{"light":self.appearance.light,"accent":self.appearance.accent.label()},
             "size":{"width":f32::from(window.viewport_size().width),
-                    "height":f32::from(window.viewport_size().height)}
+                    "height":f32::from(window.viewport_size().height),
+                    "console_width":f32::from(crate::link_ui::console_width(window)),
+                    "console_height":f32::from(crate::link_ui::console_height(window))}
         })
     }
 }
