@@ -107,12 +107,26 @@ def read_capture(path: Path) -> tuple[bytes, tuple[int, int, int]]:
         os.close(fd)
 
 
-def png_bytes(ppm: bytes) -> tuple[bytes, int, int]:
+def shadow_margin(state: dict) -> int:
+    """GPUI Kit's client-side shadow margin around the Console, from the
+    window size and the console size LinX reports (0 for older builds)."""
+    size = state.get("size") or {}
+    try:
+        margin = (float(size["width"]) - float(size["console_width"])) / 2
+    except (KeyError, TypeError, ValueError):
+        return 0
+    return int(margin) if 0 <= margin <= 64 else 0
+
+
+def png_bytes(ppm: bytes, margin: int = 0) -> tuple[bytes, int, int]:
     with Image.open(BytesIO(ppm)) as source:
         if source.format != "PPM" or source.width > 1600 or source.height > 1200:
             raise ValueError("native capture is not a supported LinX PPM frame")
         source.load()
         image = source.convert("RGB")
+    # The shadow margin is not part of the Console (black on X11 captures).
+    if margin and image.width > 2 * margin and image.height > 2 * margin:
+        image = image.crop((margin, margin, image.width - margin, image.height - margin))
     output = BytesIO()
     image.save(output, format="PNG", optimize=True)
     return output.getvalue(), image.width, image.height
@@ -201,7 +215,7 @@ def main() -> None:
     ppm, identity = read_capture(ppm_path)
     if len(ppm) != captured["bytes"]:
         raise ValueError("capture size does not match the authenticated response")
-    png, width, height = png_bytes(ppm)
+    png, width, height = png_bytes(ppm, shadow_margin(state))
     capture_hash = sha256(ppm).hexdigest()
     write_output(output, png, 0o600)
     if frame_path:

@@ -11,14 +11,7 @@ LinX is **unofficial and not affiliated with BEACN**. It is experimental
 compatibility software, not a BEACN product or a replacement for BEACN App on
 Windows.
 
-![LinX native Console with a live application assigned to Link In 4](assets/screenshots/linx-console.png)
-
-<details>
-<summary>Light theme</summary>
-
-![LinX native Console with Firefox levels in the light theme](assets/screenshots/linx-console-light.png)
-
-</details>
+![LinX native Console with Spotify on Link 2 Out](assets/screenshots/linx-console.png)
 
 ## What works today
 
@@ -70,9 +63,26 @@ Quit (a crash), the Studio's desktop profile stays off until the next login
 or replug. After a WirePlumber restart while LinX runs, the desktop's own
 Studio devices return only after a replug or new login.
 
-## Try it
+## Install
 
-This is a development build path, not an installer. Use a Linux desktop with
+Download a package from [Releases](https://github.com/joenilan/beacn-link-linux/releases)
+(x86_64). Each one installs `linx`, its application-menu entry and icon, and
+the USB rule that lets your desktop account reach the Studio's Link control
+interface; replug the Studio once after installing.
+
+- Fedora: `sudo dnf install ./linx-<version>-1.fc44.x86_64.rpm`
+- Debian 13 / Ubuntu: `sudo apt install ./linx_<version>-1_amd64.deb`
+- Other distributions: extract `linx-<version>-x86_64-linux.tar.gz` and run
+  `./install.sh` (for your user) or `./install.sh --system`; `./uninstall.sh`
+  removes it.
+
+Requirements: PipeWire 1.0 or newer with WirePlumber, BEACN Studio connected
+to this PC, and BEACN App on the Windows streaming PC. Start LinX from the
+application menu; Settings → *Launch at login* starts it in the tray.
+
+## Build from source
+
+Use a Linux desktop with
 PipeWire and WirePlumber, connect BEACN Studio to the Linux PC, and run
 BEACN App on the Windows streaming PC. The GPUI app uses the Rust 1.99.0
 toolchain pinned in `app-gpui/rust-toolchain.toml`. The native build needs a

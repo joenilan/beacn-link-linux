@@ -1015,6 +1015,7 @@ pub(crate) fn console_width(window: &Window) -> Pixels {
     let inset = window.client_inset().unwrap_or(px(0.));
     window.viewport_size().width - inset * 2.
 }
+#[cfg_attr(not(feature = "native-control"), allow(dead_code))]
 pub(crate) fn console_height(window: &Window) -> Pixels {
     let inset = window.client_inset().unwrap_or(px(0.));
     window.viewport_size().height - inset * 2.

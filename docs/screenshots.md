@@ -42,6 +42,13 @@ python3 scripts/capture_screenshot.py \
   --frame
 ```
 
+On a Wayland desktop GPUI can capture its own window only through X11. With
+LinX installed, `scripts/capture_x11.sh --frame` restarts it under Xwayland with
+the control socket, sets the designed window size, captures and frames the
+Console, then restarts LinX normally (audio pauses briefly twice). The capture
+tool trims GPUI Kit's client-side shadow margin, using the window and console
+sizes LinX reports.
+
 The framing script adds a dark teal and mint background, fine grid, rounded
 image mask, and soft shadow. It preserves the screenshot content and never
 enlarges it. The default canvas is 1200 × 860. To frame an already reviewed raw

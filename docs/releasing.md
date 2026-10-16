@@ -1,6 +1,6 @@
 # Preparing a LinX release
 
-LinX is experimental and has no installer or tagged release yet.
+LinX is experimental. Releases are built locally (see below) and published on GitHub.
 
 ## Release scope
 
@@ -23,6 +23,29 @@ software, device firmware or proprietary fonts.
 4. Check the GPLv3 license and third-party notices for the distributed
    dependencies, and review changed trust boundaries (USB access, control
    socket) before distribution.
+
+## Build the packages
+
+```sh
+packaging/release.sh [--accept-declared-licenses]
+```
+
+From a clean checkout of the release commit this builds, in
+`local/release/v<version>/`:
+
+- `linx-<version>-1.fc<N>.x86_64.rpm`, built natively on Fedora;
+- `linx_<version>-1_amd64.deb` and `linx-<version>-x86_64-linux.tar.gz`, built
+  in a Debian 13 container (podman) so the binary runs on glibc 2.41 and
+  newer;
+- `THIRD_PARTY_NOTICES.txt` (shipped in every package) and `SHA256SUMS`.
+
+All packages install `/usr/bin/linx` (tarball: `~/.local` or `/usr/local`), the
+desktop entry and icon, and the udev rule. GitHub Actions stay disabled;
+publish the reviewed files with `gh release create v<version> ... --notes-file`.
+`--accept-declared-licenses` is for dependencies whose crate archive has no
+license file: it appends the standard SPDX text (`packaging/licenses`,
+license-list-data v3.27.0) of each declared license, marked as such. Decide
+on that before publishing.
 
 ## Collect dependency notices
 
