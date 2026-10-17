@@ -179,6 +179,14 @@ impl LinkInterface {
             "close-settings",
             "applications-scrim",
             "settings-scrim",
+            "update-checks",
+            "check-updates",
+            "update",
+            "updates-scrim",
+            "close-updates",
+            "update-download",
+            "update-install",
+            "update-restart",
             "minimize-window",
             "close-window",
         ]
@@ -234,9 +242,13 @@ impl LinkInterface {
                         "rms_dbfs":d.rms_db,"peak_dbfs":d.peak_db,"hold_dbfs":d.hold_db}))})
             })
             .collect::<Vec<_>>();
+        let update = cx.global::<super::LinkCore>().updates.view();
         json!({
             "pid":std::process::id(),
             "mode":"link",
+            "update":{"phase":format!("{:?}",update.phase),"mode":format!("{:?}",update.mode),
+                "current":update.current,"latest":update.latest,"error":update.error,
+                "kind":format!("{:?}",update.kind),"notes":update.notes.len()},
             "phase":format!("{:?}",v.phase),
             "status":v.status(),
             "studio":v.studio,

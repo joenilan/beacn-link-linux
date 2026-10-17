@@ -9,7 +9,7 @@ use beacn_linx_core::{
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     component::{
-        IconName, Sizable, Theme, ThemeMode,
+        Disableable, IconName, Sizable, Theme, ThemeMode,
         button::{Button, ButtonVariants},
         input::{Input, InputEvent, InputState},
         switch::Switch,
@@ -50,6 +50,9 @@ pub(crate) struct LinkCore {
     tray: beacn_linx_core::tray::Tray,
     /// Single-instance guard; later launches ask through it to show.
     instance: Option<crate::single_instance::Instance>,
+    pub(crate) updates: crate::updates::Updates,
+    /// A newer version announced this session and not yet looked at.
+    update_unseen: bool,
 }
 impl Global for LinkCore {}
 impl LinkCore {
@@ -74,6 +77,7 @@ pub struct LinkInterface {
     pub(crate) search: Entity<InputState>,
     pub(crate) channel: u8,
     pub(crate) settings: bool,
+    pub(crate) updates_open: bool,
     pub(crate) catalog_open: bool,
     /// Rows of the open application picker, in a fixed order: applications
     /// that start or stop playing while it is open never move a row.
@@ -145,6 +149,7 @@ impl LinkInterface {
             search,
             channel: 1,
             settings: false,
+            updates_open: false,
             catalog_open: false,
             picker: Vec::new(),
             picker_for: None,
@@ -523,8 +528,144 @@ impl LinkInterface {
             .on_click(cx.listener(|this, _, _, cx| {
                 this.catalog_open = false;
                 this.settings = false;
+                this.updates_open = false;
                 cx.notify();
             }))
+    }
+}
+
+impl LinkInterface {
+    fn updates_panel(&self, p: &crate::appearance::Colors, cx: &mut Context<Self>) -> Stateful<Div> {
+        use crate::updates::{InstallKind, Phase};
+        let update = cx.global::<LinkCore>().updates.view();
+        let latest = update.latest.clone().unwrap_or_default();
+        let mut notes = div()
+            .id("update-notes")
+            .max_h(px(220.))
+            .overflow_y_scroll()
+            .flex()
+            .flex_col()
+            .gap_1()
+            .p_3()
+            .rounded(px(6.))
+            .bg(rgb(p.well))
+            .text_size(px(11.))
+            .text_color(rgb(p.text));
+        for line in update.notes.iter().filter(|l| !l.trim().is_empty()) {
+            notes = notes.child(line.clone());
+        }
+        let action = match update.phase {
+            Phase::Available | Phase::Failed if update.ineligible.is_none() && update.latest.is_some() => {
+                Some(Button::new("update-download").label("Download").on_click(cx.listener(
+                    |_, _, _, cx| {
+                        cx.global_mut::<LinkCore>().updates.start_download();
+                        cx.notify();
+                    },
+                )))
+            }
+            Phase::Downloading { percent } => Some(
+                Button::new("update-download")
+                    .label(format!("Downloading… {percent}%"))
+                    .disabled(true),
+            ),
+            Phase::Ready => Some(
+                Button::new("update-install")
+                    .label("Install")
+                    .when(matches!(update.kind, InstallKind::Rpm | InstallKind::Deb), |b| {
+                        b.tooltip("Your system asks for your password to install the package.")
+                    })
+                    .on_click(cx.listener(|_, _, _, cx| {
+                        cx.global_mut::<LinkCore>().updates.start_install();
+                        cx.notify();
+                    })),
+            ),
+            Phase::Installing => Some(Button::new("update-install").label("Installing…").disabled(true)),
+            Phase::Installed => Some(
+                Button::new("update-restart")
+                    .label("Restart LinX")
+                    .tooltip("Routing stops for a moment while LinX restarts.")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        let args: Vec<String> = std::env::args().skip(1).collect();
+                        match cx.global::<LinkCore>().updates.relaunch(&args) {
+                            Ok(()) => {
+                                LinkCore::stop(cx);
+                                cx.quit();
+                            }
+                            Err(error) => {
+                                this.feedback = Some(error);
+                                cx.notify();
+                            }
+                        }
+                    })),
+            ),
+            _ => None,
+        };
+        panel(p)
+            .id("updates-panel")
+            .top(px(62.))
+            .right(px(14.))
+            .w(px(380.))
+            .p_4()
+            .gap_3()
+            .child(panel_header("Update LinX", "close-updates", p, cx))
+            .child(
+                div()
+                    .text_size(px(12.))
+                    .text_color(rgb(p.text))
+                    .child(match update.phase {
+                        Phase::Installed => format!("LinX {latest} is installed. Restart LinX to use it."),
+                        _ if update.latest.is_some() => {
+                            format!("LinX {latest} is available. You have {}.", update.current)
+                        }
+                        _ => update_status(&update),
+                    }),
+            )
+            .when(!update.notes.is_empty(), |panel| panel.child(notes))
+            .when_some(update.ineligible, |panel, reason| {
+                panel.child(div().text_size(px(11.)).text_color(rgb(p.muted)).child(reason))
+            })
+            .when_some(update.error.clone(), |panel, error| {
+                panel.child(div().text_size(px(11.)).text_color(rgb(0xe58a8a)).child(error))
+            })
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(
+                        Button::new("update-release-page")
+                            .ghost()
+                            .small()
+                            .label("Release page")
+                            .on_click(|_, _, cx| cx.open_url(crate::updates::RELEASE_PAGE)),
+                    )
+                    .children(action.map(|b| b.small())),
+            )
+    }
+}
+
+/// Header button text while an update needs attention.
+fn update_badge(update: &crate::updates::UpdateView) -> Option<String> {
+    use crate::updates::Phase;
+    let latest = update.latest.as_deref()?;
+    Some(match update.phase {
+        Phase::Available | Phase::Ready => format!("Update {latest}"),
+        Phase::Downloading { percent } => format!("Downloading {percent}%"),
+        Phase::Installing => "Installing…".to_owned(),
+        Phase::Installed => "Restart to update".to_owned(),
+        Phase::Failed => "Update failed".to_owned(),
+        _ => return None,
+    })
+}
+
+fn update_status(update: &crate::updates::UpdateView) -> String {
+    use crate::updates::Phase;
+    match (&update.phase, &update.latest) {
+        (Phase::Checking, _) => "Checking for updates…".to_owned(),
+        (Phase::UpToDate, _) => format!("LinX {} is up to date.", update.current),
+        (Phase::Failed, _) => update.error.clone().unwrap_or_else(|| "Update check failed.".to_owned()),
+        (_, Some(latest)) => format!("LinX {latest} is available."),
+        _ => format!("LinX {}", update.current),
     }
 }
 
@@ -571,6 +712,7 @@ fn panel_header(
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.catalog_open = false;
                     this.settings = false;
+                    this.updates_open = false;
                     cx.notify();
                 })),
         )
@@ -627,6 +769,7 @@ impl Render for LinkInterface {
                         this.channel = pair;
                         this.catalog_open = !same;
                         this.settings = false;
+                        this.updates_open = false;
                         cx.notify();
                     }),
                 ));
@@ -716,6 +859,29 @@ impl Render for LinkInterface {
                                     .child(self.view.status()),
                             ),
                     )
+                    .when_some(update_badge(&cx.global::<LinkCore>().updates.view()), |row, label| {
+                        let unseen = cx.global::<LinkCore>().update_unseen;
+                        row.child(
+                            Button::new("update")
+                                .ghost()
+                                .small()
+                                .h(px(29.))
+                                .px(px(9.))
+                                .mr(px(7.))
+                                .border_1()
+                                .border_color(rgb(if unseen { p.channels[0] } else { p.line }))
+                                .rounded(px(5.))
+                                .text_color(rgb(p.channels[0]))
+                                .child(div().text_size(px(12.)).child(label))
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    cx.global_mut::<LinkCore>().update_unseen = false;
+                                    this.updates_open = !this.updates_open;
+                                    this.settings = false;
+                                    this.catalog_open = false;
+                                    cx.notify();
+                                })),
+                        )
+                    })
                     .child(
                         Button::new("session")
                             .ghost()
@@ -774,6 +940,7 @@ impl Render for LinkInterface {
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.settings = !this.settings;
                                 this.catalog_open = false;
+                                this.updates_open = false;
                                 cx.notify();
                             })),
                     )
@@ -892,6 +1059,55 @@ impl Render for LinkInterface {
                                 cx.notify();
                             })),
                     )
+                    .child({
+                        let update = cx.global::<LinkCore>().updates.view();
+                        let checking = update.phase == crate::updates::Phase::Checking;
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_2()
+                            .child(
+                                Switch::new("update-checks")
+                                    .small()
+                                    .label("Check for updates automatically")
+                                    .checked(update.mode == crate::updates::UpdateMode::Notify)
+                                    .on_change(cx.listener(|this, enabled: &bool, _, cx| {
+                                        let mode = if *enabled {
+                                            crate::updates::UpdateMode::Notify
+                                        } else {
+                                            crate::updates::UpdateMode::Off
+                                        };
+                                        this.feedback =
+                                            cx.global_mut::<LinkCore>().updates.set_mode(mode).err();
+                                        cx.notify();
+                                    })),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .gap_2()
+                                    .child(
+                                        div()
+                                            .text_size(px(11.))
+                                            .text_color(rgb(p.muted))
+                                            .child(update_status(&update)),
+                                    )
+                                    .child(
+                                        Button::new("check-updates")
+                                            .ghost()
+                                            .small()
+                                            .label(if checking { "Checking…" } else { "Check now" })
+                                            .disabled(checking)
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                cx.global_mut::<LinkCore>().updates.check_now();
+                                                this.feedback = None;
+                                                cx.notify();
+                                            })),
+                                    ),
+                            )
+                    })
                     .child(
                         div()
                             .text_size(px(11.))
@@ -941,6 +1157,11 @@ impl Render for LinkInterface {
                         ),
                     ),
             );
+        }
+        if self.updates_open {
+            body = body
+                .child(self.scrim("updates-scrim", cx))
+                .child(self.updates_panel(&p, cx));
         }
         let notice = self
             .feedback
@@ -1135,6 +1356,8 @@ pub fn run(
             #[cfg(all(feature = "status-tray", target_os = "linux"))]
             tray: beacn_linx_core::tray::Tray::spawn(),
             instance,
+            updates: crate::updates::Updates::load(),
+            update_unseen: false,
         });
         cx.on_app_quit(|cx| {
             LinkCore::stop(cx);
@@ -1159,6 +1382,14 @@ pub fn run(
                 let quit = cx.update(|cx| {
                     if crate::shutdown::requested() {
                         return true;
+                    }
+                    let core = cx.global_mut::<LinkCore>();
+                    let changed = core.updates.poll();
+                    if core.updates.take_announcement().is_some() {
+                        core.update_unseen = true;
+                    }
+                    if changed {
+                        cx.refresh_windows();
                     }
                     tray_tick(cx)
                 });

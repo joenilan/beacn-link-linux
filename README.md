@@ -80,6 +80,16 @@ Requirements: PipeWire 1.0 or newer with WirePlumber, BEACN Studio connected
 to this PC, and BEACN App on the Windows streaming PC. Start LinX from the
 application menu; Settings → *Launch at login* starts it in the tray.
 
+Updates: from 0.1.4, LinX checks these GitHub releases shortly after it starts
+and every six hours (Settings → *Check for updates automatically*; turn it off
+to check only with *Check now*). A newer version shows an **Update** button in
+the header. Nothing downloads or installs without a click: *Download* fetches
+the package for your install (RPM, Deb, or the per-user tarball) and checks it
+against the release's `SHA256SUMS`; *Install* runs `dnf`/`apt-get` through
+your system's password prompt (the per-user tarball needs none); *Restart LinX*
+starts the new version. `/usr/local` installs and builds from source only
+check and link to the release page.
+
 ## Build from source
 
 Use a Linux desktop with
