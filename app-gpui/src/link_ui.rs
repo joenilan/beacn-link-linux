@@ -75,6 +75,11 @@ pub struct LinkInterface {
     pub(crate) channel: u8,
     pub(crate) settings: bool,
     pub(crate) catalog_open: bool,
+    /// Rows of the open application picker, in a fixed order: applications
+    /// that start or stop playing while it is open never move a row.
+    picker: Vec<LinkApp>,
+    /// Channel the picker order was built for.
+    picker_for: Option<u8>,
     pub(crate) appearance: crate::appearance::Appearance,
     pub(crate) feedback: Option<String>,
     meters: [ChannelMeter; 4],
@@ -141,6 +146,8 @@ impl LinkInterface {
             channel: 1,
             settings: false,
             catalog_open: false,
+            picker: Vec::new(),
+            picker_for: None,
             appearance: Default::default(),
             feedback: None,
             meters: Default::default(),
@@ -248,28 +255,51 @@ impl LinkInterface {
         cx.notify();
     }
 
+    /// Keep the picker's rows in step with the applications without
+    /// reordering them while it is open.
+    fn sync_picker(&mut self) {
+        if !self.catalog_open {
+            self.picker.clear();
+            self.picker_for = None;
+        } else if self.picker_for != Some(self.channel) {
+            self.picker = picker_order(&self.view.apps, self.channel);
+            self.picker_for = Some(self.channel);
+        } else {
+            merge_picker(&mut self.picker, &self.view.apps);
+        }
+    }
+
     pub(crate) fn filtered_apps(&self, cx: &App) -> Vec<LinkApp> {
         let filter = self.search.read(cx).value().to_lowercase();
-        let mut apps: Vec<LinkApp> = self
-            .view
-            .apps
-            .iter()
+        let rows = if self.picker_for.is_some() {
+            self.picker.clone()
+        } else {
+            picker_order(&self.view.apps, self.channel)
+        };
+        rows.into_iter()
             .filter(|a| filter.is_empty() || a.name.to_lowercase().contains(&filter))
-            .cloned()
-            .collect();
-        // Apps on the chosen channel first, then playing apps, then by name.
-        apps.sort_by_key(|a| (a.channel != self.channel, !a.running, a.name.to_lowercase()));
-        apps
+            .collect()
+    }
+
+    /// A closed application has no stream to report its new channel; show
+    /// the choice LinX will apply when it plays again.
+    fn picked(&mut self, key: &str, channel: u8) {
+        if let Some(row) = self.picker.iter_mut().find(|a| a.key == key && a.streams == 0) {
+            row.channel = channel;
+            row.remembered = (channel > 0).then_some(channel);
+        }
     }
 
     fn row(&self, app: &LinkApp, cx: &mut Context<Self>) -> AnyElement {
         let p = self.appearance.colors();
         let id = key_id(&app.key);
-        let status = match (app.channel, app.running) {
-            (0, true) => "Playing · desktop output".to_owned(),
-            (0, false) => "Desktop output".to_owned(),
-            (n, true) => format!("{} · playing", crate::console::link_name(n)),
-            (n, false) => crate::console::link_name(n),
+        let status = match (app.channel, app.running, app.streams) {
+            (0, _, 0) => "Desktop output · closed".to_owned(),
+            (n, _, 0) => format!("{} · closed", crate::console::link_name(n)),
+            (0, true, _) => "Playing · desktop output".to_owned(),
+            (0, false, _) => "Desktop output".to_owned(),
+            (n, true, _) => format!("{} · playing", crate::console::link_name(n)),
+            (n, false, _) => crate::console::link_name(n),
         };
         let mut chips = div().flex().items_center().gap(px(4.));
         for channel in 1..=4u8 {
@@ -290,6 +320,7 @@ impl LinkInterface {
                     .child(div().text_size(px(11.)).child(channel.to_string()))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         cx.stop_propagation();
+                        this.picked(&key, channel);
                         this.send(LinkCommand::Assign(key.clone(), channel), cx)
                     })),
             );
@@ -308,6 +339,7 @@ impl LinkInterface {
                 .child(div().text_size(px(11.)).child("Off"))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     cx.stop_propagation();
+                    this.picked(&key, 0);
                     this.send(LinkCommand::Assign(key.clone(), 0), cx)
                 })),
         );
@@ -371,6 +403,36 @@ impl LinkInterface {
             .test_support()
             .into_any_element()
     }
+}
+
+/// The picker's order when it opens: applications on the chosen channel
+/// first, then playing ones, then by name.
+fn picker_order(apps: &[LinkApp], channel: u8) -> Vec<LinkApp> {
+    let mut rows = apps.to_vec();
+    rows.sort_by_key(|a| (a.channel != channel, !a.running, a.name.to_lowercase()));
+    rows
+}
+
+/// Update rows in place; an application that closed keeps its row (marked
+/// closed, still assignable), and one that appeared goes to the end.
+fn merge_picker(rows: &mut Vec<LinkApp>, apps: &[LinkApp]) {
+    for row in rows.iter_mut() {
+        match apps.iter().find(|a| a.key == row.key) {
+            Some(app) => *row = app.clone(),
+            None if row.streams > 0 => {
+                row.running = false;
+                row.streams = 0;
+            }
+            None => {}
+        }
+    }
+    let mut added: Vec<LinkApp> = apps
+        .iter()
+        .filter(|a| !rows.iter().any(|r| r.key == a.key))
+        .cloned()
+        .collect();
+    added.sort_by_key(|a| a.name.to_lowercase());
+    rows.extend(added);
 }
 
 /// Invisible edges and corners for resizing the undecorated window.
@@ -516,6 +578,7 @@ fn panel_header(
 
 impl Render for LinkInterface {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.sync_picker();
         let p = self.appearance.colors();
         let status = status_of(&self.view);
         if self.native_icon != Some(status) {
@@ -1185,4 +1248,36 @@ fn tray_tick(cx: &mut App) -> bool {
     #[cfg(not(all(feature = "status-tray", target_os = "linux")))]
     let _ = cx;
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{merge_picker, picker_order, LinkApp};
+
+    fn app(key: &str, channel: u8, running: bool) -> LinkApp {
+        LinkApp {
+            key: key.into(),
+            name: key.into(),
+            channel,
+            remembered: (channel > 0).then_some(channel),
+            running,
+            streams: 1,
+        }
+    }
+
+    #[test]
+    fn picker_rows_keep_their_place_while_apps_come_and_go() {
+        let mut rows = picker_order(&[app("Brave", 0, true), app("Discord", 2, false), app("Spotify", 0, false)], 2);
+        let keys = |rows: &[LinkApp]| rows.iter().map(|a| a.key.clone()).collect::<Vec<_>>();
+        assert_eq!(keys(&rows), ["Discord", "Brave", "Spotify"]);
+        // Brave stops, Spotify starts playing, Firefox appears.
+        merge_picker(&mut rows, &[app("Discord", 2, false), app("Spotify", 0, true), app("Firefox", 0, true)]);
+        assert_eq!(keys(&rows), ["Discord", "Brave", "Spotify", "Firefox"]);
+        assert_eq!((rows[1].streams, rows[1].running), (0, false));
+        assert!(rows[2].running);
+        // Brave plays again: same row, live data.
+        merge_picker(&mut rows, &[app("Brave", 3, true), app("Discord", 2, false)]);
+        assert_eq!(keys(&rows), ["Discord", "Brave", "Spotify", "Firefox"]);
+        assert_eq!((rows[1].channel, rows[1].streams), (3, 1));
+    }
 }
