@@ -13,3 +13,9 @@ the published crate source with the changes below; licenses are unchanged.
 
 Both let a tray click bring LinX's window to the front on Wayland (KWin's focus
 stealing prevention otherwise only marks it as wanting attention).
+
+- `gpui-component` 0.7.3 (Apache-2.0, Longbridge; modified): the Linux
+  client-side window frame (`src/window_border.rs`) rounds all four corners at
+  10px instead of drawing a square frame, border and shadow. LinX opens its
+  window with a transparent root surface and paints its own rounded console,
+  so the desktop shows through the corners as on Windows.

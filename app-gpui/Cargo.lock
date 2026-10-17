@@ -571,7 +571,7 @@ dependencies = [
 
 [[package]]
 name = "beacn-linx-gpui"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "beacn-link-protocol",
@@ -2203,8 +2203,6 @@ dependencies = [
 [[package]]
 name = "gpui-component"
 version = "0.7.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "465a363235cd4062ef5f0953fc096fc764ed6f53dfbd9f409f669f93ea3b1ff9"
 dependencies = [
  "anyhow",
  "chrono",

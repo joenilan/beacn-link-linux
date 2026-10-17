@@ -647,7 +647,7 @@ impl Render for LinkInterface {
             .font_family("Segoe UI")
             .border_1()
             .border_color(rgb(if self.appearance.light { 0xb9c2c2 } else { 0x3b3d41 }))
-            .rounded(px(10.))
+            .map(|body| console_corners(body, window))
             .child(
                 div()
                     .id("console-header")
@@ -1032,7 +1032,7 @@ fn open_console(cx: &mut App) {
         let _ = window.update(cx, |_, window, _| window.activate_window());
         return;
     }
-    open_window(
+    open_console_window(
             WindowOptions {
                 // The console is designed at 788x568; the window adds the
                 // client-side shadow margin around it so nothing scrolls.
@@ -1064,6 +1064,37 @@ fn open_console(cx: &mut App) {
         .expect("open LinX window");
     cx.activate(true);
 }
+
+/// Like `gpui_kit::open_window`, but the root surface stays transparent: the
+/// client-side frame is rounded (see vendor/README-LINX-PATCHES.md), and only
+/// the console body paints, so no square background shows at the corners.
+fn open_console_window<V: Render>(
+    options: WindowOptions,
+    cx: &mut App,
+    build: impl FnOnce(&mut Window, &mut App) -> Entity<V>,
+) -> anyhow::Result<WindowHandle<base::Root>> {
+    cx.open_window(options, |window, cx| {
+        let view = build(window, cx);
+        cx.new(|cx| base::Root::new(view, window, cx).bg(transparent_black()))
+    })
+}
+
+/// Round the console body inside the frame's 1px border, square on the
+/// corners the compositor has tiled (where the frame is square too).
+fn console_corners(body: Stateful<Div>, window: &Window) -> Stateful<Div> {
+    let tiling = match window.window_decorations() {
+        Decorations::Client { tiling } => tiling,
+        Decorations::Server => return body.rounded(px(FRAME_RADIUS)),
+    };
+    let radius = px(FRAME_RADIUS - 1.);
+    body.when(!(tiling.top || tiling.left), |b| b.rounded_tl(radius))
+        .when(!(tiling.top || tiling.right), |b| b.rounded_tr(radius))
+        .when(!(tiling.bottom || tiling.left), |b| b.rounded_bl(radius))
+        .when(!(tiling.bottom || tiling.right), |b| b.rounded_br(radius))
+}
+
+/// Corner radius of the vendored gpui-component window frame (BORDER_RADIUS).
+const FRAME_RADIUS: f32 = 10.0;
 
 /// GPUI Kit's window border draws a client-side shadow margin of this size on
 /// every side on Linux (gpui-component `window_border` SHADOW_SIZE) and sets
