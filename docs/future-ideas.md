@@ -29,3 +29,14 @@ Test LinX (PC2) against [beacn-utility](https://github.com/beacn-on-linux/beacn-
 on a Linux streaming PC (PC1), whose Studio Link page lists applications on the
 other PC and sets their channels. Compare protocol behaviour with the utility's
 implementation and record any differences.
+
+## Windows version
+
+A Windows build of LinX as an alternative to the official Link app on PC2.
+The GPUI interface already supports Windows; the work is elsewhere:
+
+- Per-application routing to the Link Out endpoints through Windows audio
+  policy (the official app uses the undocumented `AudioPolicyConfig` interface).
+- Access to the Studio's Link control interface, which BEACN's Windows driver
+  owns.
+- Research item: needs a feasibility check before any implementation.
