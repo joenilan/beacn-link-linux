@@ -56,7 +56,9 @@ covered.
 
 Faders, mute and meters act on what this PC sends. LinX does not control
 the streaming PC's mix.
-There is no installer yet, and no Windows version.
+Installable Linux packages are available from
+[Releases](https://github.com/joenilan/beacn-link-linux/releases).
+There is no Windows version.
 Tested on Debian 13 (PipeWire 1.4.2) and Fedora 44 (PipeWire 1.6.2,
 WirePlumber 0.5.13, split BEACN UCM profile). If LinX ends without Pause or
 Quit (a crash), the Studio's desktop profile stays off until the next login
@@ -143,6 +145,7 @@ and BEACN Link are referenced only to identify the compatibility target.
 ## Further reading
 
 - [How LinX works](docs/link-console.md)
+- [96 kHz fix for the normal Studio Link profile](integrations/wireplumber/README.md)
 - [Contributing](CONTRIBUTING.md)
 - [Developer control socket](docs/native-control.md)
 - [Screenshots](docs/screenshots.md)

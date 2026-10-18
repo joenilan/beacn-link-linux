@@ -58,6 +58,7 @@ Software checks with the actual GUI also cover capture taps, Pause and
 reconnect, Off, close to the dock, launch at login and a 15-minute churn soak
 with stable memory; saved application settings matched afterwards.
 
-Not yet covered: desktops with a tray host, multi-hour sessions, and
-distributions whose BEACN UCM profile splits the Studio into separate Link
-outputs.
+Subsequent testing on Fedora 44 (PipeWire 1.6.2, WirePlumber 0.5.13) also
+covered the split BEACN UCM profile, Studio takeover/restore, return audio,
+remote assignment and the KDE tray. See the [README](../README.md) for current
+limits. Multi-hour sessions have not been covered by the checks listed here.
