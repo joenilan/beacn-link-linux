@@ -456,11 +456,16 @@ fn unsupported_envelopes_and_malformed_records_fail_closed() {
         assert!(session.poll().is_err(), "{value:08X}");
         assert_halted(session, 5);
     }
-    for payload in [vec![1], vec![1, 1, b'x'], vec![0, 0], vec![2, 1, b'x']] {
+    for payload in [vec![1], vec![0, 0], vec![2, 1, b'x']] {
         let mut reply = word(0xAC000000 | payload.len() as u32);
         reply.extend(payload);
         assert!(decode_poll_reply(&reply).is_err());
     }
+    // A complete final record without the terminator is accepted (as the
+    // Windows Link reader effectively does); see received_single_assignment_*.
+    let mut unterminated = word(0xAC000003);
+    unterminated.extend([1, 1, b'x']);
+    assert!(decode_poll_reply(&unterminated).is_ok());
     assert!(decode_poll_reply(&[0; 513]).is_err());
     let mut raw = word(0xAC000004);
     raw.extend([1, 255, 0xFF, 0]);
@@ -692,4 +697,31 @@ fn c_string_policy_never_makes_empty_unsupported_or_stale_names_routable() {
         Outcome::UnavailableStreams { .. }
     ));
     assert_eq!(result.proposed_routes().count(), 0);
+}
+
+#[test]
+fn received_single_assignment_without_terminator_is_accepted() {
+    // beacn-lib's set_app_link: [name+6][channel][name][00 CD CD CD CD 00], no terminator.
+    let mut reply = word(0xAC00000F);
+    reply.extend_from_slice(b"\x0d\x03Spotify\x00\xcd\xcd\xcd\xcd\x00");
+    let Ok(PollReply::Records { records, ignored_tail: 0 }) = decode_poll_reply(&reply) else {
+        panic!("unterminated single record rejected");
+    };
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].assignment.byte(), 3);
+    let planned = ReceivedNamePolicy::WindowsCString.for_planning(&records[0]);
+    assert_eq!(planned.name, b"Spotify");
+}
+
+#[test]
+fn unterminated_list_still_rejects_truncated_records() {
+    // Declared payload ends inside the second record.
+    let mut reply = word(0xAC000009);
+    reply.extend_from_slice(b"\x04\x01game\x05\x02");
+    assert!(matches!(
+        decode_poll_reply(&reply),
+        Err(session::Error::Reply(Error::Truncated { .. }))
+    ));
+    // The generic decoder stays strict.
+    assert_eq!(decode_records(b"\x04\x01game"), Err(Error::MissingTerminator));
 }

@@ -219,6 +219,18 @@ pub struct Record {
 }
 
 pub fn decode_records(bytes: &[u8]) -> Result<Vec<Record>, Error> {
+    decode_record_list(bytes, false)
+}
+
+/// Like [`decode_records`], but a list whose last record ends exactly at the
+/// end of the payload is accepted without the zero-length terminator. The
+/// inspected Windows Link reader applies each record as it parses it, so peers
+/// such as beacn-lib send a single assignment record with no terminator.
+pub fn decode_received_records(bytes: &[u8]) -> Result<Vec<Record>, Error> {
+    decode_record_list(bytes, true)
+}
+
+fn decode_record_list(bytes: &[u8], unterminated: bool) -> Result<Vec<Record>, Error> {
     if bytes.len() > MAX_PAYLOAD {
         return Err(Error::PayloadLength {
             length: bytes.len(),
@@ -245,6 +257,9 @@ pub fn decode_records(bytes: &[u8]) -> Result<Vec<Record>, Error> {
             name: bytes[offset + 1..end].to_vec(),
         });
         offset = end;
+    }
+    if unterminated && !records.is_empty() {
+        return Ok(records);
     }
     Err(Error::MissingTerminator)
 }

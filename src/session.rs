@@ -1,7 +1,7 @@
 //! Call-driven, transport-neutral static protocol subset. No USB or routing backend.
 //! A successful write is a transport completion, not remote application acceptance.
 use crate::{
-    decode_records, encode_frame, encode_records, ControlWord, Frame, Header, Record, MAX_FRAME,
+    decode_received_records, encode_frame, encode_records, ControlWord, Frame, Header, Record, MAX_FRAME,
 };
 use std::{fmt, time::Duration};
 
@@ -199,7 +199,7 @@ pub fn decode_poll_reply_with_policy(bytes: &[u8], policy: PollPolicy) -> Result
         }));
     }
     Ok(PollReply::Records {
-        records: decode_records(&bytes[4..end]).map_err(Error::Reply)?,
+        records: decode_received_records(&bytes[4..end]).map_err(Error::Reply)?,
         ignored_tail: bytes.len() - end,
     })
 }
