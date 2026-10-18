@@ -730,7 +730,10 @@ static void lb_create_adapter(struct link_bus *b) {
   struct pw_properties *p = pw_properties_new(
       "factory.name", "api.alsa.pcm.sink",
       PW_KEY_NODE_NAME, name, PW_KEY_NODE_DESCRIPTION, "LinX Studio Link transport",
-      PW_KEY_MEDIA_CLASS, "Audio/Sink", PW_KEY_NODE_AUTOCONNECT, "false",
+      /* Internal, like WirePlumber's split parents: desktop volume applets
+       * list plain Audio/Sink nodes even when hidden, and a user could then
+       * pick this transport (whose name changes per process) as the default. */
+      PW_KEY_MEDIA_CLASS, "Audio/Sink/Internal", PW_KEY_NODE_AUTOCONNECT, "false",
       "node.driver", "true", "priority.driver", "3000", "node.pause-on-idle", "false",
       "api.alsa.path", path, "api.alsa.use-chmap", "false",
       "audio.rate", "96000", "audio.allowed-rates", "[ 96000 ]",
@@ -771,7 +774,7 @@ static void lb_create_capture(struct link_bus *b) {
   struct pw_properties *p = pw_properties_new(
       "factory.name", "api.alsa.pcm.source",
       PW_KEY_NODE_NAME, name, PW_KEY_NODE_DESCRIPTION, "LinX Studio return transport",
-      PW_KEY_MEDIA_CLASS, "Audio/Source", PW_KEY_NODE_AUTOCONNECT, "false",
+      PW_KEY_MEDIA_CLASS, "Audio/Source/Internal", PW_KEY_NODE_AUTOCONNECT, "false",
       "node.driver", "true", "priority.driver", "2999", "node.pause-on-idle", "false",
       "api.alsa.path", path, "api.alsa.use-chmap", "false",
       "audio.rate", "96000", "audio.allowed-rates", "[ 96000 ]",
