@@ -82,6 +82,12 @@ Requirements: PipeWire 1.0 or newer with WirePlumber, BEACN Studio connected
 to this PC, and BEACN App on the Windows streaming PC. Start LinX from the
 application menu; Settings → *Launch at login* starts it in the tray.
 
+The optional [96 kHz WirePlumber rule](integrations/wireplumber/README.md)
+and its guide are included under `/usr/share/doc/linx/wireplumber` in RPM and
+Debian packages, and under `share/doc/linx/wireplumber` in a tarball install.
+The rule is not enabled automatically. Follow the guide to install it manually
+and restart WirePlumber when you choose to use it.
+
 Updates: from 0.1.4, LinX checks these GitHub releases shortly after it starts
 and every six hours (Settings → *Check for updates automatically*; turn it off
 to check only with *Check now*). A newer version shows an **Update** button in

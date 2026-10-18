@@ -25,15 +25,31 @@ stream completed and the pointer advanced at the 96-kHz hardware rate.
 
 ## Install
 
-From the checkout root, copy the rule into the per-user WirePlumber
-configuration directory. Review any existing file with the same name before
-replacing it:
+The rule is optional. It is shipped as documentation and is not enabled by
+installing a LinX package. To enable it, copy it into the per-user
+WirePlumber configuration directory. Review any existing file with the same
+name before replacing it.
+
+From the repository checkout root:
 
 ```sh
 mkdir -p ~/.config/wireplumber/wireplumber.conf.d
 cp -i integrations/wireplumber/51-beacn-studio-link-rate.conf \
   ~/.config/wireplumber/wireplumber.conf.d/
 ```
+
+For an RPM or Debian installation, use the packaged copy:
+
+```sh
+mkdir -p ~/.config/wireplumber/wireplumber.conf.d
+cp -i /usr/share/doc/linx/wireplumber/51-beacn-studio-link-rate.conf \
+  ~/.config/wireplumber/wireplumber.conf.d/
+```
+
+For a per-user tarball installation, use
+`~/.local/share/doc/linx/wireplumber/51-beacn-studio-link-rate.conf`; for a
+system tarball installation, use
+`/usr/local/share/doc/linx/wireplumber/51-beacn-studio-link-rate.conf`.
 
 Pause or quit LinX before restarting WirePlumber. Restarting WirePlumber
 interrupts audio and recreates the Studio nodes:

@@ -33,6 +33,8 @@ stage() {
   install -Dm644 LICENSE "$dest/usr/share/doc/linx/copyright"
   install -Dm644 /out/THIRD_PARTY_NOTICES.txt "$dest/usr/share/doc/linx/THIRD_PARTY_NOTICES.txt"
   install -Dm644 README.md "$dest/usr/share/doc/linx/README.md"
+  install -Dm644 integrations/wireplumber/README.md "$dest/usr/share/doc/linx/wireplumber/README.md"
+  install -Dm644 integrations/wireplumber/51-beacn-studio-link-rate.conf "$dest/usr/share/doc/linx/wireplumber/51-beacn-studio-link-rate.conf"
 }
 
 # ---- Debian package ----

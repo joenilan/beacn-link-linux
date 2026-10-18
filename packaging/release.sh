@@ -80,6 +80,8 @@ stage() { # stage <binary> <destdir>
   install -Dm644 LICENSE "$dest/usr/share/licenses/linx/LICENSE"
   install -Dm644 "$OUT/THIRD_PARTY_NOTICES.txt" "$dest/usr/share/licenses/linx/THIRD_PARTY_NOTICES.txt"
   install -Dm644 README.md "$dest/usr/share/doc/linx/README.md"
+  install -Dm644 integrations/wireplumber/README.md "$dest/usr/share/doc/linx/wireplumber/README.md"
+  install -Dm644 integrations/wireplumber/51-beacn-studio-link-rate.conf "$dest/usr/share/doc/linx/wireplumber/51-beacn-studio-link-rate.conf"
 }
 
 # ---- Fedora RPM (native) ---------------------------------------------------

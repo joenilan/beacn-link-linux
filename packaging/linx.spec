@@ -42,3 +42,5 @@ udevadm control --reload-rules >/dev/null 2>&1 || :
 %license /usr/share/licenses/linx/LICENSE
 %license /usr/share/licenses/linx/THIRD_PARTY_NOTICES.txt
 %doc /usr/share/doc/linx/README.md
+%doc /usr/share/doc/linx/wireplumber/README.md
+%doc /usr/share/doc/linx/wireplumber/51-beacn-studio-link-rate.conf

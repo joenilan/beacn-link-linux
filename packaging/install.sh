@@ -15,6 +15,11 @@ $SUDO install -Dm755 usr/bin/linx "$PREFIX/bin/linx"
 $SUDO install -Dm644 usr/share/applications/io.github.linx.desktop "$PREFIX/share/applications/io.github.linx.desktop"
 $SUDO install -Dm644 usr/share/icons/hicolor/scalable/apps/io.github.linx.svg \
   "$PREFIX/share/icons/hicolor/scalable/apps/io.github.linx.svg"
+$SUDO install -Dm644 usr/share/doc/linx/README.md "$PREFIX/share/doc/linx/README.md"
+$SUDO install -Dm644 usr/share/doc/linx/wireplumber/README.md \
+  "$PREFIX/share/doc/linx/wireplumber/README.md"
+$SUDO install -Dm644 usr/share/doc/linx/wireplumber/51-beacn-studio-link-rate.conf \
+  "$PREFIX/share/doc/linx/wireplumber/51-beacn-studio-link-rate.conf"
 # Lets the desktop user open BEACN Studio's Link control interface.
 sudo install -Dm644 usr/lib/udev/rules.d/70-linx-beacn-studio.rules /etc/udev/rules.d/70-linx-beacn-studio.rules
 sudo udevadm control --reload-rules

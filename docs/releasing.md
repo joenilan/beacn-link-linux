@@ -42,6 +42,9 @@ From a clean checkout of the release commit this builds, in
 All packages install `/usr/bin/linx` (tarball: `~/.local` or `/usr/local`), the
 desktop entry and icon, and the udev rule. GitHub Actions stay disabled;
 publish the reviewed files with `gh release create v<version> ... --notes-file`.
+Every package also includes the README and the optional WirePlumber 96 kHz
+rule with its guide under `usr/share/doc/linx/wireplumber`. The rule remains
+documentation only: installation does not enable it or restart WirePlumber.
 For dependencies whose crate archive has no license file, the notices list the
 declared license expression and append the standard SPDX text
 (`packaging/licenses`, license-list-data v3.27.0), marked as such. Packages are
