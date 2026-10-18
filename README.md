@@ -70,7 +70,9 @@ Studio devices return only after a replug or new login.
 Download a package from [Releases](https://github.com/joenilan/beacn-link-linux/releases)
 (x86_64). Each one installs `linx`, its application-menu entry and icon, and
 the USB rule that lets your desktop account reach the Studio's Link control
-interface; replug the Studio once after installing.
+interface; replug the Studio once after installing. On systemd 257.7 or newer
+that rule is redundant (systemd's own hwdb already grants access to
+`33ae:4003`); it is kept for older systems.
 
 - Fedora: `sudo dnf install ./linx-<version>-1.fc44.x86_64.rpm`
 - Debian 13 / Ubuntu: `sudo apt install ./linx_<version>-1_amd64.deb`
