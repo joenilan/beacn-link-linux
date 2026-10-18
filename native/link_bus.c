@@ -711,7 +711,10 @@ static void lb_create_sink(struct link_bus *b, int index) {
       "factory.name", "support.null-audio-sink",
       PW_KEY_NODE_NAME, name, PW_KEY_NODE_DESCRIPTION, description,
       PW_KEY_NODE_NICK, description, PW_KEY_MEDIA_CLASS, "Audio/Sink",
-      PW_KEY_NODE_VIRTUAL, "true", PW_KEY_NODE_AUTOCONNECT, "false",
+      /* Not node.virtual: KDE hides virtual outputs by default, and these
+       * are the outputs users pick to send audio to the streaming PC.
+       * priority.session 0 keeps them from becoming an automatic default. */
+      PW_KEY_NODE_AUTOCONNECT, "false",
       "node.driver", "true", "priority.driver", "100", "priority.session", "0",
       "audio.channels", "2", "audio.position", "[ FL FR ]",
       /* The Studio bridge reads the monitor, so the sink's own volume and
