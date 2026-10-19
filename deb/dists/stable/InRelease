@@ -8,7 +8,7 @@ Codename: stable
 Architectures: amd64
 Components: main
 Description: LinX, unofficial BEACN Link app for Linux
-Date: Mon, 19 Oct 2026 12:22:52 UTC
+Date: Mon, 19 Oct 2026 12:42:47 UTC
 MD5Sum:
  cacc15a511b91ba40a0029ea4681b35c 1095 main/binary-amd64/Packages
  a845e6c7682f183938fff3c1a9413b9d 690 main/binary-amd64/Packages.gz
@@ -17,8 +17,8 @@ SHA256:
  81b3b1260dfac4e347898feff33970dbe3a5b4082e67b9b106f90a3b89e67af0 690 main/binary-amd64/Packages.gz
 -----BEGIN PGP SIGNATURE-----
 
-iHUEARYKAB0WIQTnLW7pxBcBLs4oASThS4eAdiHSXQUCatYLnAAKCRDhS4eAdiHS
-XcWKAP9HE4CIowIL6tTgKjDBYHpxK2sLKBQ2pA5PARj7PWgUnAD/aehzCDeGZO7k
-4gnOWTTS5bYCEmzVF1Um76gD9RxL7gk=
-=EtNh
+iHUEARYKAB0WIQTnLW7pxBcBLs4oASThS4eAdiHSXQUCatYQRwAKCRDhS4eAdiHS
+XWfoAP0YCd2993QnoYwC+8izDqXXB62jxBLuknstITGzgLiCZAEAyoYUTZs1g0zJ
+4VP2VFB5sYbwzUWRlhMkppY9ZzTOjQ4=
+=8Tvf
 -----END PGP SIGNATURE-----
