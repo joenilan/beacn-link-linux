@@ -37,6 +37,8 @@ From a clean checkout of the release commit this builds, in
 - `linx_<version>-1_amd64.deb` and `linx-<version>-x86_64-linux.tar.gz`, built
   in a Debian 13 container (podman) so the binary runs on glibc 2.41 and
   newer;
+- `linx-<version>-1-x86_64.pkg.tar.zst`, that same tree packaged with makepkg
+  in an Arch Linux container;
 - `THIRD_PARTY_NOTICES.txt` (shipped in every package) and `SHA256SUMS`.
 
 All packages install `/usr/bin/linx` (tarball: `~/.local` or `/usr/local`), the
@@ -65,7 +67,10 @@ without the key). `publish-repo.sh` adds the release's RPM and Debian package
 to the dnf and apt repositories, keeps the newest three versions, signs the
 repository metadata (`repomd.xml.asc`, `InRelease`, `Release.gpg`), commits
 to the `gh-pages` branch from a checkout in `local/pages`, and pushes it to
-GitHub Pages (https://joenilan.github.io/beacn-link-linux/). Both scripts ask
+GitHub Pages (https://joenilan.github.io/beacn-link-linux/). Also add the
+release's `.rpm`, `.deb` and `.pkg.tar.zst` to the combined "joenilan apps"
+repository with `scripts/publish-packages.sh` in the `joenilan.github.io`
+repository, then `scripts/mirror-packages.py` there. Both scripts ask
 for the key's passphrase through gpg-agent. It needs `createrepo_c` and
 `rpm-sign`; `--no-push` builds and commits locally only. Keep an offline
 backup of the secret key and its revocation certificate.

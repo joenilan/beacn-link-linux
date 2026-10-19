@@ -2,7 +2,9 @@
 # Build LinX release packages from the current commit:
 #   - Fedora RPM, built natively;
 #   - Debian package and portable tarball, built in a Debian 13 container so
-#     the binary runs on older glibc (Debian 13, Fedora 4x, Arch ...).
+#     the binary runs on older glibc (Debian 13, Fedora 4x, Arch ...);
+#   - Arch Linux package of that same tree, made with makepkg in an Arch
+#     container.
 # Output: local/release/v<version>/ (ignored by Git), with SHA256SUMS.
 #
 # Usage: packaging/release.sh [--allow-dirty] [--unsigned]
@@ -122,6 +124,13 @@ podman run --rm --security-opt label=disable \
   docker.io/library/debian:13 \
   bash /src/packaging/build-debian.sh "$VERSION"
 
-(cd "$OUT" && sha256sum -- *.rpm *.deb *.tar.gz > SHA256SUMS)
+# ---- Arch Linux package (repackages the Debian-built tree) ------------------
+podman run --rm --security-opt label=disable \
+  -v "$ROOT":/src:ro \
+  -v "$OUT":/out \
+  docker.io/library/archlinux:latest \
+  bash /src/packaging/build-arch.sh "$VERSION"
+
+(cd "$OUT" && sha256sum -- *.rpm *.deb *.pkg.tar.zst *.tar.gz > SHA256SUMS)
 echo
 cat "$OUT/SHA256SUMS"

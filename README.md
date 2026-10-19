@@ -88,6 +88,16 @@ sudo apt update
 sudo apt install linx
 ```
 
+Arch Linux (from the combined [joenilan apps](https://joenilan.github.io/)
+repository, signed with the same key):
+
+```sh
+curl -fsSL https://joenilan.github.io/packages/joenilan-apps.asc | sudo pacman-key --add -
+sudo pacman-key --lsign-key E72D6EE9C417012ECE280124E14B87807621D25D
+curl -fsSL https://joenilan.github.io/packages/joenilan-apps.pacman.conf | sudo tee -a /etc/pacman.conf
+sudo pacman -Sy linx
+```
+
 Or download a package from [Releases](https://github.com/joenilan/beacn-link-linux/releases)
 (x86_64). Each one installs `linx`, its application-menu entry and icon, and
 the USB rule that lets your desktop account reach the Studio's Link control
@@ -97,6 +107,7 @@ that rule is redundant (systemd's own hwdb already grants access to
 
 - Fedora: `sudo dnf install ./linx-<version>-1.fc44.x86_64.rpm`
 - Debian 13 / Ubuntu: `sudo apt install ./linx_<version>-1_amd64.deb`
+- Arch Linux: `sudo pacman -U ./linx-<version>-1-x86_64.pkg.tar.zst`
 - Other distributions: extract `linx-<version>-x86_64-linux.tar.gz` and run
   `./install.sh` (for your user) or `./install.sh --system`; `./uninstall.sh`
   removes it.
