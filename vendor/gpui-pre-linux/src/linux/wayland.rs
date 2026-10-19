@@ -1,11 +1,10 @@
-// Modified by Longbridge for gpui-fast.
 mod client;
 mod clipboard;
 mod cursor;
 mod display;
 mod popup;
 mod serial;
-pub(crate) mod window;
+mod window;
 
 /// Contains Types for configuring layer_shell surfaces.
 pub mod layer_shell;

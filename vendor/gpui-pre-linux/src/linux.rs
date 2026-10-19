@@ -1,4 +1,3 @@
-// Modified by Longbridge for gpui-fast.
 mod dispatcher;
 mod display_connection;
 mod headless;
@@ -8,7 +7,7 @@ mod system_notifications;
 #[cfg(any(feature = "wayland", feature = "x11"))]
 mod text_system;
 #[cfg(feature = "wayland")]
-pub(crate) mod wayland;
+mod wayland;
 #[cfg(feature = "x11")]
 mod x11;
 

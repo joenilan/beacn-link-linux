@@ -37,10 +37,12 @@ reqwest = { version = "0.12", default-features = false, features = ["blocking", 
 debug = 1
 
 # Raise the window from the tray on Wayland (see vendor/README-LINX-PATCHES.md).
+# gpui-pre-linux is the Linux platform gpui-kit runs on; the direct dependency
+# reaches its LinX patch API (crate name gpui_linux).
 [target.'cfg(target_os = "linux")'.dependencies]
-gpui-fast-linux = "=0.1.8"
+gpui-pre-linux = "=0.3.9"
 
 [patch.crates-io]
 ksni = { path = "../vendor/ksni" }
-gpui-fast-linux = { path = "../vendor/gpui-fast-linux" }
+gpui-pre-linux = { path = "../vendor/gpui-pre-linux" }
 gpui-component = { path = "../vendor/gpui-component" }

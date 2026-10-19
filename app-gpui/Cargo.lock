@@ -576,8 +576,8 @@ dependencies = [
  "anyhow",
  "beacn-link-protocol",
  "beacn-linx-core",
- "gpui-fast-linux",
  "gpui-kit",
+ "gpui-pre-linux",
  "raw-window-handle",
  "reqwest",
  "semver",
@@ -2375,6 +2375,8 @@ dependencies = [
 [[package]]
 name = "gpui-fast-linux"
 version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e13940ee206eab9663b4b6598c5a979b2925eeb5beff05b778659db44be9f8e9"
 dependencies = [
  "accesskit",
  "accesskit_unix",
@@ -2758,8 +2760,6 @@ dependencies = [
 [[package]]
 name = "gpui-pre-linux"
 version = "0.3.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e28213c3fde6f13e91ba0b74b90cbaadec9373e36a031eda98561d31059870f3"
 dependencies = [
  "accesskit",
  "accesskit_unix",
