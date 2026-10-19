@@ -3,7 +3,7 @@
 //! so media pauses, new streams and restarts keep their Link In channel.
 use beacn_link_protocol::{
     link_bus::{LinkOut, Transport},
-    link_engine::{Beacn, Control, LinkService},
+    link_engine::{is_linx_output, Beacn, Control, LinkService},
     metering::Mailbox,
 };
 use std::{
@@ -21,6 +21,8 @@ use std::{
 };
 
 pub const CHANNELS: u8 = 4;
+/// The Sound output entry that stands for LinX's four channels together.
+pub const LINX_OUTPUT: &str = "BEACN Studio (LinX)";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LinkApp {
@@ -75,8 +77,11 @@ pub struct LinkView {
     pub link_out: LinkOut,
     /// Desktop outputs (LinX's channels included), by description.
     pub outputs: Vec<OutputChoice>,
-    /// The desktop's current default output (node.name).
+    /// The desktop's current default output (node.name); LinX's channels
+    /// all count as the one LinX entry.
     pub default_output: Option<String>,
+    /// Sound plays on a device on this PC; LinX channels are not in use.
+    pub local_output: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -97,6 +102,7 @@ impl LinkView {
             Phase::Retrying => "Waiting for PipeWire",
             Phase::Running if !self.studio => "Connect BEACN Studio",
             Phase::Running if !self.audio_ready => "Starting Studio audio",
+            Phase::Running if self.local_output => "Playing on this PC",
             Phase::Running if !self.host => "Audio linked; BEACN App offline",
             Phase::Running => "Link active",
         }
@@ -347,6 +353,7 @@ fn run(rx: mpsc::Receiver<LinkCommand>, latest: Arc<Mutex<LinkView>>, ending: Ar
             view.apps.clear();
             view.outputs.clear();
             view.default_output = None;
+            view.local_output = false;
             view.meters = Default::default();
             view.out_meters = Default::default();
             view.levels = Default::default();
@@ -387,15 +394,32 @@ fn fill(view: &mut LinkView, service: &LinkService) {
     view.beacn = state.beacn.clone();
     view.link_out = state.bus.link_out.clone();
     view.levels = state.bus.levels;
+    // The desktop's own outputs, then LinX as one device: choosing it means
+    // the whole LinX setup, not one channel.
     view.outputs = state
         .outputs
         .iter()
+        .filter(|o| !is_linx_output(&o.name))
         .map(|o| OutputChoice {
             name: o.name.clone(),
             description: o.description.clone(),
         })
         .collect();
-    view.default_output = state.default_output.clone();
+    if let Some(linx) = state.outputs.iter().find(|o| is_linx_output(&o.name)) {
+        view.outputs.push(OutputChoice {
+            name: linx.name.clone(),
+            description: LINX_OUTPUT.into(),
+        });
+    }
+    view.default_output = match &state.default_output {
+        Some(name) if is_linx_output(name) => view
+            .outputs
+            .iter()
+            .find(|o| is_linx_output(&o.name))
+            .map(|o| o.name.clone()),
+        other => other.clone(),
+    };
+    view.local_output = state.local_output;
     view.apps = state
         .apps
         .iter()

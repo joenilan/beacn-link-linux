@@ -344,6 +344,8 @@ pub struct State {
     pub outputs: Vec<Output>,
     /// The output the desktop currently uses as its default (node.name).
     pub default_output: Option<String>,
+    /// Sound output is a device on this PC: LinX channels are not in use.
+    pub local_output: bool,
 }
 
 /// What LinX and BEACN App last exchanged, for diagnostics only.
@@ -535,6 +537,14 @@ fn control_loop(
     }
 }
 
+/// The LinX channel the desktop default points at while LinX is the output.
+const LINX_DEFAULT_OUTPUT: &str = "linx_link_in_1";
+
+/// One of LinX's own channel outputs (LinX Link Out .. Link 4 Out).
+pub fn is_linx_output(name: &str) -> bool {
+    name.starts_with("linx_link_in_")
+}
+
 /// Owner of one LinX connection. Dropping it returns moved applications to
 /// their previous output and releases every owned object.
 pub struct LinkService {
@@ -556,6 +566,9 @@ pub struct LinkService {
     control: ControlThread,
     studio_scan: Instant,
     host_seen: Option<Instant>,
+    /// Sound output is a device on this PC (not LinX): assigned applications
+    /// play there too and LinX applies no channels until it returns.
+    local: bool,
     state: State,
 }
 
@@ -575,6 +588,7 @@ impl LinkService {
             control: ControlThread::spawn(),
             studio_scan: Instant::now(),
             host_seen: None,
+            local: false,
             state: State::default(),
         };
         service.tick()?;
@@ -709,7 +723,7 @@ impl LinkService {
             eprintln!("LinX observation skipped: {error}");
             return Ok(());
         }
-        if self.state.bus.sinks_ready == CHANNELS && self.state.bus.metadata {
+        if self.state.bus.sinks_ready == CHANNELS && self.state.bus.metadata && !self.local {
             let streams: Vec<Stream> = self
                 .state
                 .apps
@@ -774,6 +788,11 @@ impl LinkService {
         } else {
             self.remembered.insert(key.to_owned(), channel);
             self.intent.insert(key.to_owned(), (channel, Instant::now()));
+        }
+        if self.local {
+            // Sound plays on this PC: keep the choice for when LinX is the
+            // output again.
+            return Ok(());
         }
         let streams: Vec<Stream> = self
             .state
@@ -868,13 +887,40 @@ impl LinkService {
         self.bus.set_level(channel, volume, mute)
     }
 
-    /// Make an output (by node.name) the desktop's default. Applications on a
-    /// LinX channel stay there; everything else follows the new default.
+    /// Choose where sound plays. A LinX channel (any of them) means the whole
+    /// LinX setup: the default becomes LinX Link Out and every assigned
+    /// application returns to its own channel. A device on this PC takes
+    /// everything, assigned applications included; their channels are kept
+    /// for when LinX is chosen again.
     pub fn set_default_output(&mut self, name: &str) -> Result<(), String> {
         if !self.state.outputs.iter().any(|o| o.name == name) {
             return Err("That output is no longer available.".into());
         }
-        self.bus.set_default_output(name)
+        if is_linx_output(name) {
+            self.bus.set_default_output(LINX_DEFAULT_OUTPUT)?;
+            self.local = false;
+            // Re-apply every remembered channel on the next cycle.
+            self.handled.clear();
+            self.attempts.clear();
+        } else {
+            self.bus.set_default_output(name)?;
+            self.local = true;
+            let streams: Vec<Stream> = self
+                .state
+                .apps
+                .iter()
+                .flat_map(|a| a.streams.iter().cloned())
+                .filter(|s| s.movable && s.target_channel != 0)
+                .collect();
+            for stream in streams {
+                // A cleared target follows the new default.
+                let _ = self.bus.route(&stream, 0);
+                self.wrote.remove(&(stream.node, stream.serial));
+            }
+        }
+        self.state.local_output = self.local;
+        let _ = self.observe();
+        Ok(())
     }
 
     /// Return every stream LinX routed to its previous output (or the desktop

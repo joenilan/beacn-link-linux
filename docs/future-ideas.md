@@ -22,7 +22,8 @@ The GPUI interface already supports Windows; the work is elsewhere:
   difference found (a final record without a terminator) is handled since
   0.1.6.
 - **Output device switcher**: a speaker button in the Console header and a
-  *Sound output* tray submenu set the desktop's default output (as
-  `wpctl set-default` does). Applications on a LinX channel keep their
-  channel. Available while LinX is connected. Still open: a global shortcut
-  to toggle between two outputs.
+  *Sound output* tray submenu choose between BEACN Studio (LinX, every
+  assigned application on its channel) and the desktop's own devices
+  (everything plays there). Available while LinX is connected. Still open: a
+  global shortcut to toggle, and keeping a device choice across a LinX
+  restart.

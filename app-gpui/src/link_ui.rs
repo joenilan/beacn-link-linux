@@ -637,7 +637,11 @@ impl LinkInterface {
                 div()
                     .text_size(px(10.))
                     .text_color(rgb(p.muted))
-                    .child("The desktop's default output. Applications on a LinX channel stay there."),
+                    .child(if self.view.local_output {
+                        "Everything plays here, assigned applications included. Choose BEACN Studio (LinX) to return each one to its Link channel."
+                    } else {
+                        "BEACN Studio (LinX) keeps each application on its Link channel. Another output plays everything there."
+                    }),
             )
             .child(list)
     }

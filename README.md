@@ -45,8 +45,10 @@ Windows.
   connected. Pause or Quit returns every application to the
   output it used before.
 - A sound output switcher (speaker button in the header, *Sound output* in
-  the tray) sets the desktop's default output. Applications on a LinX
-  channel stay there; everything else follows the new default.
+  the tray): *BEACN Studio (LinX)* plays each assigned application on its
+  Link channel and the rest on Link Out; a device on this PC (Speakers,
+  HDMI ...) plays everything, assigned applications included, and LinX keeps
+  their channels for when you switch back.
 - Light and dark themes, with five accent palettes.
 
 Tested with BEACN Studio and BEACN App on Debian 13 (PipeWire 1.4.2):
