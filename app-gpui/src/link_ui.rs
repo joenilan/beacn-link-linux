@@ -306,46 +306,35 @@ impl LinkInterface {
             (n, true, _) => format!("{} · playing", crate::console::link_name(n)),
             (n, false, _) => crate::console::link_name(n),
         };
-        let mut chips = div().flex().items_center().gap(px(4.));
-        for channel in 1..=4u8 {
-            let key = app.key.clone();
-            let current = app.channel == channel;
-            chips = chips.child(
-                Button::new(SharedString::from(format!("route-{channel}-{id}")))
-                    .ghost()
-                    .small()
-                    .h(px(24.))
-                    .w(px(26.))
-                    .p_0()
-                    .border_1()
-                    .border_color(rgb(if current { p.channels[channel as usize - 1] } else { p.line }))
-                    .bg(rgb(if current { p.surface } else { p.well }))
-                    .text_color(rgb(if current { p.channels[channel as usize - 1] } else { p.muted }))
-                    .tooltip(format!("Send to {}", crate::console::link_name(channel)))
-                    .child(div().text_size(px(11.)).child(channel.to_string()))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        cx.stop_propagation();
-                        this.picked(&key, channel);
-                        this.send(LinkCommand::Assign(key.clone(), channel), cx)
-                    })),
-            );
-        }
+        // The picker belongs to the channel whose box opened it: one action
+        // per row, for that channel only.
+        let target = self.channel;
         let key = app.key.clone();
-        chips = chips.child(
-            Button::new(SharedString::from(format!("route-0-{id}")))
+        let here = app.channel == target;
+        let (channel, label, tooltip) = if here {
+            (0, "Remove", "Return to the desktop output".to_owned())
+        } else if app.channel > 0 {
+            (target, "Move here", format!("Move to {}", crate::console::link_name(target)))
+        } else {
+            (target, "Add", format!("Send to {}", crate::console::link_name(target)))
+        };
+        let color = p.channels[target as usize - 1];
+        let chips = div().flex().items_center().child(
+            Button::new(SharedString::from(format!("route-{channel}-{id}")))
                 .ghost()
                 .small()
                 .h(px(24.))
-                .px(px(6.))
+                .px(px(8.))
                 .border_1()
-                .border_color(rgb(p.line))
-                .text_color(rgb(p.muted))
-                .tooltip("Return to the desktop output")
-                .child(div().text_size(px(11.)).child("Off"))
+                .border_color(rgb(if here { p.line } else { color }))
+                .bg(rgb(if here { p.well } else { p.surface }))
+                .text_color(rgb(if here { p.muted } else { color }))
+                .tooltip(tooltip)
+                .child(div().text_size(px(11.)).child(label))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     cx.stop_propagation();
-                    this.picked(&key, 0);
-                    this.send(LinkCommand::Assign(key.clone(), 0), cx)
+                    this.picked(&key, channel);
+                    this.send(LinkCommand::Assign(key.clone(), channel), cx)
                 })),
         );
         let accent = if app.channel > 0 {
@@ -354,7 +343,6 @@ impl LinkInterface {
             p.muted
         };
         let key = app.key.clone();
-        let target = self.channel;
         div()
             .id(SharedString::from(format!("app-{id}")))
             .flex()
@@ -1239,7 +1227,7 @@ impl Render for LinkInterface {
                         div()
                             .text_size(px(10.))
                             .text_color(rgb(p.muted))
-                            .child("Click an application to send it here, or pick any channel with 1–4."),
+                            .child("Click an application to send it to this channel."),
                     )
                     .child(
                         div()
