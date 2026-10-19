@@ -187,6 +187,64 @@ pub fn parse_channels(text: &str) -> BTreeMap<String, u8> {
         .collect()
 }
 
+/// Sound outputs the user hid from LinX's lists (by node.name):
+/// `~/.config/linx/hidden-outputs`. Hiding only affects LinX's menus.
+pub struct HiddenOutputs {
+    path: Option<PathBuf>,
+}
+impl HiddenOutputs {
+    pub fn user() -> Self {
+        Self {
+            path: crate::preferences::Preferences::user_path()
+                .and_then(|p| p.parent().map(|d| d.join("hidden-outputs"))),
+        }
+    }
+    pub fn load(&self) -> std::collections::BTreeSet<String> {
+        self.path
+            .as_ref()
+            .and_then(|path| fs::read_to_string(path).ok())
+            .map(|text| parse_hidden(&text))
+            .unwrap_or_default()
+    }
+    pub fn save(&self, hidden: &std::collections::BTreeSet<String>) -> Result<(), String> {
+        let path = self.path.as_ref().ok_or("No LinX settings directory.")?;
+        let parent = path.parent().ok_or("No LinX settings directory.")?;
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        let temp = parent.join(format!(".hidden-outputs-{}", std::process::id()));
+        let mut file = fs::File::create(&temp).map_err(|e| e.to_string())?;
+        file.write_all(format_hidden(hidden).as_bytes())
+            .and_then(|_| file.sync_all())
+            .map_err(|e| e.to_string())?;
+        fs::rename(&temp, path).map_err(|e| e.to_string())
+    }
+}
+pub fn format_hidden(hidden: &std::collections::BTreeSet<String>) -> String {
+    let mut out = String::from("linx-hidden-outputs=1\n");
+    for name in hidden {
+        out.extend(name.bytes().map(|b| format!("{b:02x}")));
+        out.push('\n');
+    }
+    out
+}
+pub fn parse_hidden(text: &str) -> std::collections::BTreeSet<String> {
+    let mut lines = text.lines();
+    if lines.next() != Some("linx-hidden-outputs=1") {
+        return Default::default();
+    }
+    lines
+        .filter_map(|hex| {
+            if hex.is_empty() || hex.len() % 2 != 0 {
+                return None;
+            }
+            let bytes = (0..hex.len())
+                .step_by(2)
+                .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).ok())
+                .collect::<Option<Vec<_>>>()?;
+            String::from_utf8(bytes).ok()
+        })
+        .collect()
+}
+
 const TICK: Duration = Duration::from_millis(500);
 const RETRY: Duration = Duration::from_secs(2);
 
@@ -441,6 +499,14 @@ fn fill(view: &mut LinkView, service: &LinkService) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn hidden_outputs_round_trip_and_ignore_bad_lines() {
+        let hidden: std::collections::BTreeSet<String> =
+            ["alsa_output.hdmi-stereo".to_owned(), "odd\tname".to_owned()].into();
+        assert_eq!(parse_hidden(&format_hidden(&hidden)), hidden);
+        assert!(parse_hidden("something-else=1\n6869").is_empty());
+        assert_eq!(parse_hidden("linx-hidden-outputs=1\nzz\n686\n6869\n").len(), 1);
+    }
     #[test]
     fn channel_memory_round_trips_and_ignores_bad_lines() {
         let channels = BTreeMap::from([

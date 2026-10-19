@@ -53,6 +53,8 @@ pub(crate) struct LinkCore {
     pub(crate) updates: crate::updates::Updates,
     /// A newer version announced this session and not yet looked at.
     update_unseen: bool,
+    /// Sound outputs hidden from the Sound output panel and tray menu.
+    pub(crate) hidden_outputs: std::collections::BTreeSet<String>,
 }
 impl Global for LinkCore {}
 impl LinkCore {
@@ -80,6 +82,8 @@ pub struct LinkInterface {
     pub(crate) updates_open: bool,
     /// The "Sound output" panel (desktop default output) is open.
     pub(crate) outputs_open: bool,
+    /// The Sound output panel shows every output with hide/show buttons.
+    pub(crate) outputs_edit: bool,
     pub(crate) catalog_open: bool,
     /// Rows of the open application picker, in a fixed order: applications
     /// that start or stop playing while it is open never move a row.
@@ -153,6 +157,7 @@ impl LinkInterface {
             settings: false,
             updates_open: false,
             outputs_open: false,
+            outputs_edit: false,
             catalog_open: false,
             picker: Vec::new(),
             picker_for: None,
@@ -581,50 +586,97 @@ impl LinkInterface {
             .rounded(px(6.))
             .flex()
             .flex_col();
+        let edit = self.outputs_edit;
+        let hidden = cx.global::<LinkCore>().hidden_outputs.clone();
+        let mut shown = 0;
         for output in &self.view.outputs {
             let current = self.view.default_output.as_deref() == Some(output.name.as_str());
+            let is_hidden = hidden.contains(&output.name) && !current;
+            if is_hidden && !edit {
+                continue;
+            }
+            shown += 1;
             let name = output.name.clone();
-            list = list.child(
-                div()
-                    .id(SharedString::from(format!("output-{}", key_id(&output.name))))
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .px_3()
-                    .py_2()
-                    .border_b_1()
-                    .border_color(rgb(p.line))
+            let id = key_id(&output.name);
+            let mut row = div()
+                .id(SharedString::from(format!("output-{id}")))
+                .flex()
+                .items_center()
+                .gap_2()
+                .px_3()
+                .py_2()
+                .border_b_1()
+                .border_color(rgb(p.line))
+                .child(
+                    div()
+                        .size(px(8.))
+                        .flex_shrink_0()
+                        .rounded_full()
+                        .border_1()
+                        .border_color(rgb(if current { p.channels[0] } else { p.line }))
+                        .when(current, |dot| dot.bg(rgb(p.channels[0]))),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_size(px(13.))
+                        .text_color(rgb(if current {
+                            p.text
+                        } else if is_hidden {
+                            p.line
+                        } else {
+                            p.muted
+                        }))
+                        .child(output.description.clone()),
+                );
+            if edit {
+                let key = output.name.clone();
+                row = row.child(
+                    Button::new(SharedString::from(format!("output-visibility-{id}")))
+                        .ghost()
+                        .small()
+                        .h(px(22.))
+                        .px(px(8.))
+                        .border_1()
+                        .border_color(rgb(p.line))
+                        .text_color(rgb(p.muted))
+                        .disabled(current)
+                        .tooltip(if current {
+                            "The output in use is always listed"
+                        } else if is_hidden {
+                            "List this output again"
+                        } else {
+                            "Hide this output from LinX's lists"
+                        })
+                        .child(div().text_size(px(10.)).child(if is_hidden { "Show" } else { "Hide" }))
+                        .on_click(cx.listener(move |_, _, _, cx| {
+                            cx.stop_propagation();
+                            let core = cx.global_mut::<LinkCore>();
+                            if !core.hidden_outputs.remove(&key) {
+                                core.hidden_outputs.insert(key.clone());
+                            }
+                            let _ = beacn_linx_core::link::HiddenOutputs::user().save(&core.hidden_outputs);
+                            cx.notify();
+                        })),
+                );
+            } else {
+                row = row
                     .cursor_pointer()
                     .hover(|row| row.bg(rgb(p.surface)))
-                    .child(
-                        div()
-                            .size(px(8.))
-                            .flex_shrink_0()
-                            .rounded_full()
-                            .border_1()
-                            .border_color(rgb(if current { p.channels[0] } else { p.line }))
-                            .when(current, |dot| dot.bg(rgb(p.channels[0]))),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
-                            .text_size(px(13.))
-                            .text_color(rgb(if current { p.text } else { p.muted }))
-                            .child(output.description.clone()),
-                    )
                     .when(current, |row| {
-                        row.child(div().text_size(px(10.)).text_color(rgb(p.muted)).child("Default"))
+                        row.child(div().text_size(px(10.)).text_color(rgb(p.muted)).child("In use"))
                     })
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.send(LinkCommand::DefaultOutput(name.clone()), cx);
                         this.outputs_open = false;
                         cx.notify();
-                    }))
-                    .test_support(),
-            );
+                    }));
+            }
+            list = list.child(row.test_support());
         }
+        let hidden_count = self.view.outputs.len() - shown;
         panel(p)
             .id("outputs-panel")
             .top(px(62.))
@@ -633,6 +685,32 @@ impl LinkInterface {
             .p_3()
             .gap_2()
             .child(panel_header("Sound output", "close-outputs", p, cx))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(div().text_size(px(10.)).text_color(rgb(p.muted)).child(if edit {
+                        "Hide outputs you never use. Hiding only affects LinX's lists.".to_owned()
+                    } else if hidden_count > 0 {
+                        format!("{hidden_count} hidden")
+                    } else {
+                        String::new()
+                    }))
+                    .child(
+                        Button::new("outputs-edit")
+                            .ghost()
+                            .small()
+                            .h(px(22.))
+                            .px(px(8.))
+                            .text_color(rgb(p.muted))
+                            .child(div().text_size(px(10.)).child(if edit { "Done" } else { "Edit" }))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.outputs_edit = !this.outputs_edit;
+                                cx.notify();
+                            })),
+                    ),
+            )
             .child(
                 div()
                     .text_size(px(10.))
@@ -1083,6 +1161,7 @@ impl Render for LinkInterface {
                                     .text_color(rgb(tool_color)),
                             )
                             .on_click(cx.listener(|this, _, _, cx| {
+                                this.outputs_edit = false;
                                 this.outputs_open = !this.outputs_open;
                                 this.settings = false;
                                 this.catalog_open = false;
@@ -1555,6 +1634,7 @@ pub fn run(
             instance,
             updates: crate::updates::Updates::load(),
             update_unseen: false,
+            hidden_outputs: beacn_linx_core::link::HiddenOutputs::user().load(),
         });
         cx.on_app_quit(|cx| {
             LinkCore::stop(cx);
@@ -1684,7 +1764,14 @@ fn tray_tick(cx: &mut App) -> bool {
         let view = core.worker.view();
         core.tray.update(status_of(&view), view.phase == Phase::Running);
         core.tray.set_outputs(
-            view.outputs.iter().map(|o| (o.name.clone(), o.description.clone())).collect(),
+            view.outputs
+                .iter()
+                .filter(|o| {
+                    !core.hidden_outputs.contains(&o.name)
+                        || view.default_output.as_deref() == Some(o.name.as_str())
+                })
+                .map(|o| (o.name.clone(), o.description.clone()))
+                .collect(),
             view.default_output.clone(),
         );
         let actions = core.tray.actions();

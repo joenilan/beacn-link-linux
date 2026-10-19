@@ -191,6 +191,7 @@ impl LinkInterface {
             "outputs",
             "outputs-scrim",
             "close-outputs",
+            "outputs-edit",
             "minimize-window",
             "close-window",
         ]
@@ -202,6 +203,7 @@ impl LinkInterface {
         }
         for output in &self.view.outputs {
             ids.push(format!("output-{}", key_id(&output.name)));
+            ids.push(format!("output-visibility-{}", key_id(&output.name)));
         }
         for app in &self.view.apps {
             let id = key_id(&app.key);
