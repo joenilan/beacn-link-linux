@@ -32,6 +32,7 @@
 #include <spa/param/profile.h>
 #include <spa/param/props.h>
 #include <spa/pod/parser.h>
+#include <spa/utils/json.h>
 #include <spa/utils/string.h>
 #include <stdarg.h>
 #include <stdatomic.h>
@@ -126,6 +127,9 @@ struct link_bus {
   struct spa_hook metadata_listener;
   uint32_t metadata_id;
   struct lb_target *targets;
+  /* The session manager's default output: the one in use and the one the
+   * user chose (node.name; empty when unset). */
+  char default_sink[256], configured_sink[256];
   struct lb_object *objects;
   bool broken;
   char error[256];
@@ -196,10 +200,34 @@ static void lb_targets_clear(struct link_bus *b, uint32_t subject, bool all) {
     }
   }
 }
+/* The "name" of a default-device value such as {"name":"alsa_output.x"}. */
+static void lb_json_name(const char *value, char *out, size_t size) {
+  out[0] = '\0';
+  if (!value) return;
+  struct spa_json it[2];
+  char key[16];
+  spa_json_init(&it[0], value, strlen(value));
+  if (spa_json_enter_object(&it[0], &it[1]) <= 0) return;
+  while (spa_json_get_string(&it[1], key, sizeof(key)) > 0) {
+    if (spa_streq(key, "name")) {
+      if (spa_json_get_string(&it[1], out, (int)size) <= 0) out[0] = '\0';
+      return;
+    }
+    const char *skip;
+    if (spa_json_next(&it[1], &skip) <= 0) return;
+  }
+}
 static int lb_metadata_property(void *data, uint32_t subject, const char *key,
                                 const char *type, const char *value) {
   struct link_bus *b = data;
   (void)type;
+  if (subject == PW_ID_CORE) {
+    if (!key || spa_streq(key, "default.audio.sink"))
+      lb_json_name(key ? value : NULL, b->default_sink, sizeof(b->default_sink));
+    if (!key || spa_streq(key, "default.configured.audio.sink"))
+      lb_json_name(key ? value : NULL, b->configured_sink, sizeof(b->configured_sink));
+    return 0;
+  }
   if (!key) { /* subject cleared */
     lb_targets_clear(b, subject, false);
     return 0;
@@ -496,6 +524,7 @@ static void lb_global_remove(void *data, uint32_t id) {
     pw_proxy_destroy((struct pw_proxy *)b->metadata);
     b->metadata = NULL;
     b->metadata_id = 0;
+    b->default_sink[0] = b->configured_sink[0] = '\0';
   }
   for (int i = 0; i < LB_CHANNELS; i++) {
     lb_owned_forget(&b->sinks[i], id);
@@ -1219,6 +1248,8 @@ static const char *lb_identity(struct link_bus *b, struct lb_object *node, const
  *   stream <node> <serial> <client> <pid> <state> <channel> <dont_move>
  *          <target_channel> <info> <hex app name> <hex binary> <hex media name>
  *          <hex node name>
+ *   default <hex default output> <hex configured default output>  (node.name)
+ *   output <node> <serial> <hex node name> <hex description>  (Audio/Sink)
  * Returns 0, -1 on failure, -2 when the buffer is too small. */
 int lb_snapshot(struct link_bus *b, char *out, size_t size) {
   if (!b || !out || size < 64) return -1;
@@ -1294,6 +1325,23 @@ int lb_snapshot(struct link_bus *b, char *out, size_t size) {
     lb_hex(&buf, &left, lb_prop(o, PW_KEY_MEDIA_NAME));
     lb_put(&buf, &left, "\t");
     lb_hex(&buf, &left, lb_prop(o, PW_KEY_NODE_NAME));
+    lb_put(&buf, &left, "\n");
+  }
+  lb_put(&buf, &left, "default\t");
+  lb_hex(&buf, &left, b->default_sink);
+  lb_put(&buf, &left, "\t");
+  lb_hex(&buf, &left, b->configured_sink);
+  lb_put(&buf, &left, "\n");
+  for (struct lb_object *o = b->objects; o; o = o->next) {
+    if (o->kind != LB_NODE || !spa_streq(lb_prop(o, PW_KEY_MEDIA_CLASS), "Audio/Sink")) continue;
+    const char *name = lb_prop(o, PW_KEY_NODE_NAME);
+    if (!name || !*name) continue;
+    const char *description = lb_prop(o, PW_KEY_NODE_DESCRIPTION);
+    if (!description || !*description) description = lb_prop(o, PW_KEY_NODE_NICK);
+    lb_put(&buf, &left, "output\t%u\t%" PRIu64 "\t", o->id, o->serial);
+    lb_hex(&buf, &left, name);
+    lb_put(&buf, &left, "\t");
+    lb_hex(&buf, &left, description && *description ? description : name);
     lb_put(&buf, &left, "\n");
   }
   int result = left < 64 ? -2 : 0;
@@ -1410,6 +1458,29 @@ int lb_set_level(struct link_bus *b, int channel, float volume, int mute) {
     struct spa_pod *props = spa_pod_builder_pop(&pb, &frame);
     if (props && pw_node_set_param((struct pw_node *)x->proxy, SPA_PARAM_Props, 0, props) >= 0)
       result = 0;
+  }
+  pw_thread_loop_unlock(b->loop);
+  return result;
+}
+
+/* Make `name` (an Audio/Sink node.name) the desktop's default output, as
+ * `wpctl set-default` does: the session manager moves every stream that
+ * follows the default. Streams LinX points at a channel stay there. */
+int lb_set_default_output(struct link_bus *b, const char *name) {
+  if (!b || !name || !*name || strlen(name) >= 200) return -1;
+  pw_thread_loop_lock(b->loop);
+  int result = -1;
+  struct lb_object *target = lb_node_named(b, name);
+  if (!b->broken && b->metadata && target &&
+      spa_streq(lb_prop(target, PW_KEY_MEDIA_CLASS), "Audio/Sink")) {
+    char quoted[512], value[600];
+    if (spa_json_encode_string(quoted, sizeof(quoted), name) < (int)sizeof(quoted)) {
+      snprintf(value, sizeof(value), "{ \"name\": %s }", quoted);
+      result = pw_metadata_set_property(b->metadata, PW_ID_CORE, "default.configured.audio.sink",
+                                        "Spa:String:JSON", value) < 0
+                   ? -1
+                   : 0;
+    }
   }
   pw_thread_loop_unlock(b->loop);
   return result;

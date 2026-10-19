@@ -15,7 +15,7 @@
 //!   failure is retried in the background while audio keeps flowing.
 //! - Pausing LinX returns every application it moved to its previous output.
 use crate::{
-    link_bus::{BusStatus, LinkBus, Stream, CHANNELS},
+    link_bus::{BusStatus, LinkBus, Output, Stream, CHANNELS},
     metering::Mailbox,
     session::{PollPolicy, PollReply, ReceivedNamePolicy, Session},
     Assignment, Record, MAX_PAYLOAD,
@@ -340,6 +340,10 @@ pub struct State {
     pub last_reply: Option<&'static str>,
     pub exchanges: u64,
     pub beacn: Beacn,
+    /// Desktop audio outputs, LinX's channels included.
+    pub outputs: Vec<Output>,
+    /// The output the desktop currently uses as its default (node.name).
+    pub default_output: Option<String>,
 }
 
 /// What LinX and BEACN App last exchanged, for diagnostics only.
@@ -685,6 +689,8 @@ impl LinkService {
         }
         self.state.bus = snapshot.status;
         self.state.apps = applications(&snapshot.streams, &self.remembered);
+        self.state.outputs = snapshot.outputs;
+        self.state.default_output = snapshot.default_output;
         Ok(())
     }
 
@@ -860,6 +866,15 @@ impl LinkService {
         mute: Option<bool>,
     ) -> Result<(), String> {
         self.bus.set_level(channel, volume, mute)
+    }
+
+    /// Make an output (by node.name) the desktop's default. Applications on a
+    /// LinX channel stay there; everything else follows the new default.
+    pub fn set_default_output(&mut self, name: &str) -> Result<(), String> {
+        if !self.state.outputs.iter().any(|o| o.name == name) {
+            return Err("That output is no longer available.".into());
+        }
+        self.bus.set_default_output(name)
     }
 
     /// Return every stream LinX routed to its previous output (or the desktop

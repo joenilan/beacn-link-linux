@@ -23,6 +23,7 @@ unsafe extern "C" {
     fn lb_target_name(bus: *mut c_void, node: u32, out: *mut c_char, size: usize) -> c_int;
     fn lb_route_named(bus: *mut c_void, node: u32, serial: u64, name: *const c_char) -> c_int;
     fn lb_set_level(bus: *mut c_void, channel: c_int, volume: f32, mute: c_int) -> c_int;
+    fn lb_set_default_output(bus: *mut c_void, name: *const c_char) -> c_int;
 }
 
 /// A Link In channel's send level as PipeWire reports it.
@@ -147,10 +148,25 @@ fn specific_app_name(name: &str) -> Option<String> {
     (!name.is_empty() && !ENGINES.contains(&name.to_lowercase().as_str())).then(|| name.to_owned())
 }
 
+/// A desktop audio output (an `Audio/Sink` node, LinX's channels included).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Output {
+    pub node: u32,
+    pub serial: u64,
+    /// `node.name`: what the default-output setting refers to.
+    pub name: String,
+    pub description: String,
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Snapshot {
     pub status: BusStatus,
     pub streams: Vec<Stream>,
+    pub outputs: Vec<Output>,
+    /// The output the session manager is using as the default (node.name).
+    pub default_output: Option<String>,
+    /// The output the user chose as default, if any (it may be absent).
+    pub configured_output: Option<String>,
 }
 
 fn unhex(text: &str) -> Result<String, String> {
@@ -238,6 +254,16 @@ pub fn parse(raw: &str) -> Result<Snapshot, String> {
                 media: unhex(f[12])?,
                 node_name: unhex(f[13])?,
             }),
+            "default" if f.len() == 3 => {
+                snapshot.default_output = Some(unhex(f[1])?).filter(|s| !s.is_empty());
+                snapshot.configured_output = Some(unhex(f[2])?).filter(|s| !s.is_empty());
+            }
+            "output" if f.len() == 5 => snapshot.outputs.push(Output {
+                node: int(f[1])?,
+                serial: int(f[2])?,
+                name: unhex(f[3])?,
+                description: unhex(f[4])?,
+            }),
             _ => return Err(format!("Unexpected bus record {:?}.", f[0])),
         }
     }
@@ -245,6 +271,7 @@ pub fn parse(raw: &str) -> Result<Snapshot, String> {
         return Err("Bus status absent.".into());
     }
     snapshot.streams.sort_by_key(|s| (s.node, s.serial));
+    snapshot.outputs.sort_by(|a, b| a.description.to_lowercase().cmp(&b.description.to_lowercase()));
     Ok(snapshot)
 }
 
@@ -350,6 +377,15 @@ impl LinkBus {
         }
         Ok(())
     }
+    /// Make an output (by node.name) the desktop's default, like
+    /// `wpctl set-default`.
+    pub fn set_default_output(&mut self, name: &str) -> Result<(), String> {
+        let c_name = std::ffi::CString::new(name).map_err(|_| "Invalid output name.")?;
+        if unsafe { lb_set_default_output(self.raw, c_name.as_ptr()) } != 0 {
+            return Err("Could not switch the desktop output.".into());
+        }
+        Ok(())
+    }
     pub fn meter(&self, channel: u8) -> Option<Arc<Mailbox>> {
         (1..=CHANNELS as u8)
             .contains(&channel)
@@ -406,6 +442,23 @@ mod tests {
         assert_eq!(stream.target_channel, 3);
         assert!(stream.running && stream.movable && stream.info);
         assert_eq!(stream.app_key(), "Firefox");
+    }
+    #[test]
+    fn parses_outputs_and_defaults() {
+        let raw = format!(
+            "bus\t1\t1\t4\t2\t3\t8\t77\t\ndefault\t{}\t\noutput\t86\t900\t{}\t{}\noutput\t250\t901\t{}\t{}\n",
+            hex("alsa_output.pci.analog-stereo"),
+            hex("alsa_output.pci.analog-stereo"),
+            hex("Speakers"),
+            hex("linx_link_in_1"),
+            hex("LinX Link Out"),
+        );
+        let s = parse(&raw).unwrap();
+        assert_eq!(s.default_output.as_deref(), Some("alsa_output.pci.analog-stereo"));
+        assert_eq!(s.configured_output, None);
+        let names: Vec<_> = s.outputs.iter().map(|o| o.description.as_str()).collect();
+        assert_eq!(names, ["LinX Link Out", "Speakers"]);
+        assert_eq!((s.outputs[1].node, s.outputs[1].serial), (86, 900));
     }
     #[test]
     fn transport_states_and_error_text() {

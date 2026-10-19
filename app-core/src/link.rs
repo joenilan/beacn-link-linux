@@ -73,6 +73,17 @@ pub struct LinkView {
     pub beacn: Beacn,
     /// The Studio's Link Out pairs as LinX sources.
     pub link_out: LinkOut,
+    /// Desktop outputs (LinX's channels included), by description.
+    pub outputs: Vec<OutputChoice>,
+    /// The desktop's current default output (node.name).
+    pub default_output: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OutputChoice {
+    /// node.name, what the default refers to.
+    pub name: String,
+    pub description: String,
 }
 impl LinkView {
     pub fn apps_on(&self, channel: u8) -> impl Iterator<Item = &LinkApp> {
@@ -105,6 +116,8 @@ pub enum LinkCommand {
         mute: Option<bool>,
     },
     AutoConnect(bool),
+    /// Make a desktop output (node.name) the default.
+    DefaultOutput(String),
 }
 
 /// Per-application channel memory: `~/.config/linx/channels`.
@@ -275,6 +288,13 @@ fn run(rx: mpsc::Receiver<LinkCommand>, latest: Arc<Mutex<LinkView>>, ending: Ar
                     };
                     view.message = result.err();
                 }
+                LinkCommand::DefaultOutput(name) => {
+                    let result = match service.as_mut() {
+                        Some(s) => s.set_default_output(&name),
+                        None => Err("Connect LinX first.".into()),
+                    };
+                    view.message = result.err();
+                }
                 LinkCommand::AutoConnect(enabled) => {
                     view.auto_connect = enabled;
                     view.message = match preferences.as_mut() {
@@ -325,6 +345,8 @@ fn run(rx: mpsc::Receiver<LinkCommand>, latest: Arc<Mutex<LinkView>>, ending: Ar
             fill(&mut view, s);
         } else {
             view.apps.clear();
+            view.outputs.clear();
+            view.default_output = None;
             view.meters = Default::default();
             view.out_meters = Default::default();
             view.levels = Default::default();
@@ -365,6 +387,15 @@ fn fill(view: &mut LinkView, service: &LinkService) {
     view.beacn = state.beacn.clone();
     view.link_out = state.bus.link_out.clone();
     view.levels = state.bus.levels;
+    view.outputs = state
+        .outputs
+        .iter()
+        .map(|o| OutputChoice {
+            name: o.name.clone(),
+            description: o.description.clone(),
+        })
+        .collect();
+    view.default_output = state.default_output.clone();
     view.apps = state
         .apps
         .iter()
