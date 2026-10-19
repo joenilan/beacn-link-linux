@@ -193,6 +193,8 @@ impl LinkInterface {
             "close-outputs",
             "outputs-edit",
             "dev-badge",
+            "local-banner",
+            "use-linx",
             "minimize-window",
             "close-window",
         ]

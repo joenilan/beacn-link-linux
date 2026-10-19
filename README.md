@@ -48,7 +48,10 @@ Windows.
   the tray): *BEACN Studio (LinX)* plays each assigned application on its
   Link channel and the rest on Link Out; a device on this PC (Speakers,
   HDMI ...) plays everything, assigned applications included, and LinX keeps
-  their channels for when you switch back.
+  their channels for when you switch back. Meanwhile the channels are locked
+  (no faders, mute or assignments) so nothing changes on the BEACN side.
+  Every output the system has is listed, and outputs you never use can be
+  hidden (*Edit*).
 - Light and dark themes, with five accent palettes.
 
 Tested with BEACN Studio and BEACN App on Debian 13 (PipeWire 1.4.2):

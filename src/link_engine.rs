@@ -569,6 +569,8 @@ pub struct LinkService {
     /// Sound output is a device on this PC (not LinX): assigned applications
     /// play there too and LinX applies no channels until it returns.
     local: bool,
+    /// `local` was taken from the desktop default at connection.
+    local_known: bool,
     state: State,
 }
 
@@ -589,6 +591,7 @@ impl LinkService {
             studio_scan: Instant::now(),
             host_seen: None,
             local: false,
+            local_known: false,
             state: State::default(),
         };
         service.tick()?;
@@ -705,6 +708,17 @@ impl LinkService {
         self.state.apps = applications(&snapshot.streams, &self.remembered);
         self.state.outputs = snapshot.outputs;
         self.state.default_output = snapshot.default_output;
+        // On connecting, the default the user chose says where sound plays
+        // (the effective one falls back elsewhere while LinX's outputs are
+        // still being created): a device on this PC keeps LinX's channels
+        // unused until LinX is chosen.
+        if !self.local_known && self.state.bus.metadata {
+            if let Some(name) = snapshot.configured_output.as_ref().or(self.state.default_output.as_ref()) {
+                self.local = !is_linx_output(name);
+                self.local_known = true;
+                self.state.local_output = self.local;
+            }
+        }
         Ok(())
     }
 

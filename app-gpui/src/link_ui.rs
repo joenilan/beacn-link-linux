@@ -575,6 +575,73 @@ impl LinkInterface {
 }
 
 impl LinkInterface {
+    /// Covers the Link channels while sound plays on a device on this PC:
+    /// blocks faders, mute and application boxes, and offers the way back.
+    fn local_banner(&self, p: &crate::appearance::Colors, cx: &mut Context<Self>) -> impl IntoElement {
+        let device = self
+            .view
+            .default_output
+            .as_ref()
+            .and_then(|d| self.view.outputs.iter().find(|o| &o.name == d))
+            .map(|o| o.description.clone())
+            .unwrap_or_else(|| "this PC".into());
+        let linx = self
+            .view
+            .outputs
+            .iter()
+            .find(|o| o.description == beacn_linx_core::link::LINX_OUTPUT)
+            .map(|o| o.name.clone());
+        div()
+            .id("local-banner")
+            .absolute()
+            .top_0()
+            .left_0()
+            .right_0()
+            .bottom_0()
+            // Nothing beneath reacts while LinX channels are not in use.
+            .occlude()
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap_2()
+                    .px_4()
+                    .py_3()
+                    .rounded(px(8.))
+                    .bg(rgb(p.background))
+                    .border_1()
+                    .border_color(rgb(p.line))
+                    .shadow_lg()
+                    .child(
+                        div()
+                            .text_size(px(14.))
+                            .font_weight(FontWeight::MEDIUM)
+                            .child(format!("Playing on {device}")),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .text_color(rgb(p.muted))
+                            .child("LinX channels are off; nothing here changes your BEACN settings."),
+                    )
+                    .when_some(linx, |card, name| {
+                        card.child(
+                            Button::new("use-linx")
+                                .small()
+                                .label("Use BEACN Studio")
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.send(LinkCommand::DefaultOutput(name.clone()), cx);
+                                })),
+                        )
+                    }),
+            )
+            .test_support()
+    }
+
     /// The desktop's default output. Applications on a LinX channel stay
     /// there; everything else follows the choice.
     fn outputs_panel(&self, p: &crate::appearance::Colors, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -949,6 +1016,9 @@ impl Render for LinkInterface {
             .flex_col()
             .gap(px(1.));
         let count = if narrow { 2 } else { 4 };
+        // Sound plays on a device on this PC: the Link channels are not in
+        // use, so they are shown locked and change nothing.
+        let local = self.view.local_output;
         for first in (1..=4u8).step_by(count) {
             let mut row = div().w_full().flex().flex_nowrap();
             for pair in first..first + count as u8 {
@@ -970,12 +1040,12 @@ impl Render for LinkInterface {
                     },
                     self.appearance.light,
                     p.channels[(pair - 1) as usize],
-                    self.meters[(pair - 1) as usize].display,
+                    (!local).then_some(self.meters[(pair - 1) as usize].display).flatten(),
                     level,
                     self.view
                         .link_out
                         .complete()
-                        .then_some(self.out_meters[(pair - 1) as usize].display),
+                        .then_some(if local { None } else { self.out_meters[(pair - 1) as usize].display }),
                     cx.listener(move |this, _, _, cx| {
                         let same = this.catalog_open && this.channel == pair;
                         this.channel = pair;
@@ -1241,7 +1311,13 @@ impl Render for LinkInterface {
                             }),
                     ),
             )
-            .child(bank)
+            .child(
+                div()
+                    .relative()
+                    .flex_shrink_0()
+                    .child(bank.when(local, |bank| bank.opacity(0.35)))
+                    .when(local, |wrap| wrap.child(self.local_banner(&p, cx))),
+            )
             .child(
                 div()
                     .id("console-footer")
@@ -1269,6 +1345,7 @@ impl Render for LinkInterface {
                         Button::new("manage-apps")
                             .ghost()
                             .small()
+                            .disabled(self.view.local_output)
                             .h(px(22.))
                             .px(px(8.))
                             .text_color(rgb(p.muted))
