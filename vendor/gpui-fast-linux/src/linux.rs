@@ -59,3 +59,11 @@ pub(crate) static PENDING_ACTIVATION_TOKEN: std::sync::Mutex<Option<String>> =
 pub(crate) fn take_pending_activation_token() -> Option<String> {
     PENDING_ACTIVATION_TOKEN.lock().ok().and_then(|mut t| t.take())
 }
+
+/// LinX patch: see `request_launch_activation_token`.
+pub(crate) static LAUNCH_TOKEN_REQUEST: std::sync::Mutex<Option<std::sync::mpsc::Sender<String>>> =
+    std::sync::Mutex::new(None);
+
+pub(crate) fn take_launch_token_request() -> Option<std::sync::mpsc::Sender<String>> {
+    LAUNCH_TOKEN_REQUEST.lock().ok().and_then(|mut r| r.take())
+}

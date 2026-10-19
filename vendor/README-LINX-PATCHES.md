@@ -9,7 +9,10 @@ the published crate source with the changes below; licenses are unchanged.
 - `gpui-fast-linux` 0.1.8 (Apache-2.0, Longbridge; modified): adds
   `gpui_linux::set_pending_activation_token`. On Wayland the next new toplevel
   window, or the next `activate` of an existing one, uses that xdg-activation
-  token so the compositor raises and focuses the window.
+  token so the compositor raises and focuses the window. Also adds
+  `gpui_linux::request_launch_activation_token`: the next `activate` asks the
+  compositor for a token from the latest click instead, for a process LinX
+  starts (the updater's *Restart LinX*), so the new window opens in front.
 
 Both let a tray click bring LinX's window to the front on Wayland (KWin's focus
 stealing prevention otherwise only marks it as wanting attention).

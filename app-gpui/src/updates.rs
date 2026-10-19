@@ -357,10 +357,15 @@ impl Updates {
     }
 
     /// After [`Phase::Installed`]: start the new LinX once this process exits.
-    pub fn relaunch(&self, args: &[String]) -> Result<(), String> {
+    /// `activation_token` (Wayland) lets its window open in front.
+    pub fn relaunch(
+        &self,
+        args: &[String],
+        activation_token: Option<String>,
+    ) -> Result<(), String> {
         let exe = launch_target(self.kind, home_dir().as_deref())
             .ok_or("This copy of LinX cannot restart itself after an update.")?;
-        spawn_relaunch(std::process::id(), &exe, args)
+        spawn_relaunch(std::process::id(), &exe, args, activation_token.as_deref())
     }
 
     // ------------------------------------------------------------ workers
@@ -674,7 +679,12 @@ fn launch_target(kind: InstallKind, home: Option<&Path>) -> Option<PathBuf> {
     }
 }
 
-fn spawn_relaunch(pid: u32, exe: &Path, args: &[String]) -> Result<(), String> {
+fn spawn_relaunch(
+    pid: u32,
+    exe: &Path,
+    args: &[String],
+    activation_token: Option<&str>,
+) -> Result<(), String> {
     const SCRIPT: &str = r#"while kill -0 "$1" 2>/dev/null; do sleep 0.2; done; shift; exec "$@""#;
     let build = |wrapper: Option<&str>| {
         let mut command = match wrapper {
@@ -693,6 +703,9 @@ fn spawn_relaunch(pid: u32, exe: &Path, args: &[String]) -> Result<(), String> {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
+        if let Some(token) = activation_token {
+            command.env("XDG_ACTIVATION_TOKEN", token);
+        }
         command
     };
     match build(Some("setsid")).spawn() {

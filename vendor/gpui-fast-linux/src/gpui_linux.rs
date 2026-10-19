@@ -14,3 +14,15 @@ pub fn set_pending_activation_token(token: String) {
         *pending = Some(token).filter(|t| !t.is_empty());
     }
 }
+
+/// LinX patch: the next `activate` of a window asks the compositor for an
+/// xdg-activation token (from the latest click) instead of raising it, and
+/// sends it here. Hand it to a process LinX starts, as XDG_ACTIVATION_TOKEN,
+/// so that process's window opens in front. Nothing arrives on X11.
+pub fn request_launch_activation_token() -> std::sync::mpsc::Receiver<String> {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    if let Ok(mut request) = linux::LAUNCH_TOKEN_REQUEST.lock() {
+        *request = Some(sender);
+    }
+    receiver
+}

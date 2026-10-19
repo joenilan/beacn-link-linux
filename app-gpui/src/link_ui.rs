@@ -584,18 +584,40 @@ impl LinkInterface {
                 Button::new("update-restart")
                     .label("Restart LinX")
                     .tooltip("Routing stops for a moment while LinX restarts.")
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        let args: Vec<String> = std::env::args().skip(1).collect();
-                        match cx.global::<LinkCore>().updates.relaunch(&args) {
-                            Ok(()) => {
-                                LinkCore::stop(cx);
-                                cx.quit();
+                    .on_click(cx.listener(|_, _, window, cx| {
+                        // Wayland: ask for an activation token while this
+                        // click still counts, so the new LinX opens in front
+                        // (KWin otherwise opens it behind other windows).
+                        #[cfg(target_os = "linux")]
+                        let token = gpui_linux::request_launch_activation_token();
+                        window.activate_window();
+                        cx.spawn(async move |this, cx| {
+                            let mut activation = None;
+                            #[cfg(target_os = "linux")]
+                            for _ in 0..25 {
+                                if let Ok(t) = token.try_recv() {
+                                    activation = Some(t);
+                                    break;
+                                }
+                                cx.background_executor()
+                                    .timer(Duration::from_millis(20))
+                                    .await;
                             }
-                            Err(error) => {
-                                this.feedback = Some(error);
-                                cx.notify();
-                            }
-                        }
+                            let _ = this.update(cx, |this, cx| {
+                                let args: Vec<String> = std::env::args().skip(1).collect();
+                                match cx.global::<LinkCore>().updates.relaunch(&args, activation) {
+                                    Ok(()) => {
+                                        LinkCore::stop(cx);
+                                        cx.quit();
+                                    }
+                                    Err(error) => {
+                                        this.feedback = Some(error);
+                                        cx.notify();
+                                    }
+                                }
+                            });
+                        })
+                        .detach();
                     })),
             ),
             _ => None,

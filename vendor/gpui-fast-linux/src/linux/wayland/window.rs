@@ -1871,6 +1871,23 @@ impl PlatformWindow for WaylandWindow {
     }
 
     fn activate(&self) {
+        // LinX patch: a token requested for a process we start (from the
+        // click that started it), not an activation of this window.
+        if let Some(sender) = crate::linux::take_launch_token_request() {
+            let state = self.borrow();
+            if let Some(activation) = &state.globals.activation {
+                state.client.set_pending_launch(sender);
+                let token = activation.get_activation_token(&state.globals.qh, ());
+                let serial = state.client.get_serial(SerialKind::MousePress);
+                if let Some(app_id) = state.app_id.clone() {
+                    token.set_app_id(app_id);
+                }
+                token.set_serial(serial.as_raw(), &state.globals.seat);
+                token.set_surface(&state.surface);
+                token.commit();
+            }
+            return;
+        }
         // LinX patch: a token handed to us (tray click) activates for real.
         if let Some(token) = crate::linux::take_pending_activation_token() {
             let state = self.borrow();

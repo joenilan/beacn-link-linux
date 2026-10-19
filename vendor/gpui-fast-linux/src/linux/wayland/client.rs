@@ -556,6 +556,8 @@ pub(crate) enum PendingActivation {
     Path(PathBuf),
     /// A window from ourselves to raise.
     Window(ObjectId),
+    /// LinX patch: a token for a process we start.
+    Launch(std::sync::mpsc::Sender<String>),
 }
 
 impl WaylandClientState {
@@ -708,6 +710,12 @@ impl WaylandClientStatePtr {
     pub fn set_pending_activation(&self, window: ObjectId) {
         self.0.upgrade().unwrap().borrow_mut().pending_activation =
             Some(PendingActivation::Window(window));
+    }
+
+    /// LinX patch: see `request_launch_activation_token`.
+    pub fn set_pending_launch(&self, sender: std::sync::mpsc::Sender<String>) {
+        self.0.upgrade().unwrap().borrow_mut().pending_activation =
+            Some(PendingActivation::Launch(sender));
     }
 
     pub fn enable_ime(&self) {
@@ -1971,6 +1979,9 @@ impl Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ()> for WaylandClie
                     };
                     let activation = state.globals.activation.as_ref().unwrap();
                     activation.activate(token, &window.surface());
+                }
+                Some(PendingActivation::Launch(sender)) => {
+                    let _ = sender.send(token);
                 }
                 None => log::error!("activation token received with no pending activation"),
             }
