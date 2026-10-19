@@ -23,13 +23,6 @@ channel) from LinX, for any user and any outputs.
   Studio (the Studio's own desktop devices are off then; LinX's channels
   replace them).
 
-## Linux on both PCs
-
-Test LinX (PC2) against [beacn-utility](https://github.com/beacn-on-linux/beacn-utility)
-on a Linux streaming PC (PC1), whose Studio Link page lists applications on the
-other PC and sets their channels. Compare protocol behaviour with the utility's
-implementation and record any differences.
-
 ## Windows version
 
 A Windows build of LinX as an alternative to the official Link app on PC2.
@@ -40,3 +33,12 @@ The GPUI interface already supports Windows; the work is elsewhere:
 - Access to the Studio's Link control interface, which BEACN's Windows driver
   owns.
 - Research item: needs a feasibility check before any implementation.
+
+## Done
+
+- **Linux on both PCs** (2026-10-18): LinX on PC2 tested against
+  [beacn-utility](https://github.com/beacn-on-linux/beacn-utility) and
+  Pipeweaver on a Debian 13 PC1. Audio on all four channels, application
+  names, assignment from either side and Mix Create work; the one protocol
+  difference found (a final record without a terminator) is handled since
+  0.1.6.
