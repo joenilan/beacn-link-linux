@@ -1052,6 +1052,22 @@ impl Render for LinkInterface {
                             .text_color(rgb(p.muted))
                             .child(crate::ui::tracked("STUDIO", 9., 0.9)),
                     )
+                    .when(crate::updates::dev_build(), |row| {
+                        row.child(
+                            div()
+                                .id("dev-badge")
+                                .ml(px(8.))
+                                .px(px(6.))
+                                .py(px(1.))
+                                .rounded(px(4.))
+                                .bg(rgb(0xb7791f))
+                                .text_color(rgb(0x1b1408))
+                                .text_size(px(9.))
+                                .font_weight(FontWeight::BOLD)
+                                .child("DEV")
+                                .test_support(),
+                        )
+                    })
                     .child(div().flex_1())
                     .child(
                         div()
@@ -1545,7 +1561,7 @@ fn open_console(cx: &mut App) {
                 // LinX draws its own title bar: drag the header to move,
                 // its own minimize/close buttons, edges to resize.
                 titlebar: Some(TitlebarOptions {
-                    title: Some("LinX".into()),
+                    title: Some(if crate::updates::dev_build() { "LinX Dev" } else { "LinX" }.into()),
                     appears_transparent: true,
                     ..Default::default()
                 }),

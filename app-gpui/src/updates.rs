@@ -631,6 +631,15 @@ fn home_dir() -> Option<PathBuf> {
         .filter(|path| path.is_absolute())
 }
 
+/// A development build run from the source tree: installed packages always
+/// name the program `linx`, Cargo names it `beacn-linx-gpui`.
+pub fn dev_build() -> bool {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.file_name().map(|n| n != "linx"))
+        .unwrap_or(false)
+}
+
 fn detect_kind() -> InstallKind {
     let exe = std::env::current_exe()
         .and_then(|path| path.canonicalize())

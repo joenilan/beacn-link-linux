@@ -192,6 +192,7 @@ impl LinkInterface {
             "outputs-scrim",
             "close-outputs",
             "outputs-edit",
+            "dev-badge",
             "minimize-window",
             "close-window",
         ]
