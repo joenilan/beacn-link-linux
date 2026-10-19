@@ -44,6 +44,9 @@ Windows.
   on desktops without a tray). Optional launch at login starts it hidden and
   connected. Pause or Quit returns every application to the
   output it used before.
+- A sound output switcher (speaker button in the header, *Sound output* in
+  the tray) sets the desktop's default output. Applications on a LinX
+  channel stay there; everything else follows the new default.
 - Light and dark themes, with five accent palettes.
 
 Tested with BEACN Studio and BEACN App on Debian 13 (PipeWire 1.4.2):

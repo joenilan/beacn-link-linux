@@ -188,6 +188,9 @@ impl LinkInterface {
             "update-install",
             "update-restart",
             "manage-apps",
+            "outputs",
+            "outputs-scrim",
+            "close-outputs",
             "minimize-window",
             "close-window",
         ]
@@ -196,6 +199,9 @@ impl LinkInterface {
         for channel in 1..=4 {
             ids.push(format!("fader-{channel}"));
             ids.push(format!("mute-{channel}"));
+        }
+        for output in &self.view.outputs {
+            ids.push(format!("output-{}", key_id(&output.name)));
         }
         for app in &self.view.apps {
             let id = key_id(&app.key);
@@ -289,7 +295,8 @@ impl LinkInterface {
             "applications":apps,
             "meters":meters,
             "components":components,
-            "drawers":{"applications":self.catalog_open,"settings":self.settings,"channel":self.channel},
+            "drawers":{"applications":self.catalog_open,"settings":self.settings,"outputs":self.outputs_open,"channel":self.channel},
+            "outputs":self.view.outputs.iter().map(|o| json!({"name":o.name,"description":o.description,"default":self.view.default_output.as_deref()==Some(o.name.as_str())})).collect::<Vec<_>>(),
             "search":self.search.read(cx).value().to_string(),
             "appearance":{"light":self.appearance.light,"accent":self.appearance.accent.label()},
             "window_active":window.is_window_active(),

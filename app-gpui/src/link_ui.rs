@@ -78,6 +78,8 @@ pub struct LinkInterface {
     pub(crate) channel: u8,
     pub(crate) settings: bool,
     pub(crate) updates_open: bool,
+    /// The "Sound output" panel (desktop default output) is open.
+    pub(crate) outputs_open: bool,
     pub(crate) catalog_open: bool,
     /// Rows of the open application picker, in a fixed order: applications
     /// that start or stop playing while it is open never move a row.
@@ -150,6 +152,7 @@ impl LinkInterface {
             channel: 1,
             settings: false,
             updates_open: false,
+            outputs_open: false,
             catalog_open: false,
             picker: Vec::new(),
             picker_for: None,
@@ -560,12 +563,85 @@ impl LinkInterface {
                 this.catalog_open = false;
                 this.settings = false;
                 this.updates_open = false;
+                this.outputs_open = false;
                 cx.notify();
             }))
     }
 }
 
 impl LinkInterface {
+    /// The desktop's default output. Applications on a LinX channel stay
+    /// there; everything else follows the choice.
+    fn outputs_panel(&self, p: &crate::appearance::Colors, cx: &mut Context<Self>) -> Stateful<Div> {
+        let mut list = div()
+            .id("output-list")
+            .max_h(px(360.))
+            .overflow_y_scroll()
+            .bg(rgb(p.well))
+            .rounded(px(6.))
+            .flex()
+            .flex_col();
+        for output in &self.view.outputs {
+            let current = self.view.default_output.as_deref() == Some(output.name.as_str());
+            let name = output.name.clone();
+            list = list.child(
+                div()
+                    .id(SharedString::from(format!("output-{}", key_id(&output.name))))
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .px_3()
+                    .py_2()
+                    .border_b_1()
+                    .border_color(rgb(p.line))
+                    .cursor_pointer()
+                    .hover(|row| row.bg(rgb(p.surface)))
+                    .child(
+                        div()
+                            .size(px(8.))
+                            .flex_shrink_0()
+                            .rounded_full()
+                            .border_1()
+                            .border_color(rgb(if current { p.channels[0] } else { p.line }))
+                            .when(current, |dot| dot.bg(rgb(p.channels[0]))),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .text_size(px(13.))
+                            .text_color(rgb(if current { p.text } else { p.muted }))
+                            .child(output.description.clone()),
+                    )
+                    .when(current, |row| {
+                        row.child(div().text_size(px(10.)).text_color(rgb(p.muted)).child("Default"))
+                    })
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.send(LinkCommand::DefaultOutput(name.clone()), cx);
+                        this.outputs_open = false;
+                        cx.notify();
+                    }))
+                    .test_support(),
+            );
+        }
+        panel(p)
+            .id("outputs-panel")
+            .top(px(62.))
+            .right(px(14.))
+            .w(px(340.))
+            .p_3()
+            .gap_2()
+            .child(panel_header("Sound output", "close-outputs", p, cx))
+            .child(
+                div()
+                    .text_size(px(10.))
+                    .text_color(rgb(p.muted))
+                    .child("The desktop's default output. Applications on a LinX channel stay there."),
+            )
+            .child(list)
+    }
+
     fn updates_panel(&self, p: &crate::appearance::Colors, cx: &mut Context<Self>) -> Stateful<Div> {
         use crate::updates::{InstallKind, Phase};
         let update = cx.global::<LinkCore>().updates.view();
@@ -766,6 +842,7 @@ fn panel_header(
                     this.catalog_open = false;
                     this.settings = false;
                     this.updates_open = false;
+                    this.outputs_open = false;
                     cx.notify();
                 })),
         )
@@ -823,6 +900,7 @@ impl Render for LinkInterface {
                         this.catalog_open = !same;
                         this.settings = false;
                         this.updates_open = false;
+                        this.outputs_open = false;
                         cx.notify();
                     }),
                 ));
@@ -929,6 +1007,7 @@ impl Render for LinkInterface {
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     cx.global_mut::<LinkCore>().update_unseen = false;
                                     this.updates_open = !this.updates_open;
+                                    this.outputs_open = false;
                                     this.settings = false;
                                     this.catalog_open = false;
                                     cx.notify();
@@ -973,6 +1052,40 @@ impl Render for LinkInterface {
                                 )
                             })),
                     )
+                    .child({
+                        let current = self
+                            .view
+                            .default_output
+                            .as_ref()
+                            .and_then(|d| self.view.outputs.iter().find(|o| &o.name == d))
+                            .map(|o| o.description.clone())
+                            .unwrap_or_else(|| "Unknown".into());
+                        Button::new("outputs")
+                            .ghost()
+                            .small()
+                            .ml(px(7.))
+                            .size(px(29.))
+                            .p_0()
+                            .border_1()
+                            .border_color(rgb(p.line))
+                            .rounded(px(5.))
+                            .text_color(rgb(tool_color))
+                            .disabled(self.view.outputs.is_empty())
+                            .tooltip(format!("Sound output: {current}"))
+                            .child(
+                                svg()
+                                    .path("console/speaker.svg")
+                                    .size(px(13.))
+                                    .text_color(rgb(tool_color)),
+                            )
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.outputs_open = !this.outputs_open;
+                                this.settings = false;
+                                this.catalog_open = false;
+                                this.updates_open = false;
+                                cx.notify();
+                            }))
+                    })
                     .child(
                         Button::new("settings")
                             .ghost()
@@ -994,6 +1107,7 @@ impl Render for LinkInterface {
                                 this.settings = !this.settings;
                                 this.catalog_open = false;
                                 this.updates_open = false;
+                                this.outputs_open = false;
                                 cx.notify();
                             })),
                     )
@@ -1070,6 +1184,7 @@ impl Render for LinkInterface {
                                 this.catalog_open = !same;
                                 this.settings = false;
                                 this.updates_open = false;
+                                this.outputs_open = false;
                                 cx.notify();
                             }))
                     }),
@@ -1227,6 +1342,11 @@ impl Render for LinkInterface {
             body = body
                 .child(self.scrim("updates-scrim", cx))
                 .child(self.updates_panel(&p, cx));
+        }
+        if self.outputs_open {
+            body = body
+                .child(self.scrim("outputs-scrim", cx))
+                .child(self.outputs_panel(&p, cx));
         }
         let notice = self
             .feedback
@@ -1559,9 +1679,18 @@ fn tray_tick(cx: &mut App) -> bool {
         let core = cx.global::<LinkCore>();
         let view = core.worker.view();
         core.tray.update(status_of(&view), view.phase == Phase::Running);
+        core.tray.set_outputs(
+            view.outputs.iter().map(|o| (o.name.clone(), o.description.clone())).collect(),
+            view.default_output.clone(),
+        );
         let actions = core.tray.actions();
         if actions & tray::STOP != 0 {
             let _ = core.worker.send(LinkCommand::Pause);
+        }
+        if actions & tray::OUTPUT != 0 {
+            if let Some(name) = core.tray.take_output() {
+                let _ = core.worker.send(LinkCommand::DefaultOutput(name));
+            }
         }
         if actions & tray::QUIT != 0 {
             return true;

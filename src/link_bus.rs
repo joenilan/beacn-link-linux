@@ -271,7 +271,11 @@ pub fn parse(raw: &str) -> Result<Snapshot, String> {
         return Err("Bus status absent.".into());
     }
     snapshot.streams.sort_by_key(|s| (s.node, s.serial));
-    snapshot.outputs.sort_by(|a, b| a.description.to_lowercase().cmp(&b.description.to_lowercase()));
+    // The desktop's own outputs by name, then LinX's channels in order.
+    snapshot.outputs.sort_by_key(|o| {
+        let linx = o.name.starts_with("linx_link_in_");
+        (linx, if linx { o.name.clone() } else { o.description.to_lowercase() })
+    });
     Ok(snapshot)
 }
 
@@ -457,8 +461,8 @@ mod tests {
         assert_eq!(s.default_output.as_deref(), Some("alsa_output.pci.analog-stereo"));
         assert_eq!(s.configured_output, None);
         let names: Vec<_> = s.outputs.iter().map(|o| o.description.as_str()).collect();
-        assert_eq!(names, ["LinX Link Out", "Speakers"]);
-        assert_eq!((s.outputs[1].node, s.outputs[1].serial), (86, 900));
+        assert_eq!(names, ["Speakers", "LinX Link Out"]);
+        assert_eq!((s.outputs[0].node, s.outputs[0].serial), (86, 900));
     }
     #[test]
     fn transport_states_and_error_text() {
