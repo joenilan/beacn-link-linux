@@ -306,37 +306,73 @@ impl LinkInterface {
             (n, true, _) => format!("{} · playing", crate::console::link_name(n)),
             (n, false, _) => crate::console::link_name(n),
         };
-        // The picker belongs to the channel whose box opened it: one action
-        // per row, for that channel only.
+        // Opened from a channel's box (target 1..4): one action per row, for
+        // that channel. Opened from Manage (target 0): every channel, per row.
         let target = self.channel;
-        let key = app.key.clone();
-        let here = app.channel == target;
-        let (channel, label, tooltip) = if here {
-            (0, "Remove", "Return to the desktop output".to_owned())
-        } else if app.channel > 0 {
-            (target, "Move here", format!("Move to {}", crate::console::link_name(target)))
+        let mut chips = div().flex().items_center().gap(px(4.));
+        if target == 0 {
+            for channel in [1, 2, 3, 4, 0u8] {
+                let key = app.key.clone();
+                let current = app.channel == channel;
+                let color = if channel == 0 { p.text } else { p.channels[channel as usize - 1] };
+                chips = chips.child(
+                    Button::new(SharedString::from(format!("route-{channel}-{id}")))
+                        .ghost()
+                        .small()
+                        .h(px(24.))
+                        .when(channel > 0, |b| b.w(px(26.)).p_0())
+                        .when(channel == 0, |b| b.px(px(6.)))
+                        .border_1()
+                        .border_color(rgb(if current { color } else { p.line }))
+                        .bg(rgb(if current { p.surface } else { p.well }))
+                        .text_color(rgb(if current { color } else { p.muted }))
+                        .tooltip(if channel == 0 {
+                            "Return to the desktop output".to_owned()
+                        } else {
+                            format!("Send to {}", crate::console::link_name(channel))
+                        })
+                        .child(div().text_size(px(11.)).child(if channel == 0 {
+                            "Off".to_owned()
+                        } else {
+                            channel.to_string()
+                        }))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            cx.stop_propagation();
+                            this.picked(&key, channel);
+                            this.send(LinkCommand::Assign(key.clone(), channel), cx)
+                        })),
+                );
+            }
         } else {
-            (target, "Add", format!("Send to {}", crate::console::link_name(target)))
-        };
-        let color = p.channels[target as usize - 1];
-        let chips = div().flex().items_center().child(
-            Button::new(SharedString::from(format!("route-{channel}-{id}")))
-                .ghost()
-                .small()
-                .h(px(24.))
-                .px(px(8.))
-                .border_1()
-                .border_color(rgb(if here { p.line } else { color }))
-                .bg(rgb(if here { p.well } else { p.surface }))
-                .text_color(rgb(if here { p.muted } else { color }))
-                .tooltip(tooltip)
-                .child(div().text_size(px(11.)).child(label))
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    cx.stop_propagation();
-                    this.picked(&key, channel);
-                    this.send(LinkCommand::Assign(key.clone(), channel), cx)
-                })),
-        );
+            let key = app.key.clone();
+            let here = app.channel == target;
+            let (channel, label, tooltip) = if here {
+                (0, "Remove", "Return to the desktop output".to_owned())
+            } else if app.channel > 0 {
+                (target, "Move here", format!("Move to {}", crate::console::link_name(target)))
+            } else {
+                (target, "Add", format!("Send to {}", crate::console::link_name(target)))
+            };
+            let color = p.channels[target as usize - 1];
+            chips = chips.child(
+                Button::new(SharedString::from(format!("route-{channel}-{id}")))
+                    .ghost()
+                    .small()
+                    .h(px(24.))
+                    .px(px(8.))
+                    .border_1()
+                    .border_color(rgb(if here { p.line } else { color }))
+                    .bg(rgb(if here { p.well } else { p.surface }))
+                    .text_color(rgb(if here { p.muted } else { color }))
+                    .tooltip(tooltip)
+                    .child(div().text_size(px(11.)).child(label))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        cx.stop_propagation();
+                        this.picked(&key, channel);
+                        this.send(LinkCommand::Assign(key.clone(), channel), cx)
+                    })),
+            );
+        }
         let accent = if app.channel > 0 {
             p.channels[app.channel as usize - 1]
         } else {
@@ -352,13 +388,15 @@ impl LinkInterface {
             .py_2()
             .border_b_1()
             .border_color(rgb(p.line))
-            .cursor_pointer()
-            .hover(|row| row.bg(rgb(p.surface)))
-            .on_click(cx.listener(move |this, _, _, cx| {
-                this.send(LinkCommand::Assign(key.clone(), target), cx);
-                this.catalog_open = false;
-                cx.notify();
-            }))
+            .when(target > 0, |row| {
+                row.cursor_pointer()
+                    .hover(|row| row.bg(rgb(p.surface)))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.send(LinkCommand::Assign(key.clone(), target), cx);
+                        this.catalog_open = false;
+                        cx.notify();
+                    }))
+            })
             .child(
                 div()
                     .size_8()
@@ -399,10 +437,15 @@ impl LinkInterface {
 }
 
 /// The picker's order when it opens: applications on the chosen channel
-/// first, then playing ones, then by name.
+/// first, then playing ones, then by name. The manager (channel 0) lists
+/// linked applications first.
 fn picker_order(apps: &[LinkApp], channel: u8) -> Vec<LinkApp> {
     let mut rows = apps.to_vec();
-    rows.sort_by_key(|a| (a.channel != channel, !a.running, a.name.to_lowercase()));
+    if channel == 0 {
+        rows.sort_by_key(|a| (a.channel == 0, !a.running, a.name.to_lowercase()));
+    } else {
+        rows.sort_by_key(|a| (a.channel != channel, !a.running, a.name.to_lowercase()));
+    }
     rows
 }
 
@@ -1008,16 +1051,28 @@ impl Render for LinkInterface {
                             .child(svg().path("console/arrow.svg").size(px(12.)).text_color(rgb(p.muted)))
                             .child("STREAMING PC"),
                     )
-                    .child(
-                        div()
-                            .text_size(px(10.))
+                    .child({
+                        let linked = self.view.apps.iter().filter(|a| a.channel > 0).count();
+                        Button::new("manage-apps")
+                            .ghost()
+                            .small()
+                            .h(px(22.))
+                            .px(px(8.))
                             .text_color(rgb(p.muted))
-                            .child(format!(
-                                "{} app{} linked",
-                                self.view.apps.iter().filter(|a| a.channel > 0).count(),
-                                if self.view.apps.iter().filter(|a| a.channel > 0).count() == 1 { "" } else { "s" }
-                            )),
-                    ),
+                            .tooltip("All applications and their channels")
+                            .child(div().text_size(px(10.)).child(format!(
+                                "{linked} app{} linked · Manage",
+                                if linked == 1 { "" } else { "s" }
+                            )))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let same = this.catalog_open && this.channel == 0;
+                                this.channel = 0;
+                                this.catalog_open = !same;
+                                this.settings = false;
+                                this.updates_open = false;
+                                cx.notify();
+                            }))
+                    }),
             );
         if self.settings {
             let mut accents = div().flex().gap_2();
@@ -1205,7 +1260,11 @@ impl Render for LinkInterface {
             let filtering = !self.search.read(cx).value().is_empty();
             let rows = apps.iter().map(|app| self.row(app, cx)).collect::<Vec<_>>();
             let pair = self.channel;
-            let title = format!("Send to {}", crate::console::link_name(pair));
+            let title = if pair == 0 {
+                "Applications".to_owned()
+            } else {
+                format!("Send to {}", crate::console::link_name(pair))
+            };
             body = body.child(self.scrim("applications-scrim", cx)).child(
                 panel(&p)
                     .id("applications-panel")
@@ -1227,7 +1286,11 @@ impl Render for LinkInterface {
                         div()
                             .text_size(px(10.))
                             .text_color(rgb(p.muted))
-                            .child("Click an application to send it to this channel."),
+                            .child(if pair == 0 {
+                                "Choose each application's channel with 1–4, or Off for the desktop output."
+                            } else {
+                                "Click an application to send it to this channel."
+                            }),
                     )
                     .child(
                         div()
@@ -1535,6 +1598,13 @@ mod tests {
             running,
             streams: 1,
         }
+    }
+
+    #[test]
+    fn manager_lists_linked_applications_first() {
+        let rows = picker_order(&[app("Brave", 0, true), app("Discord", 3, false), app("Spotify", 2, true)], 0);
+        let names: Vec<_> = rows.iter().map(|a| a.name.as_str()).collect();
+        assert_eq!(names, ["Spotify", "Discord", "Brave"]);
     }
 
     #[test]

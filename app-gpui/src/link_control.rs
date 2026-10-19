@@ -187,6 +187,7 @@ impl LinkInterface {
             "update-download",
             "update-install",
             "update-restart",
+            "manage-apps",
             "minimize-window",
             "close-window",
         ]
