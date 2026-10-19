@@ -67,10 +67,11 @@ without the key). `publish-repo.sh` adds the release's RPM and Debian package
 to the dnf and apt repositories, keeps the newest three versions, signs the
 repository metadata (`repomd.xml.asc`, `InRelease`, `Release.gpg`), commits
 to the `gh-pages` branch from a checkout in `local/pages`, and pushes it to
-GitHub Pages (https://joenilan.github.io/beacn-link-linux/). Also add the
+GitHub Pages (https://joenilan.github.io/beacn-link-linux/). It then adds the
 release's `.rpm`, `.deb` and `.pkg.tar.zst` to the combined "joenilan apps"
-repository with `scripts/publish-packages.sh` in the `joenilan.github.io`
-repository, then `scripts/mirror-packages.py` there. Both scripts ask
+repository through `scripts/publish-packages.sh` in the `joenilan.github.io`
+checkout (`$JOENILAN_SITE`, default `../joenilan.github.io`), which pushes
+that site and mirrors it to apps.zombie.digital/downloads/packages. Both scripts ask
 for the key's passphrase through gpg-agent. It needs `createrepo_c` and
 `rpm-sign`; `--no-push` builds and commits locally only. Keep an offline
 backup of the secret key and its revocation certificate.

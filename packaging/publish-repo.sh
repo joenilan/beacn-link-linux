@@ -12,6 +12,11 @@
 # key's passphrase through gpg-agent. GitHub Actions stay disabled: this
 # publishes from the local checkout.
 #
+# It then adds the same release (RPM, Debian and Arch packages) to the
+# combined "joenilan apps" repository with scripts/publish-packages.sh in the
+# joenilan.github.io checkout ($JOENILAN_SITE, default ../joenilan.github.io),
+# which also refreshes the apps.zombie.digital mirror.
+#
 # Usage: packaging/publish-repo.sh [--no-push]
 #   --no-push  update the local gh-pages checkout (local/pages) only.
 set -euo pipefail
@@ -214,3 +219,10 @@ git push -q origin gh-pages
 gh api "repos/joenilan/beacn-link-linux/pages" >/dev/null 2>&1 \
   || gh api --silent -X POST "repos/joenilan/beacn-link-linux/pages" -f 'source[branch]=gh-pages' -f 'source[path]=/' >/dev/null
 echo "publish-repo: pushed; $BASE_URL/"
+
+# ---- combined "joenilan apps" repository --------------------------------------
+SITE=${JOENILAN_SITE:-$(dirname "$ROOT")/joenilan.github.io}
+[ -x "$SITE/scripts/publish-packages.sh" ] \
+  || die "no joenilan.github.io checkout at $SITE (set JOENILAN_SITE); the LinX repo is published, the combined one is not"
+ARCH_PKG=$(ls "$OUT"/linx-"$VERSION"-*-x86_64.pkg.tar.zst 2>/dev/null | head -1)
+"$SITE/scripts/publish-packages.sh" "$RPM" "$DEB" ${ARCH_PKG:+"$ARCH_PKG"}
