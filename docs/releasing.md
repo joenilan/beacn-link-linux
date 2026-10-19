@@ -51,6 +51,25 @@ declared license expression and append the standard SPDX text
 built with `studio,native-control`: the control socket stays off unless LinX
 is started with `--control-socket`.
 
+## Publish the package repositories
+
+After the GitHub release is published:
+
+```sh
+packaging/publish-repo.sh
+```
+
+`release.sh` signs the RPM with the LinX package key (fingerprint
+`E72D6EE9C417012ECE280124E14B87807621D25D`; `--unsigned` skips it for builds
+without the key). `publish-repo.sh` adds the release's RPM and Debian package
+to the dnf and apt repositories, keeps the newest three versions, signs the
+repository metadata (`repomd.xml.asc`, `InRelease`, `Release.gpg`), commits
+to the `gh-pages` branch from a checkout in `local/pages`, and pushes it to
+GitHub Pages (https://joenilan.github.io/beacn-link-linux/). Both scripts ask
+for the key's passphrase through gpg-agent. It needs `createrepo_c` and
+`rpm-sign`; `--no-push` builds and commits locally only. Keep an offline
+backup of the secret key and its revocation certificate.
+
 ## Collect dependency notices
 
 ```sh

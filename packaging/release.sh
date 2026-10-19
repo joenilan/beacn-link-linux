@@ -5,8 +5,12 @@
 #     the binary runs on older glibc (Debian 13, Fedora 4x, Arch ...).
 # Output: local/release/v<version>/ (ignored by Git), with SHA256SUMS.
 #
-# Usage: packaging/release.sh [--allow-dirty]
+# Usage: packaging/release.sh [--allow-dirty] [--unsigned]
 #   --allow-dirty  build uncommitted changes (never for a published release).
+#   --unsigned     leave the RPM unsigned (builds without the LinX signing key).
+# The RPM is signed with the LinX package key (LINX_SIGNING_KEY overrides it);
+# gpg-agent asks for its passphrase. packaging/publish-repo.sh then publishes
+# the signed package repositories.
 # Crates whose source archive ships no license file are listed in the notices
 # with the standard text of their declared license (packaging/licenses, SPDX
 # license-list-data v3.27.0), clearly marked as such.
@@ -16,9 +20,12 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' "$ROOT/app-gpui/Cargo.toml" | head -1)
 OUT="$ROOT/local/release/v$VERSION"
 DIRTY=0
+SIGN=1
+KEY=${LINX_SIGNING_KEY:-E72D6EE9C417012ECE280124E14B87807621D25D}
 for arg in "$@"; do
   case "$arg" in
     --allow-dirty) DIRTY=1 ;;
+    --unsigned) SIGN=0 ;;
     *) echo "Unknown argument: $arg" >&2; exit 2 ;;
   esac
 done
@@ -27,6 +34,10 @@ die() { echo "release: $*" >&2; exit 1; }
 cd "$ROOT"
 if [ "$DIRTY" = 0 ] && ! git diff --quiet HEAD --; then
   die "uncommitted changes; commit first (a release builds the exact commit)"
+fi
+if [ "$SIGN" = 1 ]; then
+  command -v rpmsign >/dev/null || die "rpmsign is not installed (sudo dnf install rpm-sign), or use --unsigned"
+  gpg --list-secret-keys "$KEY" >/dev/null 2>&1 || die "signing key $KEY is not available; use --unsigned"
 fi
 COMMIT=$(git rev-parse --short HEAD)
 rm -rf "$OUT"
@@ -97,6 +108,9 @@ rpmbuild -bb packaging/linx.spec \
   --define "linx_stage $OUT/stage-rpm" >/dev/null
 find "$OUT/rpmbuild/RPMS" -name '*.rpm' -exec cp {} "$OUT/" \;
 rm -rf "$OUT/rpmbuild" "$OUT/stage-rpm"
+if [ "$SIGN" = 1 ]; then
+  rpmsign --addsign --define "_gpg_name $KEY" "$OUT"/*.rpm >/dev/null
+fi
 
 # ---- Debian package and portable tarball (Debian 13 container) -------------
 podman run --rm --security-opt label=disable \

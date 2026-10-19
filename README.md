@@ -67,7 +67,28 @@ Studio devices return only after a replug or new login.
 
 ## Install
 
-Download a package from [Releases](https://github.com/joenilan/beacn-link-linux/releases)
+The easiest way is LinX's package repository: your system's normal updates
+(`dnf upgrade`, `apt upgrade`, Discover) then keep LinX current. Packages and
+repositories are signed with the LinX key, fingerprint
+`E72D 6EE9 C417 012E CE28  0124 E14B 8780 7621 D25D`.
+
+Fedora:
+
+```sh
+sudo dnf config-manager addrepo --from-repofile=https://joenilan.github.io/beacn-link-linux/linx.repo
+sudo dnf install linx
+```
+
+Debian 13 / Ubuntu:
+
+```sh
+sudo curl -fsSLo /usr/share/keyrings/linx-archive-keyring.gpg https://joenilan.github.io/beacn-link-linux/linx.gpg
+sudo curl -fsSLo /etc/apt/sources.list.d/linx.sources https://joenilan.github.io/beacn-link-linux/linx.sources
+sudo apt update
+sudo apt install linx
+```
+
+Or download a package from [Releases](https://github.com/joenilan/beacn-link-linux/releases)
 (x86_64). Each one installs `linx`, its application-menu entry and icon, and
 the USB rule that lets your desktop account reach the Studio's Link control
 interface; replug the Studio once after installing. On systemd 257.7 or newer
