@@ -57,7 +57,7 @@ for setting in user.name user.email; do
   value=$(git -C "$ROOT" config "$setting" || true)
   [ -n "$value" ] && git config "$setting" "$value"
 done
-if git rev-parse -q --verify HEAD >/dev/null; then
+if git ls-remote --exit-code --heads origin gh-pages >/dev/null; then
   git pull -q --ff-only origin gh-pages
 fi
 
@@ -203,14 +203,14 @@ EOF
 git add -A
 if git diff --cached --quiet; then
   echo "publish-repo: nothing changed"
-  exit 0
-fi
-git commit -q -m "LinX $VERSION packages [skip ci]
+else
+  git commit -q -m "LinX $VERSION packages [skip ci]
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
-echo "publish-repo: committed $(git rev-parse --short HEAD) in $PAGES"
+  echo "publish-repo: committed $(git rev-parse --short HEAD) in $PAGES"
+fi
 [ "$PUSH" = 1 ] || exit 0
 git push -q origin gh-pages
 gh api "repos/joenilan/beacn-link-linux/pages" >/dev/null 2>&1 \
-  || gh api -X POST "repos/joenilan/beacn-link-linux/pages" -f 'source[branch]=gh-pages' -f 'source[path]=/' >/dev/null
+  || gh api --silent -X POST "repos/joenilan/beacn-link-linux/pages" -f 'source[branch]=gh-pages' -f 'source[path]=/' >/dev/null
 echo "publish-repo: pushed; $BASE_URL/"
