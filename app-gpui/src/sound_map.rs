@@ -1200,10 +1200,8 @@ pub(crate) fn toggle(token: Option<String>, cx: &mut App) {
         .primary_display()
         .map(|d| d.bounds())
         .unwrap_or_else(|| Bounds::new(point(px(0.), px(0.)), size(px(1920.), px(1080.))));
-    let build = move |window: &mut Window, cx: &mut App| {
-        let view = cx.new(|cx| SoundMap::new(minimal, window, cx));
-        cx.new(|cx| base::Root::new(view, window, cx).bg(transparent_black()))
-    };
+    // No window frame: its shadow margin would offset the overlay.
+    let build = move |window: &mut Window, cx: &mut App| cx.new(|cx| SoundMap::new(minimal, window, cx));
     let overlay = WindowOptions {
         kind: WindowKind::LayerShell(layer_shell::LayerShellOptions {
             namespace: "linx-sound-map".into(),
