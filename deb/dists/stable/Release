@@ -5,7 +5,7 @@ Codename: stable
 Architectures: amd64
 Components: main
 Description: LinX, unofficial BEACN Link app for Linux
-Date: Tue, 20 Oct 2026 22:29:56 UTC
+Date: Tue, 20 Oct 2026 22:31:00 UTC
 MD5Sum:
  4c65dc54f3199511fc8b1b7bda3a98ca 3291 main/binary-amd64/Packages
  ff60e54a766ed354eb3c6d36cbc833e1 936 main/binary-amd64/Packages.gz
