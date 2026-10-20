@@ -42,6 +42,8 @@ enum Spot {
     Port(u8),
     Device(String),
     Loose,
+    /// The BEACN Studio as a whole: back to each application's own channel.
+    Studio,
 }
 
 #[derive(Clone)]
@@ -232,6 +234,13 @@ impl SoundMap {
                 });
             }
             zones.push(Zone {
+                spot: Spot::Studio,
+                shape: Shape::Rect(P(32., 118.), P(756., 150.)),
+                label: "BEACN Studio (LinX)".into(),
+                color: colors[0],
+                icon: "",
+            });
+            zones.push(Zone {
                 spot: Spot::Loose,
                 shape: Shape::Rect(P(32., 648.), P(1248., 768.)),
                 label: "Not linked · follows the default output".into(),
@@ -265,6 +274,13 @@ impl SoundMap {
                     icon: device_icon(name, description),
                 });
             }
+            zones.push(Zone {
+                spot: Spot::Studio,
+                shape: Shape::Rect(P(HUB.0 - 100., HUB.1 - 55.), P(HUB.0 + 100., HUB.1 + 55.)),
+                label: "BEACN Studio".into(),
+                color: colors[0],
+                icon: "",
+            });
             let (x, y, w, h) = LOOSE;
             zones.push(Zone {
                 spot: Spot::Loose,
@@ -344,10 +360,13 @@ impl SoundMap {
 
     fn drop_on(&mut self, spot: Spot, zones: &[Zone], cx: &mut Context<Self>) {
         let Some(drag) = self.drag.take() else { return };
+        if spot == Spot::Studio {
+            return self.back_to_studio(drag.grab, cx);
+        }
         let target = match &spot {
             Spot::Port(c) => Some(Target::Channel(*c)),
             Spot::Device(name) => Some(Target::Device(name.clone())),
-            Spot::Loose => None,
+            Spot::Loose | Spot::Studio => None,
         };
         let name = Self::zone_name(zones, &spot);
         match drag.grab {
@@ -388,6 +407,56 @@ impl SoundMap {
                     many => format!("{} apps", many.len()),
                 };
                 self.toast = Some((format!("{who} → {name}"), Instant::now()));
+            }
+        }
+    }
+
+    /// Dropped on the Studio: everything (like choosing BEACN Studio as the
+    /// sound output) or the dragged applications return to their own Link
+    /// channels; one that never had a channel goes to Link In 1.
+    fn back_to_studio(&mut self, grab: Grab, cx: &mut Context<Self>) {
+        let home = |app: &LinkApp| app.remembered.unwrap_or(1);
+        match grab {
+            Grab::Everything => {
+                let Some(linx) = self
+                    .view
+                    .outputs
+                    .iter()
+                    .find(|o| o.description == beacn_linx_core::link::LINX_OUTPUT)
+                    .map(|o| o.name.clone())
+                else {
+                    self.toast = Some(("BEACN Studio is not available.".into(), Instant::now()));
+                    return;
+                };
+                if self.send(LinkCommand::DefaultOutput(linx), cx) {
+                    for app in &self.view.apps {
+                        let spot = app.remembered.map_or(Spot::Loose, Spot::Port);
+                        self.pending.insert(app.key.clone(), (spot, Instant::now()));
+                    }
+                    self.toast = Some(("Everything → BEACN Studio, each on its own channel".into(), Instant::now()));
+                }
+            }
+            Grab::Apps(keys) => {
+                let apps: Vec<LinkApp> = self
+                    .view
+                    .apps
+                    .iter()
+                    .filter(|a| keys.contains(&a.key) && self.spot_of(a) != Spot::Port(home(a)))
+                    .cloned()
+                    .collect();
+                let mut moved = Vec::new();
+                for app in &apps {
+                    let channel = home(app);
+                    if self.send(LinkCommand::Place(app.key.clone(), Some(Target::Channel(channel))), cx) {
+                        self.pending.insert(app.key.clone(), (Spot::Port(channel), Instant::now()));
+                        moved.push((app.name.clone(), channel));
+                    }
+                }
+                self.toast = match moved.as_slice() {
+                    [] => return,
+                    [(name, channel)] => Some((format!("{name} → Link In {channel}"), Instant::now())),
+                    many => Some((format!("{} apps → back to their channels", many.len()), Instant::now())),
+                };
             }
         }
     }
@@ -780,8 +849,9 @@ impl Render for SoundMap {
         }
 
         if !self.minimal {
-            // The Studio hub.
-            let glow = self.levels.iter().copied().fold(0., f32::max);
+            // The Studio hub: also a drop target (back to every channel).
+            let hot = hover == Some(Spot::Studio);
+            let glow = if hot { 1. } else { self.levels.iter().copied().fold(0., f32::max) };
             root = root.child(
                 div()
                     .absolute()
@@ -790,10 +860,16 @@ impl Render for SoundMap {
                     .w(d(200.))
                     .h(d(110.))
                     .rounded(d(22.))
-                    .border_1()
-                    .border_color(rgb(if dark { 0x2d3035 } else { 0x4a4d53 }))
-                    .bg(rgb(if dark { 0x1c1f23 } else { 0x2d3035 }))
-                    .when(!dark, |hub| {
+                    .border(d(if hot { 2. } else { 1. }))
+                    .border_color(rgb(if hot {
+                        colors[0]
+                    } else if dark {
+                        0x2d3035
+                    } else {
+                        0x4a4d53
+                    }))
+                    .bg(rgb(if dark && !hot { 0x1c1f23 } else { 0x2d3035 }))
+                    .when(!dark || hot, |hub| {
                         hub.shadow(vec![BoxShadow {
                             color: alpha(colors[0], 0.15 + glow * 0.35),
                             offset: point(px(0.), px(0.)),
@@ -815,7 +891,9 @@ impl Render for SoundMap {
                             .child("BEACN Studio"),
                     )
                     .child(div().text_size(d(11.)).text_color(rgb(if dark { 0xe58a8a } else { MUTED })).child(
-                        if dark {
+                        if hot {
+                            "back to every channel".to_owned()
+                        } else if dark {
                             "idle · faders locked".to_owned()
                         } else {
                             format!("LinX · {on_studio} app{}", if on_studio == 1 { "" } else { "s" })
@@ -827,6 +905,37 @@ impl Render for SoundMap {
         // Zones.
         for zone in &zones {
             let hot = hover.as_ref() == Some(&zone.spot);
+            if zone.spot == Spot::Studio {
+                // Orbit view: the hub above. Lanes: a bar over the channels.
+                if let (true, Shape::Rect(a, b)) = (self.minimal, &zone.shape) {
+                    root = root.child(
+                        div()
+                            .absolute()
+                            .left(x(a.0))
+                            .top(y(a.1))
+                            .w(d(b.0 - a.0))
+                            .h(d(b.1 - a.1))
+                            .rounded(d(10.))
+                            .border(d(1.5))
+                            .border_color(if hot { rgb(zone.color).into() } else { alpha(0x404247, 0.8) })
+                            .bg(alpha(if hot { 0x2a2d32 } else { 0x232529 }, 0.85))
+                            .flex()
+                            .items_center()
+                            .gap(d(8.))
+                            .px(d(12.))
+                            .child(div().size(d(8.)).rounded_full().bg(rgb(if dark { 0xe58a8a } else { zone.color })))
+                            .child(div().text_size(d(13.)).font_weight(FontWeight::SEMIBOLD).child(zone.label.clone()))
+                            .child(div().text_size(d(11.)).text_color(rgb(MUTED)).child(if hot {
+                                "drop: back to their own channels"
+                            } else if dark {
+                                "idle · faders locked"
+                            } else {
+                                "drop here to send back to their channels"
+                            })),
+                    );
+                }
+                continue;
+            }
             let n = count(&zone.spot);
             let sub = match (&zone.spot, n) {
                 (Spot::Loose, _) if !self.minimal => "follows default".to_owned(),
