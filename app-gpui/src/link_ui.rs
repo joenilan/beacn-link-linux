@@ -61,6 +61,9 @@ pub(crate) struct LinkCore {
     pub(crate) map_window: Option<AnyWindowHandle>,
     /// The Sound map shows lanes instead of orbits.
     pub(crate) map_minimal: bool,
+    /// The Sound map draws light (no blur, shadows or flowing cables): the
+    /// software renderer, or slow frames measured when it last opened.
+    pub(crate) map_light: bool,
     /// The open Sound map should fade out and close.
     pub(crate) map_close_requested: bool,
     /// The system-wide Sound map shortcut.
@@ -1784,6 +1787,7 @@ pub fn run(
             console_window: None,
             map_window: None,
             map_minimal: false,
+            map_light: std::env::var("VK_DRIVER_FILES").is_ok_and(|f| f.contains("lvp_icd")),
             map_close_requested: false,
             hotkey: crate::hotkey::Hotkey::spawn(),
         });

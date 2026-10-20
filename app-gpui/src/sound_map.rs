@@ -22,8 +22,14 @@ const LOOSE: (f32, f32, f32, f32) = (30., 130., 140., 640.);
 const SETTLE: Duration = Duration::from_millis(2500);
 /// Fade in and out, like Plasma's own overlays.
 const FADE: Duration = Duration::from_millis(650);
+/// The fade with light drawing: few frames, as each one is costly there.
+const FADE_LIGHT: Duration = Duration::from_millis(150);
 /// How dark the tint over the blurred desktop gets.
 const DIM: f32 = 0.32;
+/// The tint without blur (light drawing), a little darker to keep it calm.
+const DIM_LIGHT: f32 = 0.5;
+/// Opening frames slower than this (median) switch to light drawing.
+const SLOW_FRAME: Duration = Duration::from_millis(26);
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 struct P(f32, f32);
@@ -134,6 +140,12 @@ pub struct SoundMap {
     closing: Option<Instant>,
     /// The next frame while nothing moves.
     tick: Option<Task<()>>,
+    /// Light drawing: no blur, shadows, glows or flowing cables, and few
+    /// frames. For weak graphics; see `SLOW_FRAME`.
+    light: bool,
+    /// Frame intervals while fading in, to judge the machine (then None).
+    opening_frames: Option<Vec<Duration>>,
+    last_frame: Instant,
     /// Scale and origin of the plane in the window, from the last frame.
     frame: (f32, f32, f32),
     focus: FocusHandle,
@@ -205,6 +217,9 @@ impl SoundMap {
             started: Instant::now(),
             closing: None,
             tick: None,
+            light: cx.global::<LinkCore>().map_light,
+            opening_frames: (!cx.global::<LinkCore>().map_light).then(Vec::new),
+            last_frame: Instant::now(),
             frame: (1., 0., 0.),
             focus,
         }
@@ -677,8 +692,38 @@ impl SoundMap {
     }
 
     /// 0 (hidden) to 1 (shown), eased.
+    /// While the map fades in, time its frames. A machine that cannot keep
+    /// up (weak graphics, or the desktop struggling with the blur) gets light
+    /// drawing, now and for later opens.
+    fn judge_frames(&mut self, fade: f32, window: &mut Window, cx: &mut Context<Self>) {
+        let now = Instant::now();
+        let interval = now - std::mem::replace(&mut self.last_frame, now);
+        let Some(frames) = self.opening_frames.as_mut() else { return };
+        if fade < 1. {
+            frames.push(interval);
+            return;
+        }
+        // The first frames load icons and fonts; they say little.
+        let mut frames: Vec<Duration> = self.opening_frames.take().unwrap_or_default().into_iter().skip(3).collect();
+        if frames.len() < 5 {
+            return;
+        }
+        frames.sort();
+        let median = frames[frames.len() / 2];
+        if median > SLOW_FRAME {
+            eprintln!("LinX sound map: slow frames ({} ms); drawing light", median.as_millis());
+            self.light = true;
+            cx.global_mut::<LinkCore>().map_light = true;
+            window.set_background_appearance(WindowBackgroundAppearance::Transparent);
+        }
+    }
+
+    fn fade(&self) -> Duration {
+        if self.light { FADE_LIGHT } else { FADE }
+    }
+
     fn shown_amount(&self) -> f32 {
-        let fade = FADE.as_secs_f32();
+        let fade = self.fade().as_secs_f32();
         let t = match self.closing {
             Some(at) => 1. - (at.elapsed().as_secs_f32() / fade).min(1.),
             None => (self.started.elapsed().as_secs_f32() / fade).min(1.),
@@ -912,6 +957,24 @@ impl SoundMap {
         self.view.apps.iter().find(|a| a.key == key).is_some_and(|a| a.mute)
     }
 
+    /// Light drawing: whether anything shown changed since the last frame.
+    fn stale(&self, cx: &App) -> bool {
+        let recent = |at: &Instant, ms: u64| at.elapsed() < Duration::from_millis(ms);
+        if self.toast.as_ref().is_some_and(|(_, at)| recent(at, 5500))
+            || self.volume_edit.as_ref().is_some_and(|(_, _, at)| recent(at, 2000))
+            || self.mute_edit.as_ref().is_some_and(|(_, _, at)| recent(at, 2000))
+            || !self.pending.is_empty()
+        {
+            return true;
+        }
+        let view = cx.global::<LinkCore>().worker.view();
+        view.phase != self.view.phase
+            || view.apps != self.view.apps
+            || view.outputs != self.view.outputs
+            || view.default_output != self.view.default_output
+            || view.local_output != self.view.local_output
+    }
+
     fn hover(&self, zones: &[Zone]) -> Option<Spot> {
         let drag = self.drag.as_ref().filter(|d| d.moved)?;
         zones.iter().find(|z| z.hit(drag.at)).map(|z| z.spot.clone())
@@ -924,6 +987,10 @@ impl SoundMap {
             let apps = &self.view.apps;
             self.pending.retain(|key, (_, at)| at.elapsed() < SETTLE && apps.iter().any(|a| &a.key == key));
             self.selected.retain(|key| apps.iter().any(|a| &a.key == key));
+        }
+        if self.light {
+            self.levels = [0.; 4];
+            return;
         }
         for (i, level) in self.levels.iter_mut().enumerate() {
             let used = self.view.apps.iter().any(|a| a.channel as usize == i + 1);
@@ -1017,11 +1084,12 @@ impl Render for SoundMap {
         if std::mem::take(&mut cx.global_mut::<LinkCore>().map_close_requested) {
             self.close(window, cx);
         }
-        if self.closing.is_some_and(|at| at.elapsed() >= FADE) {
+        if self.closing.is_some_and(|at| at.elapsed() >= self.fade()) {
             window.defer(cx, |window, _| window.remove_window());
         }
         self.refresh(cx);
         let fade = self.shown_amount();
+        self.judge_frames(fade, window, cx);
         let viewport = window.viewport_size();
         let (vw, vh) = (f32::from(viewport.width), f32::from(viewport.height));
         let s = (vw / (PLANE.0 + 40.)).min(vh / (PLANE.1 + 40.)).clamp(0.5, 1.4);
@@ -1035,7 +1103,8 @@ impl Render for SoundMap {
         let slots = self.slots(&zones);
         let hover = self.hover(&zones);
         let colors = self.channels();
-        let phase = self.started.elapsed().as_secs_f32();
+        // Light drawing holds the cables and glows still.
+        let phase = if self.light { 0. } else { self.started.elapsed().as_secs_f32() };
 
         // Ease every puck toward its slot; dragged ones follow the pointer.
         let (dragged, everything, delta) = match &self.drag {
@@ -1077,20 +1146,6 @@ impl Render for SoundMap {
         self.order = order.into_iter().map(|(_, _, _, k)| k).collect();
         if self.focused.as_ref().is_some_and(|f| !self.order.contains(f)) {
             self.focused = None;
-        }
-        // Every frame while something moves; otherwise 30 per second for
-        // the flowing cables and levels.
-        let settling = self.shown.iter().any(|(k, p)| slots.get(k).is_some_and(|s| p.dist(*s) > 0.5));
-        if self.drag.is_some() || self.lasso.is_some() || self.closing.is_some() || fade < 1. || settling {
-            window.request_animation_frame();
-        } else if self.tick.is_none() {
-            self.tick = Some(cx.spawn(async move |this, cx| {
-                cx.background_executor().timer(Duration::from_millis(33)).await;
-                let _ = this.update(cx, |this, cx| {
-                    this.tick = None;
-                    cx.notify();
-                });
-            }));
         }
         let orb = if everything {
             let p = P(ORB.0 + delta.0, ORB.1 + delta.1);
@@ -1144,6 +1199,34 @@ impl Render for SoundMap {
             }
         }
 
+        // Every frame while something moves. Otherwise 30 per second while
+        // cables flow, and a few per second to follow the graph when nothing
+        // flows (or drawing light), so an open map costs little.
+        let settling = self.shown.iter().any(|(k, p)| slots.get(k).is_some_and(|s| p.dist(*s) > 0.5));
+        let flowing = !self.light && cables.iter().any(|c| c.3 > 0.1 && c.4 > 0.);
+        if self.drag.is_some() || self.lasso.is_some() || self.closing.is_some() || fade < 1. || settling {
+            window.request_animation_frame();
+        } else if self.tick.is_none() {
+            // Light drawing redraws only when something changed.
+            let (wait, light) = (Duration::from_millis(if flowing { 33 } else { 200 }), self.light);
+            self.tick = Some(cx.spawn(async move |this, cx| loop {
+                cx.background_executor().timer(wait).await;
+                let Ok(redraw) = this.update(cx, |this, cx| {
+                    let redraw = !light || this.stale(cx);
+                    if redraw {
+                        this.tick = None;
+                        cx.notify();
+                    }
+                    redraw
+                }) else {
+                    break;
+                };
+                if redraw {
+                    break;
+                }
+            }));
+        }
+
         // Volume rings: an application below full volume, muted, or being
         // adjusted shows its level around its puck.
         let mut rings: Vec<Ring> = Vec::new();
@@ -1168,7 +1251,7 @@ impl Render for SoundMap {
             .size_full()
             .relative()
             .overflow_hidden()
-            .bg(hsla(0., 0., 0.02, DIM * fade))
+            .bg(hsla(0., 0., 0.02, if self.light { DIM_LIGHT } else { DIM } * fade))
             .opacity(fade)
             .text_color(rgb(TEXT))
             .font_family("Segoe UI")
@@ -1313,7 +1396,7 @@ impl Render for SoundMap {
                         0x4a4d53
                     }))
                     .bg(rgb(if dark && !hot { 0x1c1f23 } else { 0x2d3035 }))
-                    .when(!dark || hot, |hub| {
+                    .when((!dark || hot) && !self.light, |hub| {
                         hub.shadow(vec![BoxShadow {
                             color: alpha(colors[0], 0.15 + glow * 0.35),
                             offset: point(px(0.), px(0.)),
@@ -1428,13 +1511,13 @@ impl Render for SoundMap {
                         .flex()
                         .items_center()
                         .justify_center()
-                        .shadow(vec![BoxShadow {
+                        .when(!self.light || hot, |e| e.shadow(vec![BoxShadow {
                             color: alpha(zone.color, if hot { 0.55 } else { 0.1 + level * 0.5 }),
                             offset: point(px(0.), px(0.)),
                             blur_radius: d(if hot { 40. } else { 8. + level * 30. }),
                             spread_radius: d(if hot { 8. } else { level * 6. }),
                             inset: false,
-                        }]);
+                        }]));
                     if (is_port && dark) || zone.hidden {
                         el = el.opacity(if zone.hidden { 0.4 } else { 0.55 });
                     }
@@ -1711,7 +1794,7 @@ impl Render for SoundMap {
                         cx.notify();
                     }))
                     .when(muted, |e| e.opacity(0.45))
-                    .shadow(vec![BoxShadow {
+                    .when(!self.light || selected || focused, |e| e.shadow(vec![BoxShadow {
                         color: if focused {
                             rgb(TEXT).into()
                         } else if selected {
@@ -1723,7 +1806,7 @@ impl Render for SoundMap {
                         blur_radius: d(if selected || focused { 0. } else { 14. }),
                         spread_radius: d(if selected || focused { 4. } else { 0. }),
                         inset: false,
-                    }])
+                    }]))
                     .child(match &icon {
                         Some(path) => img(path.clone()).size(d(size * 0.6)).into_any_element(),
                         None => div().child(initial).into_any_element(),
@@ -1793,13 +1876,13 @@ impl Render for SoundMap {
                     .items_center()
                     .justify_center()
                     .cursor_grab()
-                    .shadow(vec![BoxShadow {
-                        color: alpha(0xc1a9d8, if everything { 0.7 } else { 0.25 + (phase * 2.).sin().abs() * 0.15 }),
+                    .when(!self.light, |e| e.shadow(vec![BoxShadow {
+                        color: alpha(0xc1a9d8, if everything { 0.7 } else { 0.25 + if flowing { (phase * 2.).sin().abs() * 0.15 } else { 0.08 } }),
                         offset: point(px(0.), px(0.)),
                         blur_radius: d(if everything { 60. } else { 30. }),
                         spread_radius: d(2.),
                         inset: false,
-                    }])
+                    }]))
                     .child(svg().path("console/orbit.svg").size(d(28.)).text_color(rgb(TEXT)))
                     .on_mouse_down(MouseButton::Left, cx.listener(|this, e: &MouseDownEvent, _, cx| this.grab_everything(e, cx)))
                     .test_support(),
@@ -1979,7 +2062,11 @@ pub(crate) fn toggle(token: Option<String>, cx: &mut App) {
         // over the whole monitor it opens on.
         window_bounds: Some(WindowBounds::Windowed(Bounds::new(point(px(0.), px(0.)), size(px(0.), px(0.))))),
         // The desktop shows through, blurred, as behind Plasma's overlays.
-        window_background: WindowBackgroundAppearance::Blurred,
+        window_background: if cx.global::<LinkCore>().map_light {
+            WindowBackgroundAppearance::Transparent
+        } else {
+            WindowBackgroundAppearance::Blurred
+        },
         app_id: Some("io.github.linx".into()),
         focus: true,
         ..Default::default()
@@ -2117,6 +2204,7 @@ pub(crate) fn control(op: &str, request: &serde_json::Value, cx: &mut App) -> Re
                 let orb = if map.minimal { P(1150., 112.) } else { ORB };
                 Ok(json!({
                     "minimal": map.minimal,
+                    "light": map.light,
                     "closing": map.closing.is_some(),
                     "viewport": {"width": f32::from(window.viewport_size().width), "height": f32::from(window.viewport_size().height)},
                     "zones": zones.iter().map(|z| json!({"spot": spot_name(&z.spot), "label": z.label, "center": at(z.center())})).collect::<Vec<_>>(),
