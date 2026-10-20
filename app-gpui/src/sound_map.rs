@@ -305,7 +305,8 @@ impl SoundMap {
             let cols = n.div_ceil(4).clamp(1, 3);
             let rows = n.div_ceil(cols).max(1);
             let r = (54. - 4. * (n as f32 - 3.).max(0.)).clamp(30., 54.);
-            let gap = (620. / rows as f32).min(230.);
+            // Editing adds a Hide/Show row under each name.
+            let gap = ((if self.edit { 690. } else { 620. }) / rows as f32).min(230.);
             let xs: &[f32] = match cols {
                 1 => &[1075.],
                 2 => &[985., 1160.],

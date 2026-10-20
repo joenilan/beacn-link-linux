@@ -8,7 +8,7 @@ use beacn_link_protocol::{
 };
 pub use beacn_link_protocol::link_engine::Target;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs,
     io::Write,
     path::PathBuf,
@@ -207,20 +207,20 @@ impl PlacementStore {
                 .and_then(|p| p.parent().map(|d| d.join("placements"))),
         }
     }
-    pub fn load(&self) -> BTreeMap<String, Target> {
+    pub fn load(&self) -> (BTreeMap<String, Target>, BTreeSet<String>) {
         self.path
             .as_ref()
             .and_then(|path| fs::read_to_string(path).ok())
             .map(|text| parse_placements(&text))
             .unwrap_or_default()
     }
-    pub fn save(&self, placements: &BTreeMap<String, Target>) -> Result<(), String> {
+    pub fn save(&self, placements: &BTreeMap<String, Target>, released: &BTreeSet<String>) -> Result<(), String> {
         let path = self.path.as_ref().ok_or("No LinX settings directory.")?;
         let parent = path.parent().ok_or("No LinX settings directory.")?;
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         let temp = parent.join(format!(".placements-{}", std::process::id()));
         let mut file = fs::File::create(&temp).map_err(|e| e.to_string())?;
-        file.write_all(format_placements(placements).as_bytes())
+        file.write_all(format_placements(placements, released).as_bytes())
             .and_then(|_| file.sync_all())
             .map_err(|e| e.to_string())?;
         fs::rename(&temp, path).map_err(|e| e.to_string())
@@ -239,8 +239,13 @@ fn unhex(hex: &str) -> Option<String> {
         .collect::<Option<Vec<_>>>()?;
     String::from_utf8(bytes).ok()
 }
-pub fn format_placements(placements: &BTreeMap<String, Target>) -> String {
+/// Placements, then applications released from a device while closed
+/// (`released\t-\t<key>`).
+pub fn format_placements(placements: &BTreeMap<String, Target>, released: &BTreeSet<String>) -> String {
     let mut out = String::from("linx-placements=1\n");
+    for key in released {
+        out.push_str(&format!("released\t-\t{}\n", hex(key)));
+    }
     for (key, target) in placements {
         match target {
             Target::Channel(c) => out.push_str(&format!("channel\t{c}\t{}\n", hex(key))),
@@ -251,23 +256,34 @@ pub fn format_placements(placements: &BTreeMap<String, Target>) -> String {
     }
     out
 }
-pub fn parse_placements(text: &str) -> BTreeMap<String, Target> {
+pub fn parse_placements(text: &str) -> (BTreeMap<String, Target>, BTreeSet<String>) {
     let mut lines = text.lines();
+    let (mut placements, mut released) = (BTreeMap::new(), BTreeSet::new());
     if lines.next() != Some("linx-placements=1") {
-        return BTreeMap::new();
+        return (placements, released);
     }
-    lines
-        .filter_map(|line| {
-            let mut parts = line.split('\t');
-            let (kind, value, key) = (parts.next()?, parts.next()?, parts.next()?);
-            let target = match kind {
-                "channel" => Target::Channel(value.parse().ok().filter(|c| (1..=CHANNELS).contains(c))?),
-                "device" => Target::Device(unhex(value)?),
-                _ => return None,
-            };
-            Some((unhex(key)?, target))
-        })
-        .collect()
+    for line in lines {
+        let mut parts = line.split('\t');
+        let (Some(kind), Some(value), Some(key)) = (parts.next(), parts.next(), parts.next()) else { continue };
+        let Some(key) = unhex(key) else { continue };
+        match kind {
+            "channel" => {
+                if let Some(c) = value.parse().ok().filter(|c| (1..=CHANNELS).contains(c)) {
+                    placements.insert(key, Target::Channel(c));
+                }
+            }
+            "device" => {
+                if let Some(name) = unhex(value) {
+                    placements.insert(key, Target::Device(name));
+                }
+            }
+            "released" => {
+                released.insert(key);
+            }
+            _ => {}
+        }
+    }
+    (placements, released)
 }
 
 /// Sound outputs the user hid from LinX's lists (by node.name):
@@ -389,7 +405,7 @@ fn run(rx: mpsc::Receiver<LinkCommand>, latest: Arc<Mutex<LinkView>>, ending: Ar
     let store = ChannelStore::user();
     let mut remembered = store.load();
     let placements = PlacementStore::user();
-    let mut pinned = placements.load();
+    let (mut pinned, mut released) = placements.load();
     let mut service: Option<LinkService> = None;
     // Connect at launch only when automatic connection is enabled.
     let mut want = view.auto_connect;
@@ -416,6 +432,7 @@ fn run(rx: mpsc::Receiver<LinkCommand>, latest: Arc<Mutex<LinkView>>, ending: Ar
                     if let Some(s) = service.take() {
                         remembered = s.remembered().clone();
                         pinned = s.pinned().clone();
+                        released = s.released().clone();
                     }
                     view.phase = Phase::Paused;
                     view.message = Some("Link paused. Applications use your normal output.".into());
@@ -475,7 +492,7 @@ fn run(rx: mpsc::Receiver<LinkCommand>, latest: Arc<Mutex<LinkView>>, ending: Ar
         } else {
             next_tick = Instant::now() + TICK;
             if want && service.is_none() && Instant::now() >= retry_at {
-                match LinkService::connect(remembered.clone(), pinned.clone()) {
+                match LinkService::connect(remembered.clone(), pinned.clone(), released.clone()) {
                     Ok(s) => {
                         eprintln!("LinX connected");
                         service = Some(s);
@@ -493,6 +510,7 @@ fn run(rx: mpsc::Receiver<LinkCommand>, latest: Arc<Mutex<LinkView>>, ending: Ar
                     eprintln!("LinX lost PipeWire: {error}");
                     remembered = s.remembered().clone();
                     pinned = s.pinned().clone();
+                    released = s.released().clone();
                     service = None;
                     view.phase = Phase::Retrying;
                     view.audio_error = Some(error);
@@ -507,9 +525,10 @@ fn run(rx: mpsc::Receiver<LinkCommand>, latest: Arc<Mutex<LinkView>>, ending: Ar
                     view.message = Some(format!("Could not save channel choices: {error}"));
                 }
             }
-            if s.pinned() != &pinned {
+            if s.pinned() != &pinned || s.released() != &released {
                 pinned = s.pinned().clone();
-                if let Err(error) = placements.save(&pinned) {
+                released = s.released().clone();
+                if let Err(error) = placements.save(&pinned, &released) {
                     view.message = Some(format!("Could not save placements: {error}"));
                 }
             }
@@ -613,12 +632,14 @@ mod tests {
             ("Spotify".to_string(), Target::Device("alsa_output.pci-0000.analog-stereo".into())),
             ("Game\tX".to_string(), Target::Channel(3)),
         ]);
-        assert_eq!(parse_placements(&format_placements(&placements)), placements);
-        assert!(parse_placements("other=1\nchannel\t1\t41").is_empty());
-        let parsed = parse_placements(
-            "linx-placements=1\nchannel\t9\t41\ndevice\tzz\t41\nwhat\t1\t41\nchannel\t2\t42\n",
+        let released: BTreeSet<String> = ["Discord".to_string()].into();
+        assert_eq!(parse_placements(&format_placements(&placements, &released)), (placements, released));
+        assert!(parse_placements("other=1\nchannel\t1\t41").0.is_empty());
+        let (parsed, released) = parse_placements(
+            "linx-placements=1\nchannel\t9\t41\ndevice\tzz\t41\nwhat\t1\t41\nchannel\t2\t42\nreleased\t-\t43\n",
         );
         assert_eq!(parsed, BTreeMap::from([("B".to_string(), Target::Channel(2))]));
+        assert_eq!(released, BTreeSet::from(["C".to_string()]));
     }
     #[test]
     fn hidden_outputs_round_trip_and_ignore_bad_lines() {

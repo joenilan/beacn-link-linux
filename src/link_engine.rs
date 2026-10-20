@@ -592,6 +592,9 @@ pub struct LinkService {
     /// Outputs present at the last observation, to re-apply device
     /// placements when one comes back.
     present: BTreeSet<String>,
+    /// Applications taken off a device while closed: WirePlumber still
+    /// remembers that device for them, so their next stream is released.
+    released: BTreeSet<String>,
     state: State,
 }
 
@@ -599,11 +602,13 @@ impl LinkService {
     pub fn connect(
         remembered: BTreeMap<String, u8>,
         pinned: BTreeMap<String, Target>,
+        released: BTreeSet<String>,
     ) -> Result<Self, String> {
         let mut service = Self {
             bus: LinkBus::open()?,
             remembered,
             pinned,
+            released,
             present: BTreeSet::new(),
             previous: BTreeMap::new(),
             handled: BTreeSet::new(),
@@ -631,6 +636,9 @@ impl LinkService {
     }
     pub fn pinned(&self) -> &BTreeMap<String, Target> {
         &self.pinned
+    }
+    pub fn released(&self) -> &BTreeSet<String> {
+        &self.released
     }
 
     /// Where an application should play: its placement, else (while LinX is
@@ -805,6 +813,7 @@ impl LinkService {
             if !self.local {
                 self.learn_desktop_moves(&streams);
             }
+            self.release_stale_targets(&streams);
             let mut channels = BTreeMap::new();
             let mut devices = BTreeMap::new();
             for app in &self.state.apps {
@@ -968,6 +977,31 @@ impl LinkService {
         }
         let _ = self.observe();
         result
+    }
+
+    /// WirePlumber gives a new stream the output its application last used,
+    /// LinX's earlier choice included. A new stream of an application LinX
+    /// no longer places that arrives on a LinX channel, or on the device it
+    /// was taken off while closed, is returned to the default once.
+    fn release_stale_targets(&mut self, streams: &[Stream]) {
+        for stream in streams.iter().filter(|s| s.info && s.movable) {
+            let id = (stream.node, stream.serial);
+            let key = stream.app_key();
+            if self.handled.contains(&id) || self.effective(&key).is_some() {
+                continue;
+            }
+            let released = self.released.remove(&key);
+            let stale = stream.target_channel != 0
+                || (released && self.bus.target_name(stream).is_some_and(|n| !is_linx_output(&n)));
+            if stale {
+                eprintln!("LinX: {key} came back on an output LinX no longer gives it; returning it to the default");
+                self.wrote.remove(&id);
+                if let Err(error) = self.bus.route(stream, 0) {
+                    eprintln!("LinX: {error}");
+                }
+                self.handled.insert(id);
+            }
+        }
     }
 
     /// Adopt moves made outside LinX (a desktop volume control): a stream
@@ -1153,6 +1187,11 @@ impl LinkService {
             .flat_map(|a| a.streams.iter().cloned())
             .filter(|s| s.movable)
             .collect();
+        if streams.is_empty() && target.is_none() {
+            // Closed, taken off a placement: WirePlumber keeps that output
+            // for the next stream (a LinX channel is caught anyway).
+            self.released.insert(key.to_owned());
+        }
         for stream in streams {
             let id = (stream.node, stream.serial);
             let routed = match &target {
