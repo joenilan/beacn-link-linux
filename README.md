@@ -62,8 +62,13 @@ Windows.
   the BEACN. Drag across empty space (or Ctrl-click) to move several at
   once; drop the *Everything* orb on a device to play everything there, or
   on the BEACN Studio to send each application back to its own channel.
-  Placements are remembered. *Minimal view* shows the same as lanes; Esc or
-  a click on empty space closes it.
+  Placements are remembered. Each application shows its own icon; scroll
+  on it for its volume, middle-click to mute. From the keyboard: arrows pick
+  an application, 1-4 send it to a Link In, 5-9 to a device, 0 to *Not
+  linked*, S back to the Studio, with Shift to move everything. Every move
+  can be undone (the *Undo* button, or Ctrl+Z). *Devices* hides outputs you
+  never use. *Minimal view* shows the same as lanes; Esc or a click on empty
+  space closes it.
 - Light and dark themes, with five accent palettes.
 
 Tested with BEACN Studio and BEACN App on Debian 13 (PipeWire 1.4.2):

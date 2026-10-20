@@ -151,6 +151,22 @@ const LOOSE_COLOR: u32 = 0x9aa1a8;
 /// Colors for devices on this PC, in list order.
 const DEVICE_COLORS: [u32; 5] = [0xef9f76, 0x8fd3e0, 0xe5a5c4, 0xc8d98b, 0xb4b9f0];
 
+/// A short device name for the map: "GA102 High Definition Audio Controller
+/// Digital Stereo (HDMI 2) [BenQ GL2760]" becomes "BenQ GL2760 · HDMI 2".
+fn friendly(description: &str) -> String {
+    let inner = |open: char, close: char| -> Option<&str> {
+        let start = description.rfind(open)?;
+        let end = description[start..].find(close)? + start;
+        Some(description[start + 1..end].trim()).filter(|s| !s.is_empty())
+    };
+    let port = inner('(', ')').filter(|p| p.len() <= 24);
+    match (inner('[', ']'), port) {
+        (Some(monitor), Some(port)) => format!("{monitor} · {port}"),
+        (Some(monitor), None) => monitor.to_owned(),
+        _ => description.to_owned(),
+    }
+}
+
 fn device_icon(name: &str, description: &str) -> &'static str {
     let text = format!("{name} {description}").to_lowercase();
     if ["hdmi", "displayport", "monitor"].iter().any(|w| text.contains(w)) {
@@ -298,7 +314,7 @@ impl SoundMap {
                     ..zone(
                         Spot::Device(name.clone()),
                         Shape::Rect(P(x, y), P(x + w, y + h)),
-                        description.clone(),
+                        friendly(description),
                         DEVICE_COLORS[i % DEVICE_COLORS.len()],
                     )
                 });
@@ -347,7 +363,7 @@ impl SoundMap {
                     ..zone(
                         Spot::Device(name.clone()),
                         Shape::Circle(P(xs[col], y), r),
-                        description.clone(),
+                        friendly(description),
                         DEVICE_COLORS[i % DEVICE_COLORS.len()],
                     )
                 });
@@ -1998,6 +2014,19 @@ pub(crate) fn toggle(token: Option<String>, cx: &mut App) {
 
 /// Same-user diagnostics: inspect the open map and feed it real pointer and
 /// key events, so drags are tested through the map's own input path.
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn device_names_keep_the_useful_part() {
+        assert_eq!(
+            super::friendly("GA102 High Definition Audio Controller Digital Stereo (HDMI 2) [BenQ GL2760]"),
+            "BenQ GL2760 · HDMI 2"
+        );
+        assert_eq!(super::friendly("Speakers"), "Speakers");
+        assert_eq!(super::friendly("Family 17h HD Audio Analog Stereo"), "Family 17h HD Audio Analog Stereo");
+    }
+}
+
 #[cfg(feature = "native-control")]
 pub(crate) fn control(op: &str, request: &serde_json::Value, cx: &mut App) -> Result<serde_json::Value, String> {
     use serde_json::json;
