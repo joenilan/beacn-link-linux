@@ -168,6 +168,7 @@ fn execute(
                 .map_err(|e| e.to_string())?;
             Ok(json!({"dispatched":true}))
         }
+        "map-state" | "map-input" | "map-key" | "map-minimal" => crate::sound_map::control(op, request, cx),
         "map" => {
             crate::sound_map::toggle(None, cx);
             Ok(json!({"open":cx.global::<super::LinkCore>().map_window.is_some()}))

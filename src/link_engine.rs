@@ -634,9 +634,13 @@ impl LinkService {
     }
 
     /// Where an application should play: its placement, else (while LinX is
-    /// the output) its remembered channel. `None` follows the default.
+    /// the output, or its placed device is unplugged) its remembered channel.
+    /// `None` follows the default.
     fn effective(&self, key: &str) -> Option<Target> {
         match self.pinned.get(key) {
+            Some(Target::Device(name)) if !self.present.contains(name) => {
+                (!self.local).then(|| self.remembered.get(key).map(|c| Target::Channel(*c))).flatten()
+            }
             Some(target) => Some(target.clone()),
             None if !self.local => self.remembered.get(key).map(|c| Target::Channel(*c)),
             None => None,

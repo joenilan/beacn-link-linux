@@ -13,7 +13,17 @@ The GPUI interface already supports Windows; the work is elsewhere:
   owns.
 - Research item: needs a feasibility check before any implementation.
 
+## Sound map as its own application
+
+The Sound map works without BEACN hardware in principle: per-application
+routing to any output is plain PipeWire. A separate build (or a mode of
+LinX without a Studio) could offer it to anyone on Linux.
+
 ## Done
+
+- **Sound map** (2026-10-19): drag-and-drop routing of each application to a
+  Link In or any device on this PC, over the screen on the overlay layer,
+  with an orbit view and a minimal lanes view.
 
 - **Linux on both PCs** (2026-10-18): LinX on PC2 tested against
   [beacn-utility](https://github.com/beacn-on-linux/beacn-utility) and

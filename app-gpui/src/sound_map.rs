@@ -105,6 +105,8 @@ pub struct SoundMap {
     started: Instant,
     /// Fading out; the window closes when done.
     closing: Option<Instant>,
+    /// The next frame while nothing moves.
+    tick: Option<Task<()>>,
     /// Scale and origin of the plane in the window, from the last frame.
     frame: (f32, f32, f32),
     focus: FocusHandle,
@@ -151,6 +153,7 @@ impl SoundMap {
             levels: [0.; 4],
             started: Instant::now(),
             closing: None,
+            tick: None,
             frame: (1., 0., 0.),
             focus,
         }
@@ -172,8 +175,16 @@ impl SoundMap {
                 return spot.clone();
             }
         }
+        let present = |name: &String| self.view.outputs.iter().any(|o| &o.name == name);
         match &app.pinned {
-            Some(Target::Device(name)) => Spot::Device(name.clone()),
+            // An unplugged device: shown where it plays meanwhile.
+            Some(Target::Device(name)) if present(name) => Spot::Device(name.clone()),
+            Some(Target::Device(_)) if self.view.local_output => self
+                .view
+                .default_output
+                .clone()
+                .map_or(Spot::Loose, Spot::Device),
+            Some(Target::Device(_)) => app.remembered.map_or(Spot::Loose, Spot::Port),
             Some(Target::Channel(c)) => Spot::Port(*c),
             None if self.view.local_output => self
                 .view
@@ -640,11 +651,10 @@ impl Render for SoundMap {
             window.defer(cx, |window, _| window.remove_window());
         }
         self.refresh(cx);
-        window.request_animation_frame();
         let fade = self.shown_amount();
         let viewport = window.viewport_size();
         let (vw, vh) = (f32::from(viewport.width), f32::from(viewport.height));
-        let s = (vw / (PLANE.0 + 40.)).min(vh / (PLANE.1 + 40.)).clamp(0.5, 1.4) * (0.96 + 0.04 * fade);
+        let s = (vw / (PLANE.0 + 40.)).min(vh / (PLANE.1 + 40.)).clamp(0.5, 1.4);
         self.frame = (s, (vw - PLANE.0 * s) / 2., (vh - PLANE.1 * s) / 2.);
         let (_, ox, oy) = self.frame;
         let x = |v: f32| px(ox + v * s);
@@ -683,6 +693,20 @@ impl Render for SoundMap {
             shown.insert(key.clone(), p);
         }
         self.shown = shown;
+        // Every frame while something moves; otherwise 30 per second for
+        // the flowing cables and levels.
+        let settling = self.shown.iter().any(|(k, p)| slots.get(k).is_some_and(|s| p.dist(*s) > 0.5));
+        if self.drag.is_some() || self.lasso.is_some() || self.closing.is_some() || fade < 1. || settling {
+            window.request_animation_frame();
+        } else if self.tick.is_none() {
+            self.tick = Some(cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(Duration::from_millis(33)).await;
+                let _ = this.update(cx, |this, cx| {
+                    this.tick = None;
+                    cx.notify();
+                });
+            }));
+        }
         let orb = if everything {
             let p = P(ORB.0 + delta.0, ORB.1 + delta.1);
             hover
@@ -1090,50 +1114,53 @@ impl Render for SoundMap {
                     .child(div().flex_1().min_w_0().truncate().text_size(d(13.)).child(app.name.clone()))
             } else {
                 let size = if lifted { 56. } else { 50. };
+                // The label is not part of the puck: crowded orbits put
+                // labels over neighbours, and only the circle may grab.
+                root = root.child(
+                    div()
+                        .absolute()
+                        .left(x(p.0 - 55.))
+                        .top(y(p.1 + size / 2. + 5.))
+                        .w(d(110.))
+                        .flex()
+                        .justify_center()
+                        .child(
+                            div()
+                                .max_w(d(110.))
+                                .truncate()
+                                .px(d(7.))
+                                .py(d(1.))
+                                .rounded(d(6.))
+                                .bg(alpha(0x1c1f23, 0.85))
+                                .text_size(d(12.))
+                                .text_color(rgb(0xc9cdd1))
+                                .child(app.name.clone()),
+                        ),
+                );
                 div()
                     .id(SharedString::from(format!("map-app-{}", key_id(&app.key))))
                     .absolute()
-                    .left(x(p.0 - 70.))
+                    .left(x(p.0 - size / 2.))
                     .top(y(p.1 - size / 2.))
-                    .w(d(140.))
+                    .size(d(size))
+                    .rounded_full()
+                    .border(d(2.5))
+                    .border_color(rgb(color))
+                    .bg(rgb(0x2d3035))
                     .flex()
-                    .flex_col()
                     .items_center()
-                    .gap(d(5.))
-                    .child(
-                        div()
-                            .size(d(size))
-                            .rounded_full()
-                            .border(d(2.5))
-                            .border_color(rgb(color))
-                            .bg(rgb(0x2d3035))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .text_size(d(19.))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .when(!app.running, |e| e.opacity(0.6))
-                            .shadow(vec![BoxShadow {
-                                color: if selected { rgb(0xa6bfe7).into() } else { alpha(0x000000, 0.45) },
-                                offset: point(px(0.), d(if selected { 0. } else { 5. })),
-                                blur_radius: d(if selected { 0. } else { 14. }),
-                                spread_radius: d(if selected { 4. } else { 0. }),
-                                inset: false,
-                            }])
-                            .child(initial),
-                    )
-                    .child(
-                        div()
-                            .max_w(d(140.))
-                            .truncate()
-                            .px(d(7.))
-                            .py(d(1.))
-                            .rounded(d(6.))
-                            .bg(alpha(0x1c1f23, 0.85))
-                            .text_size(d(12.))
-                            .text_color(rgb(0xc9cdd1))
-                            .child(app.name.clone()),
-                    )
+                    .justify_center()
+                    .text_size(d(19.))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .when(!app.running, |e| e.opacity(0.6))
+                    .shadow(vec![BoxShadow {
+                        color: if selected { rgb(0xa6bfe7).into() } else { alpha(0x000000, 0.45) },
+                        offset: point(px(0.), d(if selected { 0. } else { 5. })),
+                        blur_radius: d(if selected { 0. } else { 14. }),
+                        spread_radius: d(if selected { 4. } else { 0. }),
+                        inset: false,
+                    }])
+                    .child(initial)
             };
             root = root.child(
                 el.cursor_grab()
@@ -1357,4 +1384,107 @@ pub(crate) fn toggle(token: Option<String>, cx: &mut App) {
     };
     cx.global_mut::<LinkCore>().map_window = handle.map(|h| h.into());
     cx.activate(true);
+}
+
+/// Same-user diagnostics: inspect the open map and feed it real pointer and
+/// key events, so drags are tested through the map's own input path.
+#[cfg(feature = "native-control")]
+pub(crate) fn control(op: &str, request: &serde_json::Value, cx: &mut App) -> Result<serde_json::Value, String> {
+    use serde_json::json;
+    let handle = cx
+        .global::<LinkCore>()
+        .map_window
+        .and_then(|w| w.downcast::<SoundMap>())
+        .ok_or("The Sound map is not open.")?;
+    let spot_name = |spot: &Spot| match spot {
+        Spot::Port(c) => format!("port:{c}"),
+        Spot::Device(d) => format!("device:{d}"),
+        Spot::Loose => "loose".into(),
+        Spot::Studio => "studio".into(),
+    };
+    if op == "map-input" || op == "map-key" {
+        // Delivered as the system would: to the window, while the map itself
+        // is free for its own handlers.
+        let window_handle: AnyWindowHandle = handle.into();
+        return window_handle
+            .update(cx, |_, window, cx| match op {
+            "map-input" => {
+                    let events = request["events"].as_array().ok_or("Missing events")?;
+                    for e in events {
+                        let position = point(
+                            px(e["x"].as_f64().ok_or("Missing x")? as f32),
+                            px(e["y"].as_f64().ok_or("Missing y")? as f32),
+                        );
+                        let modifiers = Modifiers { control: e["ctrl"].as_bool().unwrap_or(false), ..Default::default() };
+                        let input = match e["kind"].as_str() {
+                            Some("down") => PlatformInput::MouseDown(MouseDownEvent {
+                                button: MouseButton::Left,
+                                position,
+                                modifiers,
+                                click_count: 1,
+                                first_mouse: false,
+                            }),
+                            Some("move") => PlatformInput::MouseMove(MouseMoveEvent {
+                                position,
+                                pressed_button: Some(MouseButton::Left),
+                                modifiers,
+                            }),
+                            Some("up") => PlatformInput::MouseUp(MouseUpEvent {
+                                button: MouseButton::Left,
+                                position,
+                                modifiers,
+                                click_count: 1,
+                            }),
+                            _ => return Err("kind is down, move or up".to_string()),
+                        };
+                        window.dispatch_event(input, cx);
+                        // Lay out again so the next event hits what is now drawn.
+                        gpui_kit::test::TestWindowExt::render_frame(window, cx);
+                    }
+                    Ok(json!({"dispatched": events.len()}))
+                }
+                "map-key" => {
+                    let key = request["key"].as_str().ok_or("Missing key")?;
+                    let keystroke = Keystroke::parse(key).map_err(|e| e.to_string())?;
+                    window.dispatch_event(
+                        PlatformInput::KeyDown(KeyDownEvent { keystroke, is_held: false, prefer_character_input: false }),
+                        cx,
+                    );
+                    Ok(json!({"dispatched": true}))
+                }
+                _ => unreachable!(),
+            })
+            .map_err(|e| e.to_string())?;
+    }
+    handle
+        .update(cx, |map, window, cx| match op {
+            "map-state" => {
+                let (s, ox, oy) = map.frame;
+                let at = |p: P| json!({"x": ox + p.0 * s, "y": oy + p.1 * s});
+                let zones = map.zones(cx);
+                let orb = if map.minimal { P(1150., 112.) } else { ORB };
+                Ok(json!({
+                    "minimal": map.minimal,
+                    "closing": map.closing.is_some(),
+                    "viewport": {"width": f32::from(window.viewport_size().width), "height": f32::from(window.viewport_size().height)},
+                    "zones": zones.iter().map(|z| json!({"spot": spot_name(&z.spot), "label": z.label, "center": at(z.center())})).collect::<Vec<_>>(),
+                    "apps": map.view.apps.iter().filter_map(|a| {
+                        let p = *map.shown.get(&a.key)?;
+                        Some(json!({"key": a.key, "spot": spot_name(&map.spot_of(a)), "at": at(p)}))
+                    }).collect::<Vec<_>>(),
+                    "everything": at(orb),
+                    "empty": at(P(700., 760.)),
+                    "selected": map.selected.iter().collect::<Vec<_>>(),
+                    "toast": map.toast.as_ref().map(|(t, _)| t.clone()),
+                }))
+            }
+            "map-minimal" => {
+                map.minimal = !map.minimal;
+                cx.global_mut::<LinkCore>().map_minimal = map.minimal;
+                cx.notify();
+                Ok(json!({"minimal": map.minimal}))
+            }
+            _ => Err("Unknown map op".to_string()),
+        })
+        .map_err(|e| e.to_string())?
 }

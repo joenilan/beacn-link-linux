@@ -52,6 +52,16 @@ Windows.
   (no faders, mute or assignments) so nothing changes on the BEACN side.
   Every output the system has is listed, and outputs you never use can be
   hidden (*Edit*).
+- The Sound map (orbit button in the header, *Sound map* in the tray, or
+  `linx --studio --map` for a keyboard shortcut) opens over the screen with
+  the desktop blurred behind it. Every application that plays sound orbits
+  where it plays; drag it onto a Link In, a device on this PC or *Not
+  linked*. Spotify can play on the speakers while everything else stays on
+  the BEACN. Drag across empty space (or Ctrl-click) to move several at
+  once; drop the *Everything* orb on a device to play everything there, or
+  on the BEACN Studio to send each application back to its own channel.
+  Placements are remembered. *Minimal view* shows the same as lanes; Esc or
+  a click on empty space closes it.
 - Light and dark themes, with five accent palettes.
 
 Tested with BEACN Studio and BEACN App on Debian 13 (PipeWire 1.4.2):
