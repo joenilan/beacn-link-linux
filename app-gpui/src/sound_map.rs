@@ -60,6 +60,10 @@ struct Zone {
     label: String,
     color: u32,
     icon: &'static str,
+    /// A device hidden from LinX's lists (shown while editing devices).
+    hidden: bool,
+    /// A device in use (the default output, or apps placed on it).
+    in_use: bool,
 }
 impl Zone {
     fn center(&self) -> P {
@@ -91,6 +95,10 @@ pub struct SoundMap {
     view: LinkView,
     viewed: Instant,
     minimal: bool,
+    /// Every device is shown, with Hide/Show.
+    edit: bool,
+    /// The puck under the pointer (its name shows in crowded orbits).
+    hovered: Option<String>,
     /// Displayed puck centers, easing toward their slots.
     shown: BTreeMap<String, P>,
     selected: BTreeSet<String>,
@@ -143,6 +151,8 @@ impl SoundMap {
             view: cx.global::<LinkCore>().worker.view(),
             viewed: Instant::now(),
             minimal,
+            edit: false,
+            hovered: None,
             shown: BTreeMap::new(),
             selected: BTreeSet::new(),
             drag: None,
@@ -191,15 +201,17 @@ impl SoundMap {
                 .default_output
                 .clone()
                 .map_or(Spot::Loose, Spot::Device),
-            None if app.channel > 0 => Spot::Port(app.channel),
-            None => app.remembered.map_or(Spot::Loose, Spot::Port),
+            // A remembered channel first: a new stream briefly plays on the
+            // default until LinX moves it there.
+            None => app.remembered.map(Spot::Port).or((app.channel > 0).then_some(Spot::Port(app.channel))).unwrap_or(Spot::Loose),
         }
     }
 
-    /// Devices on this PC shown on the map: not hidden, or in use.
-    fn devices(&self, cx: &App) -> Vec<(String, String)> {
+    /// Devices on this PC shown on the map: not hidden, or in use, or all of
+    /// them while editing. (node.name, description, hidden, in use)
+    fn devices(&self, cx: &App) -> Vec<(String, String, bool, bool)> {
         let hidden = &cx.global::<LinkCore>().hidden_outputs;
-        let used: BTreeSet<String> = self
+        let mut used: BTreeSet<String> = self
             .view
             .apps
             .iter()
@@ -208,103 +220,123 @@ impl SoundMap {
                 _ => None,
             })
             .collect();
+        used.extend(self.view.default_output.clone());
         self.view
             .outputs
             .iter()
             .filter(|o| o.description != beacn_linx_core::link::LINX_OUTPUT)
-            .filter(|o| !hidden.contains(&o.name) || used.contains(&o.name))
-            .map(|o| (o.name.clone(), o.description.clone()))
+            .map(|o| (o.name.clone(), o.description.clone(), hidden.contains(&o.name), used.contains(&o.name)))
+            .filter(|(_, _, hidden, in_use)| self.edit || !hidden || *in_use)
             .collect()
     }
 
     fn zones(&self, cx: &App) -> Vec<Zone> {
         let colors = self.channels();
         let devices = self.devices(cx);
+        let zone = |spot: Spot, shape: Shape, label: String, color: u32| Zone {
+            spot,
+            shape,
+            label,
+            color,
+            icon: "",
+            hidden: false,
+            in_use: false,
+        };
         let mut zones = Vec::new();
         if self.minimal {
             for c in 0..4u8 {
                 let x = 32. + c as f32 * 184.;
-                zones.push(Zone {
-                    spot: Spot::Port(c + 1),
-                    shape: Shape::Rect(P(x, 156.), P(x + 172., 626.)),
-                    label: format!("Link In {}", c + 1),
-                    color: colors[c as usize],
-                    icon: "",
-                });
+                zones.push(zone(
+                    Spot::Port(c + 1),
+                    Shape::Rect(P(x, 156.), P(x + 172., 626.)),
+                    format!("Link In {}", c + 1),
+                    colors[c as usize],
+                ));
             }
-            let n = devices.len().max(1) as f32;
-            let w = ((448. - 16. * (n - 1.)) / n).max(90.);
-            for (i, (name, description)) in devices.iter().enumerate() {
-                let x = 800. + i as f32 * (w + 16.);
+            // Up to four lanes a row; more devices take more rows.
+            let n = devices.len().max(1);
+            let rows = n.div_ceil(4);
+            let per_row = n.div_ceil(rows) as f32;
+            let w = (448. - 16. * (per_row - 1.)) / per_row;
+            let h = (470. - 16. * (rows as f32 - 1.)) / rows as f32;
+            for (i, (name, description, hidden, in_use)) in devices.iter().enumerate() {
+                let (col, row) = ((i % per_row as usize) as f32, (i / per_row as usize) as f32);
+                let (x, y) = (800. + col * (w + 16.), 156. + row * (h + 16.));
                 zones.push(Zone {
-                    spot: Spot::Device(name.clone()),
-                    shape: Shape::Rect(P(x, 156.), P(x + w, 626.)),
-                    label: description.clone(),
-                    color: DEVICE_COLORS[i % DEVICE_COLORS.len()],
                     icon: device_icon(name, description),
+                    hidden: *hidden,
+                    in_use: *in_use,
+                    ..zone(
+                        Spot::Device(name.clone()),
+                        Shape::Rect(P(x, y), P(x + w, y + h)),
+                        description.clone(),
+                        DEVICE_COLORS[i % DEVICE_COLORS.len()],
+                    )
                 });
             }
-            zones.push(Zone {
-                spot: Spot::Studio,
-                shape: Shape::Rect(P(32., 118.), P(756., 150.)),
-                label: "BEACN Studio (LinX)".into(),
-                color: colors[0],
-                icon: "",
-            });
-            zones.push(Zone {
-                spot: Spot::Loose,
-                shape: Shape::Rect(P(32., 648.), P(1248., 768.)),
-                label: "Not linked · follows the default output".into(),
-                color: LOOSE_COLOR,
-                icon: "",
-            });
+            zones.push(zone(
+                Spot::Studio,
+                Shape::Rect(P(32., 118.), P(756., 150.)),
+                "BEACN Studio (LinX)".into(),
+                colors[0],
+            ));
+            zones.push(zone(
+                Spot::Loose,
+                Shape::Rect(P(32., 648.), P(1248., 768.)),
+                "Not linked · follows the default output".into(),
+                LOOSE_COLOR,
+            ));
         } else {
             for c in 0..4u8 {
-                zones.push(Zone {
-                    spot: Spot::Port(c + 1),
-                    shape: Shape::Circle(PORTS[c as usize], PORT_R),
-                    label: format!("Link In {}", c + 1),
-                    color: colors[c as usize],
-                    icon: "",
-                });
+                zones.push(zone(
+                    Spot::Port(c + 1),
+                    Shape::Circle(PORTS[c as usize], PORT_R),
+                    format!("Link In {}", c + 1),
+                    colors[c as usize],
+                ));
             }
+            // One column up to four devices, then two, then three; smaller
+            // planets as more arrive.
             let n = devices.len();
-            let cols = if n > 3 { 2 } else { 1 };
+            let cols = n.div_ceil(4).clamp(1, 3);
             let rows = n.div_ceil(cols).max(1);
-            let r = if n > 3 { 44. } else { 54. };
-            let gap = (480. / rows as f32).min(230.);
-            for (i, (name, description)) in devices.iter().enumerate() {
+            let r = (54. - 4. * (n as f32 - 3.).max(0.)).clamp(30., 54.);
+            let gap = (560. / rows as f32).min(230.);
+            let xs: &[f32] = match cols {
+                1 => &[1075.],
+                2 => &[985., 1160.],
+                _ => &[945., 1065., 1185.],
+            };
+            for (i, (name, description, hidden, in_use)) in devices.iter().enumerate() {
                 let (col, row) = (i % cols, i / cols);
-                let x = if cols == 1 { 1075. } else { [985., 1160.][col] };
                 let y = 450. + (row as f32 - (rows as f32 - 1.) / 2.) * gap;
                 zones.push(Zone {
-                    spot: Spot::Device(name.clone()),
-                    shape: Shape::Circle(P(x, y), r),
-                    label: description.clone(),
-                    color: DEVICE_COLORS[i % DEVICE_COLORS.len()],
                     icon: device_icon(name, description),
+                    hidden: *hidden,
+                    in_use: *in_use,
+                    ..zone(
+                        Spot::Device(name.clone()),
+                        Shape::Circle(P(xs[col], y), r),
+                        description.clone(),
+                        DEVICE_COLORS[i % DEVICE_COLORS.len()],
+                    )
                 });
             }
-            zones.push(Zone {
-                spot: Spot::Studio,
-                shape: Shape::Rect(P(HUB.0 - 100., HUB.1 - 55.), P(HUB.0 + 100., HUB.1 + 55.)),
-                label: "BEACN Studio".into(),
-                color: colors[0],
-                icon: "",
-            });
+            zones.push(zone(
+                Spot::Studio,
+                Shape::Rect(P(HUB.0 - 100., HUB.1 - 55.), P(HUB.0 + 100., HUB.1 + 55.)),
+                "BEACN Studio".into(),
+                colors[0],
+            ));
             let (x, y, w, h) = LOOSE;
-            zones.push(Zone {
-                spot: Spot::Loose,
-                shape: Shape::Rect(P(x, y), P(x + w, y + h)),
-                label: "Not linked".into(),
-                color: LOOSE_COLOR,
-                icon: "",
-            });
+            zones.push(zone(Spot::Loose, Shape::Rect(P(x, y), P(x + w, y + h)), "Not linked".into(), LOOSE_COLOR));
         }
         zones
     }
 
-    /// Slot centers for every application, by zone.
+    /// Slot centers for every application, by zone. Crowded zones pack
+    /// tighter; a lane that still cannot hold them all leaves the rest out
+    /// (shown as "+N more").
     fn slots(&self, zones: &[Zone]) -> BTreeMap<String, P> {
         let mut groups: BTreeMap<Spot, Vec<&LinkApp>> = BTreeMap::new();
         for app in &self.view.apps {
@@ -317,32 +349,60 @@ impl SoundMap {
         let mut out = BTreeMap::new();
         for zone in zones {
             let Some(apps) = groups.get(&zone.spot) else { continue };
+            let n = apps.len();
             for (i, app) in apps.iter().enumerate() {
                 let p = match (&zone.shape, self.minimal) {
                     (Shape::Rect(a, b), true) if zone.spot == Spot::Loose => {
                         let per = (((b.0 - a.0) - 32.) / 162.).max(1.) as usize;
-                        P(a.0 + 91. + (i % per) as f32 * 162., a.1 + 62. + (i / per) as f32 * 44.)
+                        let rows = n.div_ceil(per);
+                        let step = ((b.1 - a.1 - 48.) / rows as f32).min(44.);
+                        if step < 28. && i >= per * ((b.1 - a.1 - 48.) / 28.) as usize - 1 {
+                            continue;
+                        }
+                        let step = step.max(28.);
+                        P(a.0 + 91. + (i % per) as f32 * 162., a.1 + 62. + (i / per) as f32 * step)
                     }
                     (Shape::Rect(a, b), true) => {
-                        P((a.0 + b.0) / 2., a.1 + 66. + i as f32 * 50.)
+                        let (step, fits) = lane_step(b.1 - a.1, n);
+                        if i >= fits {
+                            continue;
+                        }
+                        P((a.0 + b.0) / 2., a.1 + 46. + step / 2. + i as f32 * step)
                     }
                     (Shape::Rect(a, b), false) => {
-                        let rows = ((b.1 - a.1 - 90.) / 86.).max(1.) as usize;
-                        let cols = apps.len().div_ceil(rows).max(1) as f32;
-                        let col = (i / rows) as f32;
-                        let x = (a.0 + b.0) / 2. + (col - (cols - 1.) / 2.) * 62.;
-                        P(x, a.1 + 50. + (i % rows) as f32 * 86.)
+                        let cols = if n > 7 { 2 } else { 1 };
+                        let rows = n.div_ceil(cols).max(1);
+                        let step = ((b.1 - a.1 - 90.) / rows as f32).min(86.);
+                        let x = (a.0 + b.0) / 2. + ((i % cols) as f32 - (cols as f32 - 1.) / 2.) * 62.;
+                        P(x, a.1 + 50. + (i / cols) as f32 * step)
+                    }
+                    (Shape::Circle(c, r), _) if is_grid(zone) => {
+                        // A device among many: a tight ring around it, so
+                        // its apps stay clear of the devices next to it.
+                        let size = zone_puck(zone, n);
+                        let per = ((2. * std::f32::consts::PI * (r + size / 2. + 10.)) / (size + 6.)) as usize;
+                        let (ring, j) = (i / per.max(1), i % per.max(1));
+                        let in_ring = (n - ring * per).min(per) as f32;
+                        let radius = r + size / 2. + 10. + ring as f32 * (size + 6.);
+                        let a = -std::f32::consts::FRAC_PI_2 + j as f32 / in_ring * 2. * std::f32::consts::PI;
+                        P(c.0 + a.cos() * radius, c.1 + a.sin() * radius)
                     }
                     (Shape::Circle(c, r), _) => {
                         let base = match zone.spot {
                             Spot::Port(_) => (c.1 - HUB.1).atan2(c.0 - HUB.0),
                             _ => std::f32::consts::PI,
                         };
-                        let ring = i / 5;
-                        let in_ring = (apps.len() - ring * 5).min(5) as f32;
-                        let j = (i % 5) as f32;
-                        let a = base + (j - (in_ring - 1.) / 2.) * 0.62;
-                        let radius = r + 58. + ring as f32 * 58.;
+                        // Ring k holds 5 + 3k pucks.
+                        let size = puck_size(n);
+                        let (mut ring, mut first) = (0, 0);
+                        while i >= first + 5 + 3 * ring {
+                            first += 5 + 3 * ring;
+                            ring += 1;
+                        }
+                        let in_ring = (n - first).min(5 + 3 * ring) as f32;
+                        let radius = r + 58. + ring as f32 * (size + 14.);
+                        let step = ((size + 16.) / radius).min(0.62);
+                        let a = base + ((i - first) as f32 - (in_ring - 1.) / 2.) * step;
                         P(c.0 + a.cos() * radius, c.1 + a.sin() * radius)
                     }
                 };
@@ -350,6 +410,45 @@ impl SoundMap {
             }
         }
         out
+    }
+
+    /// Hide/Show for a device while editing. The device in use stays.
+    fn visibility_pill(&self, zone: &Zone, left: Pixels, top: Pixels, width: Pixels, s: f32, cx: &mut Context<Self>) -> impl IntoElement {
+        let Spot::Device(name) = zone.spot.clone() else { unreachable!() };
+        let locked = zone.in_use && !zone.hidden;
+        div()
+            .id(SharedString::from(format!("map-device-visibility-{}", key_id(&name))))
+            .absolute()
+            .left(left)
+            .top(top)
+            .w(width)
+            .py(px(3. * s))
+            .rounded(px(999.))
+            .border_1()
+            .border_color(rgb(0x404247))
+            .bg(alpha(0x2d3035, 0.9))
+            .text_center()
+            .text_size(px(11. * s))
+            .text_color(rgb(if locked { 0x747c82 } else { TEXT }))
+            .child(if locked {
+                "In use"
+            } else if zone.hidden {
+                "Show"
+            } else {
+                "Hide"
+            })
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .when(!locked, |pill| {
+                pill.cursor_pointer().hover(|b| b.bg(rgb(0x363a40))).on_click(cx.listener(move |_, _, _, cx| {
+                    let core = cx.global_mut::<LinkCore>();
+                    if !core.hidden_outputs.remove(&name) {
+                        core.hidden_outputs.insert(name.clone());
+                    }
+                    let _ = beacn_linx_core::link::HiddenOutputs::user().save(&core.hidden_outputs);
+                    cx.notify();
+                }))
+            })
+            .test_support()
     }
 
     fn zone_name(zones: &[Zone], spot: &Spot) -> String {
@@ -819,6 +918,25 @@ impl Render for SoundMap {
                         .child(div().text_size(d(11.)).text_color(rgb(MUTED)).child(summary))
                         .child(
                             div()
+                                .id("map-devices")
+                                .px(d(12.))
+                                .py(d(7.))
+                                .rounded(d(8.))
+                                .border_1()
+                                .border_color(rgb(if self.edit { 0xa6bfe7 } else { 0x404247 }))
+                                .bg(alpha(0x2d3035, 0.85))
+                                .text_size(d(12.))
+                                .cursor_pointer()
+                                .hover(|b| b.bg(rgb(0x363a40)))
+                                .child(if self.edit { "Done" } else { "Devices" })
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.edit = !this.edit;
+                                    cx.notify();
+                                }))
+                                .test_support(),
+                        )
+                        .child(
+                            div()
                                 .id("map-minimal")
                                 .px(d(12.))
                                 .py(d(7.))
@@ -994,8 +1112,8 @@ impl Render for SoundMap {
                             spread_radius: d(if hot { 8. } else { level * 6. }),
                             inset: false,
                         }]);
-                    if is_port && dark {
-                        el = el.opacity(0.55);
+                    if (is_port && dark) || zone.hidden {
+                        el = el.opacity(if zone.hidden { 0.4 } else { 0.55 });
                     }
                     el = if is_port {
                         el.child(
@@ -1014,7 +1132,14 @@ impl Render for SoundMap {
                     root = root.child(el);
                     let label_y = if is_port && c.1 < HUB.1 { c.1 - r - 92. } else { c.1 + r + 10. };
                     let label_y = if is_port && c.1 < HUB.1 { label_y.max(84.) } else { label_y };
-                    root = root.child(zone_label(&zone.label, &sub, x(c.0 - 100.), y(label_y), d(200.), s));
+                    let label_w = (r * 4. + 40.).min(200.);
+                    root = root.child(
+                        zone_label(&zone.label, &sub, x(c.0 - label_w / 2.), y(label_y), d(label_w), s)
+                            .when(zone.hidden, |l| l.opacity(0.5)),
+                    );
+                    if self.edit && !is_port {
+                        root = root.child(self.visibility_pill(zone, x(c.0 - 40.), y(label_y + 36.), d(80.), s, cx));
+                    }
                 }
                 Shape::Rect(a, b) => {
                     let el = div()
@@ -1032,9 +1157,26 @@ impl Render for SoundMap {
                         } else {
                             alpha(LOOSE_COLOR, if hot { 0.14 } else { 0.03 })
                         });
-                    root = root.child(el);
+                    root = root.child(el.when(zone.hidden, |e| e.opacity(0.45)));
                     if self.minimal {
-                        let dim = dark && matches!(zone.spot, Spot::Port(_));
+                        let placed = slots.keys().filter(|k| spot_of.get(*k) == Some(&zone.spot)).count();
+                        if n > placed {
+                            root = root.child(
+                                div()
+                                    .absolute()
+                                    .left(x(a.0))
+                                    .top(y(b.1 - 30.))
+                                    .w(d(b.0 - a.0))
+                                    .text_center()
+                                    .text_size(d(11.))
+                                    .text_color(rgb(MUTED))
+                                    .child(format!("+{} more", n - placed)),
+                            );
+                        }
+                        if self.edit && matches!(zone.spot, Spot::Device(_)) {
+                            root = root.child(self.visibility_pill(zone, x(b.0 - 74.), y(a.1 + 36.), d(64.), s, cx));
+                        }
+                        let dim = (dark && matches!(zone.spot, Spot::Port(_))) || zone.hidden;
                         root = root.child(
                             div()
                                 .absolute()
@@ -1079,14 +1221,38 @@ impl Render for SoundMap {
             let selected = self.selected.contains(&app.key);
             let key = app.key.clone();
             let initial = app.name.chars().next().unwrap_or('?').to_uppercase().to_string();
+            let crowd = count(spot);
             let el = if self.minimal {
+                let chip = zones
+                    .iter()
+                    .find(|z| &z.spot == spot)
+                    .and_then(|z| match z.shape {
+                        Shape::Rect(a, b) if z.spot == Spot::Loose => {
+                            let per = (((b.0 - a.0) - 32.) / 162.).max(1.) as usize;
+                            Some(((b.1 - a.1 - 48.) / crowd.div_ceil(per) as f32).clamp(28., 44.) - 4.)
+                        }
+                        Shape::Rect(a, b) => Some(lane_step(b.1 - a.1, crowd).0 - 6.),
+                        _ => None,
+                    })
+                    .unwrap_or(40.)
+                    .min(40.);
+                // Narrow lanes (many devices) take narrower chips.
+                let chip_w = zones
+                    .iter()
+                    .find(|z| &z.spot == spot)
+                    .and_then(|z| match z.shape {
+                        Shape::Rect(a, b) if z.spot != Spot::Loose => Some(b.0 - a.0 - 12.),
+                        _ => None,
+                    })
+                    .unwrap_or(150.)
+                    .min(150.);
                 div()
                     .id(SharedString::from(format!("map-app-{}", key_id(&app.key))))
                     .absolute()
-                    .left(x(p.0 - 75.))
-                    .top(y(p.1 - 20.))
-                    .w(d(150.))
-                    .h(d(40.))
+                    .left(x(p.0 - chip_w / 2.))
+                    .top(y(p.1 - chip / 2.))
+                    .w(d(chip_w))
+                    .h(d(chip))
                     .rounded(d(12.))
                     .border(d(1.5))
                     .border_color(if lifted || selected { rgb(color) } else { rgb(0x404247) })
@@ -1099,7 +1265,7 @@ impl Render for SoundMap {
                     .when(!app.running, |e| e.opacity(0.6))
                     .child(
                         div()
-                            .size(d(28.))
+                            .size(d((chip - 12.).min(28.)))
                             .flex_shrink_0()
                             .rounded(d(8.))
                             .bg(rgb(color))
@@ -1113,10 +1279,14 @@ impl Render for SoundMap {
                     )
                     .child(div().flex_1().min_w_0().truncate().text_size(d(13.)).child(app.name.clone()))
             } else {
-                let size = if lifted { 56. } else { 50. };
+                let zone_of = zones.iter().find(|z| &z.spot == spot);
+                let grid = zone_of.is_some_and(is_grid);
+                let size = zone_of.map_or(puck_size(crowd), |z| zone_puck(z, crowd)) + if lifted { 6. } else { 0. };
                 // The label is not part of the puck: crowded orbits put
                 // labels over neighbours, and only the circle may grab.
-                root = root.child(
+                // Crowded, a name shows on hover (or while moving it).
+                let named = (crowd <= 8 && !grid) || lifted || selected || self.hovered.as_ref() == Some(&app.key);
+                root = root.when(named, |root| root.child(
                     div()
                         .absolute()
                         .left(x(p.0 - 55.))
@@ -1136,7 +1306,8 @@ impl Render for SoundMap {
                                 .text_color(rgb(0xc9cdd1))
                                 .child(app.name.clone()),
                         ),
-                );
+                ));
+                let hover_key = app.key.clone();
                 div()
                     .id(SharedString::from(format!("map-app-{}", key_id(&app.key))))
                     .absolute()
@@ -1150,9 +1321,17 @@ impl Render for SoundMap {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .text_size(d(19.))
+                    .text_size(d(size * 0.38))
                     .font_weight(FontWeight::SEMIBOLD)
                     .when(!app.running, |e| e.opacity(0.6))
+                    .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                        if *hovered {
+                            this.hovered = Some(hover_key.clone());
+                        } else if this.hovered.as_ref() == Some(&hover_key) {
+                            this.hovered = None;
+                        }
+                        cx.notify();
+                    }))
                     .shadow(vec![BoxShadow {
                         color: if selected { rgb(0xa6bfe7).into() } else { alpha(0x000000, 0.45) },
                         offset: point(px(0.), d(if selected { 0. } else { 5. })),
@@ -1294,6 +1473,37 @@ impl Render for SoundMap {
             );
         }
         root
+    }
+}
+
+/// A device planet in a grid of several (smaller than a lone device).
+fn is_grid(zone: &Zone) -> bool {
+    matches!((&zone.spot, &zone.shape), (Spot::Device(_), Shape::Circle(_, r)) if *r < 54.)
+}
+
+/// Puck diameter for an application in `zone`, which holds `n`.
+fn zone_puck(zone: &Zone, n: usize) -> f32 {
+    if is_grid(zone) {
+        puck_size(n).min(32.)
+    } else {
+        puck_size(n)
+    }
+}
+
+/// Puck diameter for a zone holding `n` applications.
+fn puck_size(n: usize) -> f32 {
+    (50. - 1.5 * (n as f32 - 6.).max(0.)).clamp(34., 50.)
+}
+
+/// Chip spacing in a lane of height `h` holding `n` applications, and how
+/// many fit (the last row says how many more there are).
+fn lane_step(h: f32, n: usize) -> (f32, usize) {
+    let room = h - 56.;
+    let step = (room / n.max(1) as f32).min(50.);
+    if step >= 30. {
+        (step, n)
+    } else {
+        (30., ((room / 30.) as usize).saturating_sub(1))
     }
 }
 
@@ -1477,6 +1687,11 @@ pub(crate) fn control(op: &str, request: &serde_json::Value, cx: &mut App) -> Re
                     "selected": map.selected.iter().collect::<Vec<_>>(),
                     "toast": map.toast.as_ref().map(|(t, _)| t.clone()),
                 }))
+            }
+            "map-devices" => {
+                map.edit = !map.edit;
+                cx.notify();
+                Ok(json!({"edit": map.edit}))
             }
             "map-minimal" => {
                 map.minimal = !map.minimal;
