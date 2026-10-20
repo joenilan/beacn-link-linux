@@ -21,7 +21,7 @@ const LOOSE: (f32, f32, f32, f32) = (30., 130., 140., 640.);
 /// How long a move shows as made before PipeWire confirms it.
 const SETTLE: Duration = Duration::from_millis(2500);
 /// Fade in and out, like Plasma's own overlays.
-const FADE: Duration = Duration::from_millis(180);
+const FADE: Duration = Duration::from_millis(650);
 /// How dark the tint over the blurred desktop gets.
 const DIM: f32 = 0.32;
 
