@@ -16,6 +16,8 @@ pub mod single_instance;
 #[cfg(all(feature = "link", target_os = "linux"))]
 mod sound_map;
 #[cfg(all(feature = "link", target_os = "linux"))]
+mod hotkey;
+#[cfg(all(feature = "link", target_os = "linux"))]
 mod updates;
 mod window_icon;
 

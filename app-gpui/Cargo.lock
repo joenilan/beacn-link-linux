@@ -574,8 +574,10 @@ name = "beacn-linx-gpui"
 version = "0.1.10"
 dependencies = [
  "anyhow",
+ "ashpd",
  "beacn-link-protocol",
  "beacn-linx-core",
+ "futures-util",
  "gpui-kit",
  "gpui-pre-linux",
  "raw-window-handle",
@@ -583,6 +585,7 @@ dependencies = [
  "semver",
  "serde_json",
  "sha2 0.10.9",
+ "tokio",
 ]
 
 [[package]]

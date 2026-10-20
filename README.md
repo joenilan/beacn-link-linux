@@ -53,7 +53,9 @@ Windows.
   Every output the system has is listed, and outputs you never use can be
   hidden (*Edit*).
 - The Sound map (orbit button in the header, *Sound map* in the tray, or
-  `linx --studio --map` for a keyboard shortcut) opens over the screen with
+  the system-wide shortcut, Ctrl+Alt+M by default: LinX registers it with
+  the desktop, and KDE lists it under System Settings → Shortcuts → LinX)
+  opens over the screen with
   the desktop blurred behind it. Every application that plays sound orbits
   where it plays; drag it onto a Link In, a device on this PC or *Not
   linked*. Spotify can play on the speakers while everything else stays on

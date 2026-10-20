@@ -63,6 +63,8 @@ pub(crate) struct LinkCore {
     pub(crate) map_minimal: bool,
     /// The open Sound map should fade out and close.
     pub(crate) map_close_requested: bool,
+    /// The system-wide Sound map shortcut.
+    hotkey: crate::hotkey::Hotkey,
 }
 impl Global for LinkCore {}
 impl LinkCore {
@@ -1765,6 +1767,7 @@ pub fn run(
             map_window: None,
             map_minimal: false,
             map_close_requested: false,
+            hotkey: crate::hotkey::Hotkey::spawn(),
         });
         cx.on_app_quit(|cx| {
             LinkCore::stop(cx);
@@ -1889,6 +1892,9 @@ fn tray_tick(cx: &mut App) -> bool {
         if let crate::single_instance::Request::Map(token) = request {
             crate::sound_map::toggle(token.clone(), cx);
         }
+    }
+    if cx.global::<LinkCore>().hotkey.take() && cx.global::<LinkCore>().worker.view().phase == Phase::Running {
+        crate::sound_map::toggle(None, cx);
     }
     if let Some(token) = requests.iter().find_map(|r| match r {
         crate::single_instance::Request::Show(token) => Some(token.clone()),
