@@ -244,11 +244,14 @@ impl SoundMap {
         };
         let mut zones = Vec::new();
         if self.minimal {
+            // Slimmer Link In lanes when many devices need the room.
+            let lane = if devices.len() > 4 { 146. } else { 172. };
+            let studio_end = 32. + 4. * lane + 3. * 12.;
             for c in 0..4u8 {
-                let x = 32. + c as f32 * 184.;
+                let x = 32. + c as f32 * (lane + 12.);
                 zones.push(zone(
                     Spot::Port(c + 1),
-                    Shape::Rect(P(x, 156.), P(x + 172., 626.)),
+                    Shape::Rect(P(x, 156.), P(x + lane, 626.)),
                     format!("Link In {}", c + 1),
                     colors[c as usize],
                 ));
@@ -257,11 +260,12 @@ impl SoundMap {
             let n = devices.len().max(1);
             let rows = n.div_ceil(4);
             let per_row = n.div_ceil(rows) as f32;
-            let w = (448. - 16. * (per_row - 1.)) / per_row;
+            let left = studio_end + 40.;
+            let w = ((1248. - left) - 12. * (per_row - 1.)) / per_row;
             let h = (470. - 16. * (rows as f32 - 1.)) / rows as f32;
             for (i, (name, description, hidden, in_use)) in devices.iter().enumerate() {
                 let (col, row) = ((i % per_row as usize) as f32, (i / per_row as usize) as f32);
-                let (x, y) = (800. + col * (w + 16.), 156. + row * (h + 16.));
+                let (x, y) = (left + col * (w + 12.), 156. + row * (h + 16.));
                 zones.push(Zone {
                     icon: device_icon(name, description),
                     hidden: *hidden,
@@ -276,7 +280,7 @@ impl SoundMap {
             }
             zones.push(zone(
                 Spot::Studio,
-                Shape::Rect(P(32., 118.), P(756., 150.)),
+                Shape::Rect(P(32., 118.), P(studio_end, 150.)),
                 "BEACN Studio (LinX)".into(),
                 colors[0],
             ));
@@ -301,7 +305,7 @@ impl SoundMap {
             let cols = n.div_ceil(4).clamp(1, 3);
             let rows = n.div_ceil(cols).max(1);
             let r = (54. - 4. * (n as f32 - 3.).max(0.)).clamp(30., 54.);
-            let gap = (560. / rows as f32).min(230.);
+            let gap = (620. / rows as f32).min(230.);
             let xs: &[f32] = match cols {
                 1 => &[1075.],
                 2 => &[985., 1160.],
@@ -363,11 +367,13 @@ impl SoundMap {
                         P(a.0 + 91. + (i % per) as f32 * 162., a.1 + 62. + (i / per) as f32 * step)
                     }
                     (Shape::Rect(a, b), true) => {
-                        let (step, fits) = lane_step(b.1 - a.1, n);
+                        // Room for Hide/Show under a device lane's name.
+                        let top = if self.edit && matches!(zone.spot, Spot::Device(_)) { 28. } else { 0. };
+                        let (step, fits) = lane_step(b.1 - a.1 - top, n);
                         if i >= fits {
                             continue;
                         }
-                        P((a.0 + b.0) / 2., a.1 + 46. + step / 2. + i as f32 * step)
+                        P((a.0 + b.0) / 2., a.1 + top + 46. + step / 2. + i as f32 * step)
                     }
                     (Shape::Rect(a, b), false) => {
                         let cols = if n > 7 { 2 } else { 1 };
@@ -380,11 +386,13 @@ impl SoundMap {
                         // A device among many: a tight ring around it, so
                         // its apps stay clear of the devices next to it.
                         let size = zone_puck(zone, n);
-                        let per = ((2. * std::f32::consts::PI * (r + size / 2. + 10.)) / (size + 6.)) as usize;
+                        let per = ((1.5 * std::f32::consts::PI * (r + size / 2. + 10.)) / (size + 6.)) as usize;
                         let (ring, j) = (i / per.max(1), i % per.max(1));
                         let in_ring = (n - ring * per).min(per) as f32;
                         let radius = r + size / 2. + 10. + ring as f32 * (size + 6.);
-                        let a = -std::f32::consts::FRAC_PI_2 + j as f32 / in_ring * 2. * std::f32::consts::PI;
+                        // The top three quarters: the name sits below.
+                        let span = 1.5 * std::f32::consts::PI;
+                        let a = -std::f32::consts::FRAC_PI_2 - span / 2. + (j as f32 + 0.5) / in_ring * span;
                         P(c.0 + a.cos() * radius, c.1 + a.sin() * radius)
                     }
                     (Shape::Circle(c, r), _) => {
@@ -401,7 +409,8 @@ impl SoundMap {
                         }
                         let in_ring = (n - first).min(5 + 3 * ring) as f32;
                         let radius = r + 58. + ring as f32 * (size + 14.);
-                        let step = ((size + 16.) / radius).min(0.62);
+                        // Up to four, names show: spaced for a name each.
+                        let step = if n <= 4 { (96. / radius).min(1.) } else { ((size + 16.) / radius).min(0.62) };
                         let a = base + ((i - first) as f32 - (in_ring - 1.) / 2.) * step;
                         P(c.0 + a.cos() * radius, c.1 + a.sin() * radius)
                     }
@@ -1130,8 +1139,13 @@ impl Render for SoundMap {
                         el.child(svg().path(zone.icon).size(d(r * 0.75)).text_color(rgb(zone.color)))
                     };
                     root = root.child(el);
-                    let label_y = if is_port && c.1 < HUB.1 { c.1 - r - 92. } else { c.1 + r + 10. };
-                    let label_y = if is_port && c.1 < HUB.1 { label_y.max(84.) } else { label_y };
+                    // Channels: the label on the hub side, clear of the
+                    // apps orbiting outward.
+                    let label_y = match (is_port, c.1 < HUB.1) {
+                        (true, true) => c.1 + r + 8.,
+                        (true, false) => c.1 - r - 42.,
+                        _ => c.1 + r + 10.,
+                    };
                     let label_w = (r * 4. + 40.).min(200.);
                     root = root.child(
                         zone_label(&zone.label, &sub, x(c.0 - label_w / 2.), y(label_y), d(label_w), s)
@@ -1174,7 +1188,8 @@ impl Render for SoundMap {
                             );
                         }
                         if self.edit && matches!(zone.spot, Spot::Device(_)) {
-                            root = root.child(self.visibility_pill(zone, x(b.0 - 74.), y(a.1 + 36.), d(64.), s, cx));
+                            let w = (b.0 - a.0 - 28.).min(80.);
+                            root = root.child(self.visibility_pill(zone, x(a.0 + 14.), y(a.1 + 36.), d(w), s, cx));
                         }
                         let dim = (dark && matches!(zone.spot, Spot::Port(_))) || zone.hidden;
                         root = root.child(
@@ -1231,7 +1246,10 @@ impl Render for SoundMap {
                             let per = (((b.0 - a.0) - 32.) / 162.).max(1.) as usize;
                             Some(((b.1 - a.1 - 48.) / crowd.div_ceil(per) as f32).clamp(28., 44.) - 4.)
                         }
-                        Shape::Rect(a, b) => Some(lane_step(b.1 - a.1, crowd).0 - 6.),
+                        Shape::Rect(a, b) => {
+                            let top = if self.edit && matches!(z.spot, Spot::Device(_)) { 28. } else { 0. };
+                            Some(lane_step(b.1 - a.1 - top, crowd).0 - 6.)
+                        }
                         _ => None,
                     })
                     .unwrap_or(40.)
@@ -1285,7 +1303,7 @@ impl Render for SoundMap {
                 // The label is not part of the puck: crowded orbits put
                 // labels over neighbours, and only the circle may grab.
                 // Crowded, a name shows on hover (or while moving it).
-                let named = (crowd <= 8 && !grid) || lifted || selected || self.hovered.as_ref() == Some(&app.key);
+                let named = (crowd <= 4 && !grid) || lifted || selected || self.hovered.as_ref() == Some(&app.key);
                 root = root.when(named, |root| root.child(
                     div()
                         .absolute()
