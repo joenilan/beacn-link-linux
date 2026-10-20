@@ -63,6 +63,14 @@ pub struct App {
     /// Placement that overrides the remembered channel, if any.
     pub pinned: Option<Target>,
     pub running: bool,
+    /// Icon name the application gives (`application.icon-name`), if any.
+    pub icon: String,
+    /// Process binary, for finding its icon when it gives none.
+    pub binary: String,
+    /// Its streams' own volume in thousandths, when known.
+    pub volume: Option<u16>,
+    /// Every stream muted.
+    pub mute: bool,
     pub streams: Vec<Stream>,
 }
 
@@ -104,9 +112,21 @@ pub fn applications(streams: &[Stream], remembered: &BTreeMap<String, u8>) -> Ve
             key,
             channel: 0,
             running: false,
+            icon: String::new(),
+            binary: String::new(),
+            volume: None,
+            mute: true,
             streams: vec![],
         });
         app.running |= stream.running;
+        if app.icon.is_empty() {
+            app.icon = stream.icon.clone();
+        }
+        if app.binary.is_empty() {
+            app.binary = stream.binary.clone();
+        }
+        app.volume = app.volume.or(stream.volume);
+        app.mute &= stream.mute;
         app.streams.push(stream.clone());
     }
     let mut apps: Vec<App> = apps.into_values().collect();
@@ -1046,6 +1066,25 @@ impl LinkService {
         }
     }
 
+    /// Set an application's own volume (linear, up to 1.5) and/or mute on
+    /// every one of its streams, as a desktop mixer does.
+    pub fn set_app_level(&mut self, key: &str, volume: Option<f32>, mute: Option<bool>) -> Result<(), String> {
+        let nodes: Vec<u32> = self
+            .state
+            .apps
+            .iter()
+            .filter(|a| a.key == key)
+            .flat_map(|a| a.streams.iter().map(|s| s.node))
+            .collect();
+        if nodes.is_empty() {
+            return Err("That application stopped playing.".into());
+        }
+        for node in nodes {
+            self.bus.set_stream_level(node, volume, mute)?;
+        }
+        Ok(())
+    }
+
     /// Set a Link In channel's send level (volume 0..1, mute). Session-manager
     /// state keeps it for the next connection like any device volume.
     pub fn set_level(
@@ -1175,6 +1214,36 @@ impl LinkService {
         }
     }
 
+    /// Put an application back as it was before a move (undo): its
+    /// placement and remembered channel, then wherever that plays.
+    pub fn restore(&mut self, key: &str, pinned: Option<Target>, remembered: Option<u8>) -> Result<(), String> {
+        if let Some(Target::Device(name)) = &pinned {
+            if !self.state.outputs.iter().any(|o| &o.name == name) {
+                return Err("That output is no longer available.".into());
+            }
+        }
+        match remembered {
+            Some(c) if (1..=CHANNELS as u8).contains(&c) => {
+                self.remembered.insert(key.to_owned(), c);
+            }
+            _ => {
+                self.remembered.remove(key);
+            }
+        }
+        self.intent.remove(key);
+        match pinned {
+            Some(target) => {
+                self.pinned.insert(key.to_owned(), target);
+            }
+            None => {
+                self.pinned.remove(key);
+            }
+        }
+        self.reroute(key, false);
+        let _ = self.observe();
+        Ok(())
+    }
+
     /// Move an application's streams to where it belongs now. `follow`
     /// clears LinX's target so they play on the default output instead.
     fn reroute(&mut self, key: &str, follow: bool) {
@@ -1265,6 +1334,7 @@ mod tests {
             binary: String::new(),
             media: String::new(),
             node_name: String::new(),
+            ..Default::default()
         }
     }
     fn rec(name: &[u8], a: u8) -> Record {

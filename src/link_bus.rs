@@ -24,6 +24,7 @@ unsafe extern "C" {
     fn lb_route_named(bus: *mut c_void, node: u32, serial: u64, name: *const c_char) -> c_int;
     fn lb_set_level(bus: *mut c_void, channel: c_int, volume: f32, mute: c_int) -> c_int;
     fn lb_set_default_output(bus: *mut c_void, name: *const c_char) -> c_int;
+    fn lb_set_stream_level(bus: *mut c_void, node: u32, volume: f32, mute: c_int) -> c_int;
 }
 
 /// A Link In channel's send level as PipeWire reports it.
@@ -116,6 +117,11 @@ pub struct Stream {
     pub binary: String,
     pub media: String,
     pub node_name: String,
+    /// `application.icon-name`, when the application gives one.
+    pub icon: String,
+    /// The stream's own volume in thousandths (1000 = 100%), when known.
+    pub volume: Option<u16>,
+    pub mute: bool,
 }
 impl Stream {
     /// Per-application identity, matching the session manager's own
@@ -156,6 +162,14 @@ pub struct Output {
     /// `node.name`: what the default-output setting refers to.
     pub name: String,
     pub description: String,
+    /// `device.icon-name` (from the node or its device), when known.
+    pub icon: String,
+    /// `device.form-factor`: speaker, headphone, headset, hdmi...
+    pub form_factor: String,
+    /// The device this output belongs to (0 for virtual outputs); outputs
+    /// sharing one are channels of the same hardware.
+    pub device: u64,
+    pub device_description: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -239,7 +253,7 @@ pub fn parse(raw: &str) -> Result<Snapshot, String> {
                     mute: f[4] == "1",
                 };
             }
-            "stream" if f.len() == 14 => snapshot.streams.push(Stream {
+            "stream" if f.len() == 17 => snapshot.streams.push(Stream {
                 node: int(f[1])?,
                 serial: int(f[2])?,
                 client: int(f[3])?,
@@ -253,16 +267,27 @@ pub fn parse(raw: &str) -> Result<Snapshot, String> {
                 binary: unhex(f[11])?,
                 media: unhex(f[12])?,
                 node_name: unhex(f[13])?,
+                icon: unhex(f[14])?,
+                volume: f[15]
+                    .parse::<f32>()
+                    .ok()
+                    .filter(|v| v.is_finite() && *v >= 0.)
+                    .map(|v| (v * 1000.).round().min(u16::MAX as f32) as u16),
+                mute: f[16] == "1",
             }),
             "default" if f.len() == 3 => {
                 snapshot.default_output = Some(unhex(f[1])?).filter(|s| !s.is_empty());
                 snapshot.configured_output = Some(unhex(f[2])?).filter(|s| !s.is_empty());
             }
-            "output" if f.len() == 5 => snapshot.outputs.push(Output {
+            "output" if f.len() == 9 => snapshot.outputs.push(Output {
                 node: int(f[1])?,
                 serial: int(f[2])?,
                 name: unhex(f[3])?,
                 description: unhex(f[4])?,
+                icon: unhex(f[5])?,
+                form_factor: unhex(f[6])?,
+                device: int(f[7])?,
+                device_description: unhex(f[8])?,
             }),
             _ => return Err(format!("Unexpected bus record {:?}.", f[0])),
         }
@@ -383,6 +408,20 @@ impl LinkBus {
     }
     /// Make an output (by node.name) the desktop's default, like
     /// `wpctl set-default`.
+    /// Set an application stream's own volume (linear, up to 1.5) and/or
+    /// mute, as a desktop mixer does. `None` leaves that part unchanged.
+    pub fn set_stream_level(&mut self, node: u32, volume: Option<f32>, mute: Option<bool>) -> Result<(), String> {
+        let volume = match volume {
+            Some(v) if v.is_finite() => v.clamp(0.0, 1.5),
+            Some(_) => return Err("Invalid level.".into()),
+            None => -1.0,
+        };
+        let mute = mute.map_or(-1, c_int::from);
+        if unsafe { lb_set_stream_level(self.raw, node, volume, mute) } != 0 {
+            return Err("That application stopped playing.".into());
+        }
+        Ok(())
+    }
     pub fn set_default_output(&mut self, name: &str) -> Result<(), String> {
         let c_name = std::ffi::CString::new(name).map_err(|_| "Invalid output name.")?;
         if unsafe { lb_set_default_output(self.raw, c_name.as_ptr()) } != 0 {
@@ -420,11 +459,12 @@ mod tests {
     #[test]
     fn parses_status_and_streams() {
         let raw = format!(
-            "bus\t1\t1\t4\t2\t3\t8\t77\t\nlevel\t2\t1\t0.500000\t1\nstream\t104\t3345\t101\t184809\t3\t3\t0\t3\t1\t{}\t{}\t{}\t{}\n",
+            "bus\t1\t1\t4\t2\t3\t8\t77\t\nlevel\t2\t1\t0.500000\t1\nstream\t104\t3345\t101\t184809\t3\t3\t0\t3\t1\t{}\t{}\t{}\t{}\t{}\t0.750000\t1\n",
             hex("Firefox"),
             hex("firefox-esr"),
             hex("AudioStream"),
-            hex("Firefox")
+            hex("Firefox"),
+            hex("firefox")
         );
         let s = parse(&raw).unwrap();
         assert!(s.status.complete());
@@ -446,14 +486,18 @@ mod tests {
         assert_eq!(stream.target_channel, 3);
         assert!(stream.running && stream.movable && stream.info);
         assert_eq!(stream.app_key(), "Firefox");
+        assert_eq!((stream.icon.as_str(), stream.volume, stream.mute), ("firefox", Some(750), true));
     }
     #[test]
     fn parses_outputs_and_defaults() {
         let raw = format!(
-            "bus\t1\t1\t4\t2\t3\t8\t77\t\ndefault\t{}\t\noutput\t86\t900\t{}\t{}\noutput\t250\t901\t{}\t{}\n",
+            "bus\t1\t1\t4\t2\t3\t8\t77\t\ndefault\t{}\t\noutput\t86\t900\t{}\t{}\t{}\t{}\t52\t{}\noutput\t250\t901\t{}\t{}\t\t\t0\t\n",
             hex("alsa_output.pci.analog-stereo"),
             hex("alsa_output.pci.analog-stereo"),
             hex("Speakers"),
+            hex("audio-card-analog"),
+            hex("internal"),
+            hex("Family 17h HD Audio"),
             hex("linx_link_in_1"),
             hex("LinX Link Out"),
         );
@@ -498,7 +542,7 @@ mod tests {
     #[test]
     fn app_key_falls_back_to_binary_then_node() {
         let raw = format!(
-            "bus\t1\t1\t4\t2\t2\t8\t0\t\nstream\t5\t6\t7\t8\t2\t0\t1\t0\t0\t\t{}\t\t{}\n",
+            "bus\t1\t1\t4\t2\t2\t8\t0\t\nstream\t5\t6\t7\t8\t2\t0\t1\t0\t0\t\t{}\t\t{}\t\t-1.000000\t0\n",
             hex("game.exe"),
             hex("node")
         );

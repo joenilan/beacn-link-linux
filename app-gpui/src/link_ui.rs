@@ -1969,6 +1969,10 @@ mod tests {
             pinned: None,
             running,
             streams: 1,
+            icon: String::new(),
+            binary: String::new(),
+            volume: None,
+            mute: false,
         }
     }
 

@@ -84,6 +84,13 @@ enum Grab {
     Apps(Vec<String>),
     Everything,
 }
+
+/// Each moved application's placement and remembered channel before a move,
+/// and the sound output before an Everything move.
+struct Undo {
+    apps: Vec<(String, Option<Target>, Option<u8>)>,
+    default: Option<String>,
+}
 struct Drag {
     grab: Grab,
     start: P,
@@ -109,6 +116,18 @@ pub struct SoundMap {
     /// Moves sent but not yet seen in the graph.
     pending: BTreeMap<String, (Spot, Instant)>,
     toast: Option<(String, Instant)>,
+    /// The toast offers Undo for the move it reports.
+    toast_undo: bool,
+    /// How to put back the last move.
+    undo: Option<Undo>,
+    /// The application the keyboard is on (arrow keys).
+    focused: Option<String>,
+    /// Apps in reading order, for the arrow keys (from the last frame).
+    order: Vec<String>,
+    /// Volume just set by scrolling, shown until PipeWire echoes it.
+    volume_edit: Option<(String, f32, Instant)>,
+    /// Mute just toggled (middle click), shown until PipeWire echoes it.
+    mute_edit: Option<(String, bool, Instant)>,
     levels: [f32; 4],
     started: Instant,
     /// Fading out; the window closes when done.
@@ -160,6 +179,12 @@ impl SoundMap {
             pressed_empty: false,
             pending: BTreeMap::new(),
             toast: None,
+            toast_undo: false,
+            undo: None,
+            focused: None,
+            order: Vec::new(),
+            volume_edit: None,
+            mute_edit: None,
             levels: [0.; 4],
             started: Instant::now(),
             closing: None,
@@ -473,15 +498,47 @@ impl SoundMap {
             Ok(()) => true,
             Err(error) => {
                 self.toast = Some((error, Instant::now()));
+                self.toast_undo = false;
                 false
             }
         }
     }
 
-    fn drop_on(&mut self, spot: Spot, zones: &[Zone], cx: &mut Context<Self>) {
-        let Some(drag) = self.drag.take() else { return };
+    fn remember_undo(&mut self, keys: &[String], everything: bool) {
+        let apps = self
+            .view
+            .apps
+            .iter()
+            .filter(|a| everything || keys.contains(&a.key))
+            .map(|a| (a.key.clone(), a.pinned.clone(), a.remembered))
+            .collect();
+        let default = everything.then(|| self.view.default_output.clone()).flatten();
+        self.undo = Some(Undo { apps, default });
+    }
+
+    /// Put back the last move: the sound output (after Everything), then
+    /// each application as it was.
+    fn undo(&mut self, cx: &mut Context<Self>) {
+        let Some(undo) = self.undo.take() else {
+            self.toast = Some(("Nothing to undo".into(), Instant::now()));
+            self.toast_undo = false;
+            return;
+        };
+        if let Some(default) = undo.default {
+            self.send(LinkCommand::DefaultOutput(default), cx);
+        }
+        for (key, pinned, remembered) in undo.apps {
+            self.pending.remove(&key);
+            self.send(LinkCommand::Restore { key, pinned, remembered }, cx);
+        }
+        self.toast = Some(("Undone".into(), Instant::now()));
+        self.toast_undo = false;
+        cx.notify();
+    }
+
+    fn drop_on(&mut self, grab: Grab, spot: Spot, zones: &[Zone], cx: &mut Context<Self>) {
         if spot == Spot::Studio {
-            return self.back_to_studio(drag.grab, cx);
+            return self.back_to_studio(grab, cx);
         }
         let target = match &spot {
             Spot::Port(c) => Some(Target::Channel(*c)),
@@ -489,13 +546,15 @@ impl SoundMap {
             Spot::Loose | Spot::Studio => None,
         };
         let name = Self::zone_name(zones, &spot);
-        match drag.grab {
+        match grab {
             Grab::Everything => {
+                self.remember_undo(&[], true);
                 if self.send(LinkCommand::PlaceAll(target), cx) {
                     for app in &self.view.apps {
                         self.pending.insert(app.key.clone(), (spot.clone(), Instant::now()));
                     }
                     self.toast = Some((format!("Everything → {name}"), Instant::now()));
+                    self.toast_undo = true;
                 }
             }
             Grab::Apps(keys) => {
@@ -509,6 +568,9 @@ impl SoundMap {
                             .is_some_and(|a| self.spot_of(a) != spot)
                     })
                     .collect();
+                if !moving.is_empty() {
+                    self.remember_undo(&moving, false);
+                }
                 let mut moved = Vec::new();
                 for key in moving {
                     if self.send(LinkCommand::Place(key.clone(), target.clone()), cx) {
@@ -527,6 +589,7 @@ impl SoundMap {
                     many => format!("{} apps", many.len()),
                 };
                 self.toast = Some((format!("{who} → {name}"), Instant::now()));
+                self.toast_undo = true;
             }
         }
     }
@@ -548,7 +611,9 @@ impl SoundMap {
                     self.toast = Some(("BEACN Studio is not available.".into(), Instant::now()));
                     return;
                 };
+                self.remember_undo(&[], true);
                 if self.send(LinkCommand::DefaultOutput(linx), cx) {
+                    self.toast_undo = true;
                     for app in &self.view.apps {
                         let spot = app.remembered.map_or(Spot::Loose, Spot::Port);
                         self.pending.insert(app.key.clone(), (spot, Instant::now()));
@@ -564,6 +629,10 @@ impl SoundMap {
                     .filter(|a| keys.contains(&a.key) && self.spot_of(a) != Spot::Port(home(a)))
                     .cloned()
                     .collect();
+                let keys: Vec<String> = apps.iter().map(|a| a.key.clone()).collect();
+                if !keys.is_empty() {
+                    self.remember_undo(&keys, false);
+                }
                 let mut moved = Vec::new();
                 for app in &apps {
                     let channel = home(app);
@@ -577,6 +646,7 @@ impl SoundMap {
                     [(name, channel)] => Some((format!("{name} → Link In {channel}"), Instant::now())),
                     many => Some((format!("{} apps → back to their channels", many.len()), Instant::now())),
                 };
+                self.toast_undo = true;
             }
         }
     }
@@ -659,14 +729,13 @@ impl SoundMap {
         }
         let p = self.plane(event.position);
         let zones = self.zones(cx);
-        if let Some(drag) = &self.drag {
+        if let Some(drag) = self.drag.take() {
             if drag.moved {
                 if let Some(zone) = zones.iter().find(|z| z.hit(p)) {
                     let spot = zone.spot.clone();
-                    self.drop_on(spot, &zones, cx);
+                    self.drop_on(drag.grab, spot, &zones, cx);
                 }
             }
-            self.drag = None;
         } else if let Some((a, b)) = self.lasso.take() {
             if self.pressed_empty && !zones.iter().any(|z| z.hit(p)) {
                 // A click on empty space puts the map away.
@@ -684,6 +753,147 @@ impl SoundMap {
         }
         self.pressed_empty = false;
         cx.notify();
+    }
+
+    /// The map from the keyboard: arrows pick an application (Space adds it
+    /// to the selection, A selects all), then 1-4 Link In, 5-9 devices, 0 Not
+    /// linked, S back to the Studio. With Shift, the key moves everything.
+    fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if self.closing.is_some() {
+            return;
+        }
+        let key = event.keystroke.key.as_str();
+        let m = &event.keystroke.modifiers;
+        let zones = self.zones(cx);
+        let step = |this: &mut Self, forward: bool| {
+            if this.order.is_empty() {
+                return;
+            }
+            let at = this.focused.as_ref().and_then(|f| this.order.iter().position(|k| k == f));
+            let next = match (at, forward) {
+                (None, true) => 0,
+                (None, false) => this.order.len() - 1,
+                (Some(i), true) => (i + 1) % this.order.len(),
+                (Some(i), false) => (i + this.order.len() - 1) % this.order.len(),
+            };
+            this.focused = Some(this.order[next].clone());
+        };
+        let target = match key {
+            "escape" => return self.close(window, cx),
+            "z" if m.control => return self.undo(cx),
+            "right" | "down" => return { step(self, true); cx.notify() },
+            "left" | "up" => return { step(self, false); cx.notify() },
+            "tab" => return { step(self, !m.shift); cx.notify() },
+            "space" => {
+                if let Some(f) = self.focused.clone() {
+                    if !self.selected.remove(&f) {
+                        self.selected.insert(f);
+                    }
+                }
+                return cx.notify();
+            }
+            "a" if !m.control => {
+                self.selected = self.view.apps.iter().map(|a| a.key.clone()).collect();
+                return cx.notify();
+            }
+            "0" | ")" | "n" => Some(Spot::Loose),
+            "s" | "b" => Some(Spot::Studio),
+            k => {
+                let digit = match k {
+                    "!" => Some(1),
+                    "@" => Some(2),
+                    "#" => Some(3),
+                    "$" => Some(4),
+                    "%" => Some(5),
+                    "^" => Some(6),
+                    "&" => Some(7),
+                    "*" => Some(8),
+                    "(" => Some(9),
+                    _ => k.parse::<usize>().ok(),
+                };
+                match digit {
+                    Some(d @ 1..=4) => Some(Spot::Port(d as u8)),
+                    Some(d @ 5..=9) => zones
+                        .iter()
+                        .filter(|z| matches!(z.spot, Spot::Device(_)))
+                        .nth(d - 5)
+                        .map(|z| z.spot.clone()),
+                    _ => None,
+                }
+            }
+        };
+        let Some(spot) = target else { return };
+        let everything = m.shift;
+        let grab = if everything {
+            Grab::Everything
+        } else if !self.selected.is_empty() {
+            Grab::Apps(self.selected.iter().cloned().collect())
+        } else if let Some(f) = self.focused.clone() {
+            Grab::Apps(vec![f])
+        } else {
+            self.toast = Some(("Pick an app with the arrow keys first".into(), Instant::now()));
+            self.toast_undo = false;
+            return cx.notify();
+        };
+        self.drop_on(grab, spot, &zones, cx);
+        cx.notify();
+    }
+
+    /// Scroll on an application: its own volume, in 5% steps.
+    fn scroll_volume(&mut self, key: String, event: &ScrollWheelEvent, cx: &mut Context<Self>) {
+        cx.stop_propagation();
+        let lines = match event.delta {
+            ScrollDelta::Lines(p) => p.y,
+            ScrollDelta::Pixels(p) => f32::from(p.y) / 40.,
+        };
+        if lines == 0. {
+            return;
+        }
+        let current = self.volume_of(&key);
+        let volume = ((current + lines * 0.05) * 100.).round().clamp(0., 100.) / 100.;
+        self.volume_edit = Some((key.clone(), volume, Instant::now()));
+        self.send(LinkCommand::AppLevel { key, volume: Some(volume), mute: None }, cx);
+        cx.notify();
+    }
+
+    /// Middle click on an application: mute or unmute it.
+    fn toggle_mute(&mut self, key: String, cx: &mut Context<Self>) {
+        cx.stop_propagation();
+        let mute = !self.muted(&key);
+        self.mute_edit = Some((key.clone(), mute, Instant::now()));
+        self.send(LinkCommand::AppLevel { key, volume: None, mute: Some(mute) }, cx);
+        cx.notify();
+    }
+
+    /// An application's volume as shown: a just-set value, else PipeWire's.
+    fn volume_of(&self, key: &str) -> f32 {
+        if let Some((k, v, at)) = &self.volume_edit {
+            if k == key && at.elapsed() < Duration::from_millis(1500) {
+                return *v;
+            }
+        }
+        self.view
+            .apps
+            .iter()
+            .find(|a| a.key == key)
+            .and_then(|a| a.volume)
+            .map_or(1., |v| v as f32 / 1000.)
+    }
+
+    /// The volume of this application was just changed by scrolling.
+    fn adjusting(&self, key: &str) -> bool {
+        self.volume_edit
+            .as_ref()
+            .is_some_and(|(k, _, at)| k == key && at.elapsed() < Duration::from_millis(1500))
+    }
+
+    fn muted(&self, key: &str) -> bool {
+        if let Some((k, m, at)) = &self.mute_edit {
+            if k == key && at.elapsed() < Duration::from_millis(1500) {
+                return *m;
+            }
+        }
+        self.view.apps.iter().find(|a| a.key == key).is_some_and(|a| a.mute)
     }
 
     fn hover(&self, zones: &[Zone]) -> Option<Spot> {
@@ -725,6 +935,41 @@ fn bezier(a: P, b: P, t: f32) -> P {
 
 /// A cable to paint: from, to, color, opacity, flow speed (0 = still).
 type Cable = (P, P, u32, f32, f32);
+/// A volume ring: center, radius, level 0..1, color, muted.
+type Ring = (P, f32, f32, u32, bool);
+
+fn paint_rings(rings: Vec<Ring>, frame: (f32, f32, f32), window: &mut Window) {
+    let (s, ox, oy) = frame;
+    let at = |p: P| point(px(ox + p.0 * s), px(oy + p.1 * s));
+    for (c, r, level, color, muted) in rings {
+        let arc = |from: f32, to: f32, width: f32, color: Hsla, window: &mut Window| {
+            let steps = ((to - from).abs() * 24.).ceil().max(2.) as usize;
+            let mut path = PathBuilder::stroke(px(width * s));
+            for i in 0..=steps {
+                let a = from + (to - from) * i as f32 / steps as f32;
+                let p = at(P(c.0 + a.cos() * r, c.1 + a.sin() * r));
+                if i == 0 {
+                    path.move_to(p);
+                } else {
+                    path.line_to(p);
+                }
+            }
+            if let Ok(path) = path.build() {
+                window.paint_path(path, color);
+            }
+        };
+        let top = -std::f32::consts::FRAC_PI_2;
+        let full = 2. * std::f32::consts::PI;
+        if muted {
+            arc(top, top + full, 2.5, alpha(0xe58a8a, 0.9), window);
+            continue;
+        }
+        arc(top, top + full, 2.5, alpha(0x000000, 0.35), window);
+        if level > 0.001 {
+            arc(top, top + full * level.min(1.), 3., alpha(color, 0.95), window);
+        }
+    }
+}
 
 fn paint_cables(cables: Vec<Cable>, frame: (f32, f32, f32), phase: f32, window: &mut Window) {
     let (s, ox, oy) = frame;
@@ -802,6 +1047,21 @@ impl Render for SoundMap {
             shown.insert(key.clone(), p);
         }
         self.shown = shown;
+        // Reading order for the arrow keys: by target, then top to bottom.
+        let mut order: Vec<(usize, i32, i32, String)> = slots
+            .iter()
+            .filter_map(|(k, p)| {
+                let app = self.view.apps.iter().find(|a| &a.key == k)?;
+                let spot = self.spot_of(app);
+                let zone = zones.iter().position(|z| z.spot == spot).unwrap_or(usize::MAX);
+                Some((zone, (p.1 / 8.) as i32, p.0 as i32, k.clone()))
+            })
+            .collect();
+        order.sort();
+        self.order = order.into_iter().map(|(_, _, _, k)| k).collect();
+        if self.focused.as_ref().is_some_and(|f| !self.order.contains(f)) {
+            self.focused = None;
+        }
         // Every frame while something moves; otherwise 30 per second for
         // the flowing cables and levels.
         let settling = self.shown.iter().any(|(k, p)| slots.get(k).is_some_and(|s| p.dist(*s) > 0.5));
@@ -868,6 +1128,23 @@ impl Render for SoundMap {
             }
         }
 
+        // Volume rings: an application below full volume, muted, or being
+        // adjusted shows its level around its puck.
+        let mut rings: Vec<Ring> = Vec::new();
+        if !self.minimal {
+            for app in &self.view.apps {
+                let Some(p) = self.shown.get(&app.key).copied() else { continue };
+                let volume = self.volume_of(&app.key);
+                let muted = self.muted(&app.key);
+                if volume > 0.995 && !muted && !self.adjusting(&app.key) {
+                    continue;
+                }
+                let spot = &spot_of[&app.key];
+                let crowd = count(spot);
+                let size = zones.iter().find(|z| &z.spot == spot).map_or(puck_size(crowd), |z| zone_puck(z, crowd));
+                rings.push((p, size / 2. + 5., volume, zone_color(spot), muted));
+            }
+        }
         let frame = self.frame;
         let mut root = div()
             .id("sound-map")
@@ -879,16 +1156,15 @@ impl Render for SoundMap {
             .opacity(fade)
             .text_color(rgb(TEXT))
             .font_family("Segoe UI")
-            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                if event.keystroke.key == "escape" {
-                    this.close(window, cx);
-                }
-            }))
+            .on_key_down(cx.listener(Self::key_down))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::mouse_down))
             .on_mouse_move(cx.listener(Self::mouse_move))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))
             .child(
-                canvas(|_, _, _| (), move |_, _, window, _| paint_cables(cables, frame, phase, window))
+                canvas(|_, _, _| (), move |_, _, window, _| {
+                    paint_cables(cables, frame, phase, window);
+                    paint_rings(rings, frame, window);
+                })
                     .absolute()
                     .size_full(),
             );
@@ -916,7 +1192,7 @@ impl Render for SoundMap {
                         .gap(d(4.))
                         .child(div().text_size(d(26.)).font_weight(FontWeight::BOLD).child("Sound map"))
                         .child(div().text_size(d(13.)).text_color(rgb(MUTED)).child(
-                            "Drag an app onto a channel or a device. Drag across empty space to pick up several. Drop the orb to move everything. Esc closes.",
+                            "Drag an app onto a channel or a device, or pick one with the arrow keys and press a target's key (Shift moves everything). Scroll an app for its volume, middle-click to mute. Ctrl+Z undoes, Esc closes.",
                         )),
                 )
                 .child(
@@ -1055,8 +1331,29 @@ impl Render for SoundMap {
         }
 
         // Zones.
+        let mut badges: Vec<(f32, f32, String)> = Vec::new();
+        let devices_in_order: Vec<&Spot> =
+            zones.iter().filter(|z| matches!(z.spot, Spot::Device(_))).map(|z| &z.spot).collect();
         for zone in &zones {
             let hot = hover.as_ref() == Some(&zone.spot);
+            // Its key, in a small badge on its corner.
+            let key = match &zone.spot {
+                Spot::Port(n) => Some(n.to_string()),
+                Spot::Device(_) => devices_in_order
+                    .iter()
+                    .position(|d| *d == &zone.spot)
+                    .filter(|i| *i < 5)
+                    .map(|i| (i + 5).to_string()),
+                Spot::Loose => Some("0".into()),
+                Spot::Studio => Some("S".into()),
+            };
+            if let Some(key) = key {
+                let (bx, by) = match zone.shape {
+                    Shape::Circle(c, r) => (c.0 + r * 0.72, c.1 - r * 0.98),
+                    Shape::Rect(a, b) => (b.0 - 14., a.1 - 1.),
+                };
+                badges.push((bx, by, key));
+            }
             if zone.spot == Spot::Studio {
                 // Orbit view: the hub above. Lanes: a bar over the channels.
                 if let (true, Shape::Rect(a, b)) = (self.minimal, &zone.shape) {
@@ -1222,6 +1519,27 @@ impl Render for SoundMap {
             }
         }
 
+        for (bx, by, key) in badges {
+            root = root.child(
+                div()
+                    .absolute()
+                    .left(x(bx - 9.))
+                    .top(y(by - 9.))
+                    .size(d(18.))
+                    .rounded(d(5.))
+                    .border_1()
+                    .border_color(rgb(0x404247))
+                    .bg(alpha(0x1c1f23, 0.9))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_size(d(10.))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(rgb(MUTED))
+                    .child(key),
+            );
+        }
+
         // Applications.
         for app in &self.view.apps {
             let Some(p) = self.shown.get(&app.key).copied() else { continue };
@@ -1237,7 +1555,13 @@ impl Render for SoundMap {
             let selected = self.selected.contains(&app.key);
             let key = app.key.clone();
             let initial = app.name.chars().next().unwrap_or('?').to_uppercase().to_string();
+            let icon = crate::app_icons::find(&app.icon, &app.binary, &app.name);
             let crowd = count(spot);
+            let focused = self.focused.as_ref() == Some(&app.key);
+            let volume = self.volume_of(&app.key);
+            let muted = self.muted(&app.key);
+            let adjusting = self.adjusting(&app.key);
+            let level_text = if muted { "muted".to_owned() } else { format!("{:.0}%", volume * 100.) };
             let el = if self.minimal {
                 let chip = zones
                     .iter()
@@ -1282,21 +1606,38 @@ impl Render for SoundMap {
                     .pl(d(6.))
                     .pr(d(12.))
                     .when(!app.running, |e| e.opacity(0.6))
-                    .child(
-                        div()
-                            .size(d((chip - 12.).min(28.)))
+                    .when(focused, |e| e.border_color(rgb(TEXT)))
+                    .child({
+                        let face = d((chip - 12.).min(28.));
+                        let tile = div()
+                            .size(face)
                             .flex_shrink_0()
                             .rounded(d(8.))
-                            .bg(rgb(color))
                             .flex()
                             .items_center()
-                            .justify_center()
-                            .text_size(d(13.))
-                            .font_weight(FontWeight::BOLD)
-                            .text_color(rgb(0x1c1f23))
-                            .child(initial),
-                    )
+                            .justify_center();
+                        match &icon {
+                            Some(path) => tile
+                                .bg(alpha(color, 0.22))
+                                .child(img(path.clone()).size(d((chip - 16.).min(24.)))),
+                            None => tile
+                                .bg(rgb(color))
+                                .text_size(d(13.))
+                                .font_weight(FontWeight::BOLD)
+                                .text_color(rgb(0x1c1f23))
+                                .child(initial),
+                        }
+                    })
                     .child(div().flex_1().min_w_0().truncate().text_size(d(13.)).child(app.name.clone()))
+                    .when(adjusting || muted || volume < 0.995, |e| {
+                        e.child(
+                            div()
+                                .flex_shrink_0()
+                                .text_size(d(11.))
+                                .text_color(rgb(if muted { 0xe58a8a } else { MUTED }))
+                                .child(level_text.clone()),
+                        )
+                    })
             } else {
                 let zone_of = zones.iter().find(|z| &z.spot == spot);
                 let grid = zone_of.is_some_and(is_grid);
@@ -1304,7 +1645,9 @@ impl Render for SoundMap {
                 // The label is not part of the puck: crowded orbits put
                 // labels over neighbours, and only the circle may grab.
                 // Crowded, a name shows on hover (or while moving it).
-                let named = (crowd <= 4 && !grid) || lifted || selected || self.hovered.as_ref() == Some(&app.key);
+                let named = (crowd <= 4 && !grid) || lifted || selected || focused || adjusting
+                    || self.hovered.as_ref() == Some(&app.key);
+                let label = if adjusting { format!("{} · {level_text}", app.name) } else { app.name.clone() };
                 root = root.when(named, |root| root.child(
                     div()
                         .absolute()
@@ -1323,7 +1666,7 @@ impl Render for SoundMap {
                                 .bg(alpha(0x1c1f23, 0.85))
                                 .text_size(d(12.))
                                 .text_color(rgb(0xc9cdd1))
-                                .child(app.name.clone()),
+                                .child(label),
                         ),
                 ));
                 let hover_key = app.key.clone();
@@ -1351,15 +1694,26 @@ impl Render for SoundMap {
                         }
                         cx.notify();
                     }))
+                    .when(muted, |e| e.opacity(0.45))
                     .shadow(vec![BoxShadow {
-                        color: if selected { rgb(0xa6bfe7).into() } else { alpha(0x000000, 0.45) },
-                        offset: point(px(0.), d(if selected { 0. } else { 5. })),
-                        blur_radius: d(if selected { 0. } else { 14. }),
-                        spread_radius: d(if selected { 4. } else { 0. }),
+                        color: if focused {
+                            rgb(TEXT).into()
+                        } else if selected {
+                            rgb(0xa6bfe7).into()
+                        } else {
+                            alpha(0x000000, 0.45)
+                        },
+                        offset: point(px(0.), d(if selected || focused { 0. } else { 5. })),
+                        blur_radius: d(if selected || focused { 0. } else { 14. }),
+                        spread_radius: d(if selected || focused { 4. } else { 0. }),
                         inset: false,
                     }])
-                    .child(initial)
+                    .child(match &icon {
+                        Some(path) => img(path.clone()).size(d(size * 0.6)).into_any_element(),
+                        None => div().child(initial).into_any_element(),
+                    })
             };
+            let (scroll_key, mute_key) = (key.clone(), key.clone());
             root = root.child(
                 el.cursor_grab()
                     .on_mouse_down(
@@ -1368,6 +1722,13 @@ impl Render for SoundMap {
                             this.grab_app(key.clone(), event, cx)
                         }),
                     )
+                    .on_mouse_down(
+                        MouseButton::Middle,
+                        cx.listener(move |this, _: &MouseDownEvent, _, cx| this.toggle_mute(mute_key.clone(), cx)),
+                    )
+                    .on_scroll_wheel(cx.listener(move |this, event: &ScrollWheelEvent, _, cx| {
+                        this.scroll_volume(scroll_key.clone(), event, cx)
+                    }))
                     .test_support(),
             );
         }
@@ -1457,7 +1818,8 @@ impl Render for SoundMap {
         }
 
         if let Some((text, at)) = &self.toast {
-            if at.elapsed() < Duration::from_millis(2600) {
+            let undo = self.toast_undo && self.undo.is_some();
+            if at.elapsed() < Duration::from_millis(if undo { 5000 } else { 2600 }) {
                 root = root.child(
                     div()
                         .absolute()
@@ -1475,7 +1837,26 @@ impl Render for SoundMap {
                                 .text_color(rgb(0x1c1f23))
                                 .text_size(d(13.))
                                 .font_weight(FontWeight::SEMIBOLD)
-                                .child(text.clone()),
+                                .flex()
+                                .items_center()
+                                .gap(d(12.))
+                                .child(text.clone())
+                                .when(undo, |pill| {
+                                    pill.child(
+                                        div()
+                                            .id("map-undo")
+                                            .px(d(10.))
+                                            .py(d(2.))
+                                            .rounded_full()
+                                            .bg(rgb(0x1c1f23))
+                                            .text_color(rgb(TEXT))
+                                            .cursor_pointer()
+                                            .child("Undo")
+                                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                                            .on_click(cx.listener(|this, _, _, cx| this.undo(cx)))
+                                            .test_support(),
+                                    )
+                                }),
                         ),
                 );
             }
@@ -1664,7 +2045,20 @@ pub(crate) fn control(op: &str, request: &serde_json::Value, cx: &mut App) -> Re
                                 modifiers,
                                 click_count: 1,
                             }),
-                            _ => return Err("kind is down, move or up".to_string()),
+                            Some("scroll") => PlatformInput::ScrollWheel(ScrollWheelEvent {
+                            position,
+                            delta: ScrollDelta::Lines(point(0., e["lines"].as_f64().unwrap_or(1.) as f32)),
+                            modifiers,
+                            touch_phase: TouchPhase::Moved,
+                        }),
+                        Some("middle") => PlatformInput::MouseDown(MouseDownEvent {
+                            button: MouseButton::Middle,
+                            position,
+                            modifiers,
+                            click_count: 1,
+                            first_mouse: false,
+                        }),
+                        _ => return Err("kind is down, move, up, scroll or middle".to_string()),
                         };
                         window.dispatch_event(input, cx);
                         // Lay out again so the next event hits what is now drawn.
@@ -1699,11 +2093,15 @@ pub(crate) fn control(op: &str, request: &serde_json::Value, cx: &mut App) -> Re
                     "zones": zones.iter().map(|z| json!({"spot": spot_name(&z.spot), "label": z.label, "center": at(z.center())})).collect::<Vec<_>>(),
                     "apps": map.view.apps.iter().filter_map(|a| {
                         let p = *map.shown.get(&a.key)?;
-                        Some(json!({"key": a.key, "spot": spot_name(&map.spot_of(a)), "at": at(p)}))
+                        Some(json!({"key": a.key, "spot": spot_name(&map.spot_of(a)), "at": at(p),
+                            "volume": a.volume, "mute": a.mute,
+                            "icon": crate::app_icons::find(&a.icon, &a.binary, &a.name).is_some()}))
                     }).collect::<Vec<_>>(),
                     "everything": at(orb),
                     "empty": at(P(700., 760.)),
                     "selected": map.selected.iter().collect::<Vec<_>>(),
+                    "focused": map.focused,
+                    "undo": map.undo.is_some(),
                     "toast": map.toast.as_ref().map(|(t, _)| t.clone()),
                 }))
             }

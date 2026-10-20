@@ -77,6 +77,10 @@ struct lb_object {
   int direction;
   /* links */
   uint32_t out_node, out_port, in_node, in_port;
+  /* output streams: their own volume (application volume) and mute */
+  float volume;
+  bool mute, level_known;
+  uint32_t channels;
   struct lb_object *next;
 };
 
@@ -409,8 +413,46 @@ static void lb_node_info(void *data, const struct pw_node_info *info) {
   o->state = info->state;
   o->info = true;
 }
+/* Average channel volume and mute from a Props param; false when the param
+ * is not the main Props object. */
+static bool lb_parse_level(const struct spa_pod *param, float *volume, bool *mute,
+                           uint32_t *channels) {
+  struct spa_pod *volumes = NULL;
+  bool m = *mute;
+  if (spa_pod_parse_object(param, SPA_TYPE_OBJECT_Props, NULL,
+                           SPA_PROP_channelVolumes, SPA_POD_OPT_Pod(&volumes),
+                           SPA_PROP_mute, SPA_POD_OPT_Bool(&m)) < 0)
+    return false;
+  float values[SPA_AUDIO_MAX_CHANNELS];
+  uint32_t n = volumes ? spa_pod_copy_array(volumes, SPA_TYPE_Float, values,
+                                            SPA_AUDIO_MAX_CHANNELS) : 0;
+  if (!n) return false;
+  float sum = 0.f;
+  for (uint32_t i = 0; i < n; i++) sum += isfinite(values[i]) ? values[i] : 0.f;
+  *volume = sum / (float)n;
+  *mute = m;
+  *channels = n;
+  return true;
+}
+/* An application stream's own volume, whoever set it (the app, a desktop
+ * mixer, the session manager's restore, or LinX). */
+static void lb_node_param(void *data, int seq, uint32_t id, uint32_t index,
+                          uint32_t next, const struct spa_pod *param) {
+  struct lb_object *o = data;
+  (void)seq; (void)index; (void)next;
+  if (id != SPA_PARAM_Props || !param) return;
+  float volume = o->volume;
+  bool mute = o->mute;
+  uint32_t channels = 0;
+  if (lb_parse_level(param, &volume, &mute, &channels)) {
+    o->channels = channels;
+    o->volume = volume;
+    o->mute = mute;
+    o->level_known = true;
+  }
+}
 static const struct pw_node_events lb_node_events = {
-    .version = PW_VERSION_NODE_EVENTS, .info = lb_node_info};
+    .version = PW_VERSION_NODE_EVENTS, .info = lb_node_info, .param = lb_node_param};
 static void lb_client_info(void *data, const struct pw_client_info *info) {
   struct lb_object *o = data;
   if (info->props) pw_properties_update(o->props, info->props);
@@ -470,8 +512,13 @@ static void lb_global(void *data, uint32_t id, uint32_t permissions,
     if (mc && (spa_streq(mc, "Stream/Output/Audio") || spa_streq(mc, "Audio/Sink"))) {
       o->proxy = pw_registry_bind(b->registry, id, type,
                                   SPA_MIN(version, (uint32_t)PW_VERSION_NODE), 0);
-      if (o->proxy)
+      if (o->proxy) {
         pw_proxy_add_object_listener(o->proxy, &o->listener, &lb_node_events, o);
+        if (spa_streq(mc, "Stream/Output/Audio")) {
+          uint32_t ids[] = {SPA_PARAM_Props};
+          pw_node_subscribe_params((struct pw_node *)o->proxy, ids, 1);
+        }
+      }
     }
   }
   o->next = b->objects;
@@ -1247,9 +1294,10 @@ static const char *lb_identity(struct link_bus *b, struct lb_object *node, const
  *       <hex error>   (Link Out: capture transport coded like the bus's)
  *   stream <node> <serial> <client> <pid> <state> <channel> <dont_move>
  *          <target_channel> <info> <hex app name> <hex binary> <hex media name>
- *          <hex node name>
+ *          <hex node name> <hex icon name> <volume, -1 unknown> <mute>
  *   default <hex default output> <hex configured default output>  (node.name)
- *   output <node> <serial> <hex node name> <hex description>  (Audio/Sink)
+ *   output <node> <serial> <hex node name> <hex description> <hex icon name>
+ *          <hex form factor> <device id> <hex device description>  (Audio/Sink)
  * Returns 0, -1 on failure, -2 when the buffer is too small. */
 int lb_snapshot(struct link_bus *b, char *out, size_t size) {
   if (!b || !out || size < 64) return -1;
@@ -1325,7 +1373,10 @@ int lb_snapshot(struct link_bus *b, char *out, size_t size) {
     lb_hex(&buf, &left, lb_prop(o, PW_KEY_MEDIA_NAME));
     lb_put(&buf, &left, "\t");
     lb_hex(&buf, &left, lb_prop(o, PW_KEY_NODE_NAME));
-    lb_put(&buf, &left, "\n");
+    lb_put(&buf, &left, "\t");
+    lb_hex(&buf, &left, lb_identity(b, o, PW_KEY_APP_ICON_NAME));
+    lb_put(&buf, &left, "\t%.6f\t%d\n", o->level_known ? (double)o->volume : -1.0,
+           o->level_known && o->mute);
   }
   lb_put(&buf, &left, "default\t");
   lb_hex(&buf, &left, b->default_sink);
@@ -1338,10 +1389,25 @@ int lb_snapshot(struct link_bus *b, char *out, size_t size) {
     if (!name || !*name) continue;
     const char *description = lb_prop(o, PW_KEY_NODE_DESCRIPTION);
     if (!description || !*description) description = lb_prop(o, PW_KEY_NODE_NICK);
+    /* The device it belongs to: several outputs of one device (a GoXLR's
+     * System/Game/Chat...) share it. */
+    uint64_t device_id = lb_num(lb_prop(o, PW_KEY_DEVICE_ID));
+    struct lb_object *device = device_id ? lb_find(b, (uint32_t)device_id) : NULL;
+    if (device && device->kind != LB_DEVICE) device = NULL;
+    const char *icon = lb_prop(o, PW_KEY_DEVICE_ICON_NAME);
+    if ((!icon || !*icon) && device) icon = lb_prop(device, PW_KEY_DEVICE_ICON_NAME);
+    const char *form = lb_prop(o, PW_KEY_DEVICE_FORM_FACTOR);
+    if ((!form || !*form) && device) form = lb_prop(device, PW_KEY_DEVICE_FORM_FACTOR);
     lb_put(&buf, &left, "output\t%u\t%" PRIu64 "\t", o->id, o->serial);
     lb_hex(&buf, &left, name);
     lb_put(&buf, &left, "\t");
     lb_hex(&buf, &left, description && *description ? description : name);
+    lb_put(&buf, &left, "\t");
+    lb_hex(&buf, &left, icon);
+    lb_put(&buf, &left, "\t");
+    lb_hex(&buf, &left, form);
+    lb_put(&buf, &left, "\t%" PRIu64 "\t", device ? device_id : 0);
+    lb_hex(&buf, &left, device ? lb_prop(device, PW_KEY_DEVICE_DESCRIPTION) : NULL);
     lb_put(&buf, &left, "\n");
   }
   int result = left < 64 ? -2 : 0;
@@ -1457,6 +1523,37 @@ int lb_set_level(struct link_bus *b, int channel, float volume, int mute) {
     if (mute >= 0) spa_pod_builder_add(&pb, SPA_PROP_mute, SPA_POD_Bool(mute != 0), 0);
     struct spa_pod *props = spa_pod_builder_pop(&pb, &frame);
     if (props && pw_node_set_param((struct pw_node *)x->proxy, SPA_PARAM_Props, 0, props) >= 0)
+      result = 0;
+  }
+  pw_thread_loop_unlock(b->loop);
+  return result;
+}
+
+/* Set an application stream's own volume (linear 0..1.5, negative keeps
+ * it) and mute (negative keeps it), as a desktop mixer does. */
+int lb_set_stream_level(struct link_bus *b, uint32_t node, float volume, int mute) {
+  if (!b || volume > 1.5f || (volume >= 0.f && !isfinite(volume))) return -1;
+  pw_thread_loop_lock(b->loop);
+  int result = -1;
+  struct lb_object *o = lb_find(b, node);
+  if (!b->broken && o && o->kind == LB_NODE && o->proxy &&
+      spa_streq(lb_prop(o, PW_KEY_MEDIA_CLASS), "Stream/Output/Audio")) {
+    uint8_t buffer[512];
+    struct spa_pod_builder pb = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
+    struct spa_pod_frame frame;
+    spa_pod_builder_push_object(&pb, &frame, SPA_TYPE_OBJECT_Props, SPA_PARAM_Props);
+    if (volume >= 0.f) {
+      uint32_t n = o->channels;
+      if (n < 1 || n > SPA_AUDIO_MAX_CHANNELS) n = (uint32_t)lb_num(lb_prop(o, PW_KEY_AUDIO_CHANNELS));
+      if (n < 1 || n > SPA_AUDIO_MAX_CHANNELS) n = 2;
+      float values[SPA_AUDIO_MAX_CHANNELS];
+      for (uint32_t i = 0; i < n; i++) values[i] = volume;
+      spa_pod_builder_add(&pb, SPA_PROP_channelVolumes,
+                          SPA_POD_Array(sizeof(float), SPA_TYPE_Float, n, values), 0);
+    }
+    if (mute >= 0) spa_pod_builder_add(&pb, SPA_PROP_mute, SPA_POD_Bool(mute != 0), 0);
+    struct spa_pod *props = spa_pod_builder_pop(&pb, &frame);
+    if (props && pw_node_set_param((struct pw_node *)o->proxy, SPA_PARAM_Props, 0, props) >= 0)
       result = 0;
   }
   pw_thread_loop_unlock(b->loop);

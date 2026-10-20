@@ -37,6 +37,13 @@ pub struct LinkApp {
     pub pinned: Option<Target>,
     pub running: bool,
     pub streams: usize,
+    /// `application.icon-name`, when the application gives one.
+    pub icon: String,
+    /// Process binary, to find an icon when it gives none.
+    pub binary: String,
+    /// Its own volume in thousandths (1000 = 100%), when known.
+    pub volume: Option<u16>,
+    pub mute: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -132,6 +139,19 @@ pub enum LinkCommand {
     Place(String, Option<Target>),
     /// Place every application at once (a device becomes the sound output).
     PlaceAll(Option<Target>),
+    /// An application's own volume (linear, up to 1.5) and/or mute.
+    AppLevel {
+        key: String,
+        volume: Option<f32>,
+        mute: Option<bool>,
+    },
+    /// Put an application back exactly as it was (undo): its placement and
+    /// remembered channel.
+    Restore {
+        key: String,
+        pinned: Option<Target>,
+        remembered: Option<u8>,
+    },
 }
 
 /// Per-application channel memory: `~/.config/linx/channels`.
@@ -476,6 +496,19 @@ fn run(rx: mpsc::Receiver<LinkCommand>, latest: Arc<Mutex<LinkView>>, ending: Ar
                     };
                     view.message = result.err();
                 }
+                LinkCommand::AppLevel { key, volume, mute } => {
+                    // Scrolling sends many; a stale one is not worth a message.
+                    if let Some(s) = service.as_mut() {
+                        let _ = s.set_app_level(&key, volume, mute);
+                    }
+                }
+                LinkCommand::Restore { key, pinned, remembered } => {
+                    let result = match service.as_mut() {
+                        Some(s) => s.restore(&key, pinned, remembered),
+                        None => Err("Connect LinX first.".into()),
+                    };
+                    view.message = result.err();
+                }
                 LinkCommand::AutoConnect(enabled) => {
                     view.auto_connect = enabled;
                     view.message = match preferences.as_mut() {
@@ -615,6 +648,10 @@ fn fill(view: &mut LinkView, service: &LinkService) {
             pinned: a.pinned.clone(),
             running: a.running,
             streams: a.streams.len(),
+            icon: a.icon.clone(),
+            binary: a.binary.clone(),
+            volume: a.volume,
+            mute: a.mute,
         })
         .collect();
     for channel in 1..=CHANNELS {
