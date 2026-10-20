@@ -571,7 +571,7 @@ dependencies = [
 
 [[package]]
 name = "beacn-linx-gpui"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "anyhow",
  "ashpd",
