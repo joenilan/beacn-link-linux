@@ -15,6 +15,12 @@ the published crate source with the changes below; licenses are unchanged.
   compositor for a token from the latest click instead, for a process LinX
   starts (the updater's *Restart LinX*), so the new window opens in front.
 
+  Also: newer KWin offers blur only through the standard
+  `ext_background_effect_v1` protocol, not `org_kde_kwin_blur`; a window
+  with `WindowBackgroundAppearance::Blurred` now uses it when present
+  (`globals.background_effect`, `update_window`). The Sound map blurs the
+  desktop behind it this way.
+
 Both let a tray click bring LinX's window to the front on Wayland (KWin's focus
 stealing prevention otherwise only marks it as wanting attention). Until
 0.1.10 this patch lived in `gpui-fast-linux`, which `gpui-kit` does not use

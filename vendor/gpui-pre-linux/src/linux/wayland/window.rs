@@ -109,6 +109,9 @@ pub struct WaylandWindowState {
     app_id: Option<String>,
     appearance: WindowAppearance,
     blur: Option<org_kde_kwin_blur::OrgKdeKwinBlur>,
+    background_effect: Option<
+        wayland_protocols::ext::background_effect::v1::client::ext_background_effect_surface_v1::ExtBackgroundEffectSurfaceV1,
+    >,
     viewport: Option<wp_viewport::WpViewport>,
     outputs: HashMap<ObjectId, Output>,
     display: Option<(ObjectId, Output)>,
@@ -611,6 +614,7 @@ impl WaylandWindowState {
             surface,
             app_id: options.app_id,
             blur: None,
+            background_effect: None,
             viewport,
             globals,
             outputs: HashMap::default(),
@@ -785,6 +789,9 @@ impl Drop for WaylandWindow {
         // Destroy blur first, this has no dependencies.
         if let Some(blur) = &state.blur {
             blur.release();
+        }
+        if let Some(effect) = state.background_effect.take() {
+            effect.destroy();
         }
 
         // Decorations must be destroyed before the xdg state.
@@ -2344,7 +2351,24 @@ fn update_window(mut state: RefMut<WaylandWindowState>) {
         state.surface.set_opaque_region(None);
     }
 
-    if let Some(ref blur_manager) = state.globals.blur_manager {
+    if let Some(manager) = state.globals.background_effect.clone() {
+        let blurred = state.background_appearance == WindowBackgroundAppearance::Blurred;
+        if blurred && state.background_effect.is_none() {
+            let effect = manager.get_background_effect(&state.surface, &state.globals.qh, ());
+            state.background_effect = Some(effect);
+        }
+        if let Some(effect) = &state.background_effect {
+            if blurred {
+                // The whole surface; the compositor clips it to the size.
+                let all = state.globals.compositor.create_region(&state.globals.qh, ());
+                all.add(0, 0, i32::MAX, i32::MAX);
+                effect.set_blur_region(Some(&all));
+                all.destroy();
+            } else {
+                effect.set_blur_region(None);
+            }
+        }
+    } else if let Some(ref blur_manager) = state.globals.blur_manager {
         if state.background_appearance == WindowBackgroundAppearance::Blurred {
             if state.blur.is_none() {
                 let blur = blur_manager.create(&state.surface, &state.globals.qh, ());

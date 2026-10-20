@@ -20,6 +20,10 @@ const ORB: P = P(800., 725.);
 const LOOSE: (f32, f32, f32, f32) = (30., 130., 140., 640.);
 /// How long a move shows as made before PipeWire confirms it.
 const SETTLE: Duration = Duration::from_millis(2500);
+/// Fade in and out, like Plasma's own overlays.
+const FADE: Duration = Duration::from_millis(180);
+/// How dark the tint over the blurred desktop gets.
+const DIM: f32 = 0.32;
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 struct P(f32, f32);
@@ -97,6 +101,8 @@ pub struct SoundMap {
     toast: Option<(String, Instant)>,
     levels: [f32; 4],
     started: Instant,
+    /// Fading out; the window closes when done.
+    closing: Option<Instant>,
     /// Scale and origin of the plane in the window, from the last frame.
     frame: (f32, f32, f32),
     focus: FocusHandle,
@@ -142,6 +148,7 @@ impl SoundMap {
             toast: None,
             levels: [0.; 4],
             started: Instant::now(),
+            closing: None,
             frame: (1., 0., 0.),
             focus,
         }
@@ -385,11 +392,29 @@ impl SoundMap {
         }
     }
 
-    fn close(&mut self, window: &mut Window, _cx: &mut Context<Self>) {
-        window.remove_window();
+    fn close(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.closing.is_none() {
+            self.closing = Some(Instant::now());
+            self.drag = None;
+            self.lasso = None;
+            cx.notify();
+        }
+    }
+
+    /// 0 (hidden) to 1 (shown), eased.
+    fn shown_amount(&self) -> f32 {
+        let fade = FADE.as_secs_f32();
+        let t = match self.closing {
+            Some(at) => 1. - (at.elapsed().as_secs_f32() / fade).min(1.),
+            None => (self.started.elapsed().as_secs_f32() / fade).min(1.),
+        };
+        1. - (1. - t).powi(3)
     }
 
     fn mouse_down(&mut self, event: &MouseDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.closing.is_some() {
+            return;
+        }
         let p = self.plane(event.position);
         self.selected.clear();
         self.lasso = Some((p, p));
@@ -440,6 +465,9 @@ impl SoundMap {
     }
 
     fn mouse_up(&mut self, event: &MouseUpEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if self.closing.is_some() {
+            return;
+        }
         let p = self.plane(event.position);
         let zones = self.zones(cx);
         if let Some(drag) = &self.drag {
@@ -536,11 +564,18 @@ fn paint_cables(cables: Vec<Cable>, frame: (f32, f32, f32), phase: f32, window: 
 
 impl Render for SoundMap {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if std::mem::take(&mut cx.global_mut::<LinkCore>().map_close_requested) {
+            self.close(window, cx);
+        }
+        if self.closing.is_some_and(|at| at.elapsed() >= FADE) {
+            window.defer(cx, |window, _| window.remove_window());
+        }
         self.refresh(cx);
         window.request_animation_frame();
+        let fade = self.shown_amount();
         let viewport = window.viewport_size();
         let (vw, vh) = (f32::from(viewport.width), f32::from(viewport.height));
-        let s = (vw / (PLANE.0 + 40.)).min(vh / (PLANE.1 + 40.)).clamp(0.5, 1.4);
+        let s = (vw / (PLANE.0 + 40.)).min(vh / (PLANE.1 + 40.)).clamp(0.5, 1.4) * (0.96 + 0.04 * fade);
         self.frame = (s, (vw - PLANE.0 * s) / 2., (vh - PLANE.1 * s) / 2.);
         let (_, ox, oy) = self.frame;
         let x = |v: f32| px(ox + v * s);
@@ -638,7 +673,8 @@ impl Render for SoundMap {
             .size_full()
             .relative()
             .overflow_hidden()
-            .bg(hsla(0., 0., 0.03, 0.72))
+            .bg(hsla(0., 0., 0.02, DIM * fade))
+            .opacity(fade)
             .text_color(rgb(TEXT))
             .font_family("Segoe UI")
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
@@ -1149,11 +1185,13 @@ fn zone_label(label: &str, sub: &str, left: Pixels, top: Pixels, width: Pixels, 
 pub(crate) fn toggle(token: Option<String>, cx: &mut App) {
     if let Some(handle) = cx.global::<LinkCore>().map_window {
         if cx.windows().contains(&handle) {
-            let _ = handle.update(cx, |_, window, _| window.remove_window());
-            cx.global_mut::<LinkCore>().map_window = None;
+            // Fades out, then closes.
+            cx.global_mut::<LinkCore>().map_close_requested = true;
+            let _ = handle.update(cx, |_, window, _| window.refresh());
             return;
         }
     }
+    cx.global_mut::<LinkCore>().map_close_requested = false;
     if let Some(token) = token {
         gpui_linux::set_pending_activation_token(token);
     }
@@ -1180,7 +1218,8 @@ pub(crate) fn toggle(token: Option<String>, cx: &mut App) {
         // Anchored to every edge with no size: the compositor stretches it
         // over the whole monitor it opens on.
         window_bounds: Some(WindowBounds::Windowed(Bounds::new(point(px(0.), px(0.)), size(px(0.), px(0.))))),
-        window_background: WindowBackgroundAppearance::Transparent,
+        // The desktop shows through, blurred, as behind Plasma's overlays.
+        window_background: WindowBackgroundAppearance::Blurred,
         app_id: Some("io.github.linx".into()),
         focus: true,
         ..Default::default()

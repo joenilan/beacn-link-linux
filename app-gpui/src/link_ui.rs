@@ -61,6 +61,8 @@ pub(crate) struct LinkCore {
     pub(crate) map_window: Option<AnyWindowHandle>,
     /// The Sound map shows lanes instead of orbits.
     pub(crate) map_minimal: bool,
+    /// The open Sound map should fade out and close.
+    pub(crate) map_close_requested: bool,
 }
 impl Global for LinkCore {}
 impl LinkCore {
@@ -1762,6 +1764,7 @@ pub fn run(
             console_window: None,
             map_window: None,
             map_minimal: false,
+            map_close_requested: false,
         });
         cx.on_app_quit(|cx| {
             LinkCore::stop(cx);
