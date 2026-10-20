@@ -23,6 +23,13 @@ pub fn enabled() -> bool {
         .is_some_and(|text| is_ours(&text) && !text.contains("Hidden=true"))
 }
 
+/// Whether the login entry starts LinX headless (no window, no interface).
+pub fn headless() -> bool {
+    path()
+        .and_then(|p| fs::read_to_string(p).ok())
+        .is_some_and(|text| is_ours(&text) && text.lines().any(|l| l.starts_with("Exec=") && l.contains(" --headless")))
+}
+
 fn is_ours(text: &str) -> bool {
     text.lines().any(|l| l.trim() == "X-LinX-Autostart=1")
 }
@@ -80,7 +87,7 @@ pub fn set(enable: bool, args: &[String]) -> Result<(), String> {
     let program = std::env::current_exe().map_err(|e| e.to_string())?;
     let program = program.to_str().ok_or("LinX's path is not valid text.")?;
     let mut args = args.to_vec();
-    if !args.iter().any(|a| a == "--start-hidden") {
+    if !args.iter().any(|a| a == "--start-hidden" || a == "--headless") {
         args.push("--start-hidden".into());
     }
     let parent = path.parent().ok_or("No autostart directory.")?;

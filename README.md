@@ -69,6 +69,11 @@ Windows.
   can be undone (the *Undo* button, or Ctrl+Z). *Devices* hides outputs you
   never use. *Minimal view* shows the same as lanes; Esc or a click on empty
   space closes it.
+- Headless mode (`linx --studio --headless`, or *At login, start in the
+  background* in Settings): like BEACN Link on Windows, only routing and the
+  tray run, about 30 MB instead of 165 MB. Opening the window, the Sound map
+  or the shortcut switches to the full LinX (applications return to their
+  outputs for a moment while it reconnects).
 - Light and dark themes, with five accent palettes.
 
 Tested with BEACN Studio and BEACN App on Debian 13 (PipeWire 1.4.2):

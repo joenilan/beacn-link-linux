@@ -28,7 +28,7 @@ fn main() {
     }
     if args == ["--help"] {
         println!(
-            "LinX\nDefault: read-only application discovery.\n--studio: Link Console (studio-enabled build); four Link Out channels and four Link In returns on BEACN Studio, any application on any channel, BEACN App publication. One LinX per session: launching it again shows the running window. Closing the window keeps LinX in the tray.\n--studio-legacy: earlier single-application desktop session.\n--start-hidden: with --studio, start in the tray (minimized without one).\n--map: with --studio, open or close the Sound map over the screen (bind it to a keyboard shortcut).\nOptional: --private-runtime PATH --core NAME\nOptional: --software-renderer (Linux; installed Mesa CPU Vulkan, this process only)\nOptional: --control-socket PATH (private same-user diagnostics and screenshots; off unless given)"
+            "LinX\nDefault: read-only application discovery.\n--studio: Link Console (studio-enabled build); four Link Out channels and four Link In returns on BEACN Studio, any application on any channel, BEACN App publication. One LinX per session: launching it again shows the running window. Closing the window keeps LinX in the tray.\n--studio-legacy: earlier single-application desktop session.\n--start-hidden: with --studio, start in the tray (minimized without one).\n--map: with --studio, open or close the Sound map over the screen (bind it to a keyboard shortcut).\n--headless: with --studio, run like BEACN Link on Windows: routing and the tray only, no window or interface until one is opened.\nOptional: --private-runtime PATH --core NAME\nOptional: --software-renderer (Linux; installed Mesa CPU Vulkan, this process only)\nOptional: --control-socket PATH (private same-user diagnostics and screenshots; off unless given)"
         );
         return;
     }
@@ -42,11 +42,12 @@ fn main() {
     // The Link Console: persistent Link channels (default Studio mode).
     #[cfg(all(feature = "link", target_os = "linux"))]
     {
-        let hidden = args.iter().any(|a| a == "--start-hidden");
+        let headless = args.iter().any(|a| a == "--headless");
+        let hidden = headless || args.iter().any(|a| a == "--start-hidden");
         let map = args.iter().any(|a| a == "--map");
         let rest: Vec<_> = args
             .iter()
-            .filter(|a| *a != "--start-hidden" && *a != "--map")
+            .filter(|a| *a != "--start-hidden" && *a != "--map" && *a != "--headless")
             .collect();
         if rest.len() == 1 && rest[0] == "--studio" {
             use beacn_linx_gpui::single_instance::{claim, Claim};
@@ -81,6 +82,11 @@ fn main() {
             let mut login = vec!["--studio".to_string()];
             if software == 1 {
                 login.push("--software-renderer".into());
+            }
+            if headless {
+                // No window or interface toolkit until one is asked for.
+                beacn_linx_gpui::headless::run(instance, login);
+                return;
             }
             beacn_linx_gpui::link_ui::run(hidden, map, login, instance);
             return;

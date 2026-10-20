@@ -27,7 +27,7 @@ pub(crate) fn key_id(key: &str) -> String {
     key.bytes().map(|b| format!("{b:02x}")).collect()
 }
 
-fn status_of(view: &LinkView) -> Status {
+pub(crate) fn status_of(view: &LinkView) -> Status {
     match view.phase {
         Phase::Starting => Status::Connecting,
         Phase::Paused => Status::Disconnected,
@@ -1435,7 +1435,10 @@ impl Render for LinkInterface {
                             .label("Start LinX when you log in")
                             .checked(cx.global::<LinkCore>().autostart)
                             .on_change(cx.listener(|this, enabled: &bool, _, cx| {
-                                let args = cx.global::<LinkCore>().login_args.clone();
+                                let mut args = cx.global::<LinkCore>().login_args.clone();
+                                if beacn_linx_core::autostart::headless() {
+                                    args.push("--headless".into());
+                                }
                                 match beacn_linx_core::autostart::set(*enabled, &args) {
                                     Ok(()) => {
                                         cx.global_mut::<LinkCore>().autostart = *enabled;
@@ -1443,6 +1446,21 @@ impl Render for LinkInterface {
                                     }
                                     Err(error) => this.feedback = Some(error),
                                 }
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        Switch::new("launch-headless")
+                            .small()
+                            .label("At login, start in the background without the window (uses less memory)")
+                            .disabled(!cx.global::<LinkCore>().autostart)
+                            .checked(beacn_linx_core::autostart::headless())
+                            .on_change(cx.listener(|this, headless: &bool, _, cx| {
+                                let mut args = cx.global::<LinkCore>().login_args.clone();
+                                if *headless {
+                                    args.push("--headless".into());
+                                }
+                                this.feedback = beacn_linx_core::autostart::set(true, &args).err();
                                 cx.notify();
                             })),
                     )
