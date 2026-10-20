@@ -7,6 +7,10 @@ pub fn tool_svg(path: &str) -> Option<String> {
         "console/expand.svg" => "M14 4h6v6m0-6-8 8M10 20H4v-6m0 6 8-8",
         "console/arrow.svg" => "M4 12h15m-6-6 6 6-6 6",
         "console/speaker.svg" => "M11 5 6 9H3v6h3l5 4ZM15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14",
+        "console/headphones.svg" => "M3 18v-6a9 9 0 0 1 18 0v6M21 19a2 2 0 0 1-2 2h-1v-6h3ZM3 19a2 2 0 0 0 2 2h1v-6H3Z",
+        "console/monitor.svg" => "M4 4h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2ZM8 21h8M12 17v4",
+        "console/orbit.svg" => "M12 9a3 3 0 1 1 0 6 3 3 0 0 1 0-6ZM4.5 7.5a9 9 0 0 1 13-2.6M19.5 16.5a9 9 0 0 1-13 2.6M19 5a1.5 1.5 0 1 1 0 .1M5 19a1.5 1.5 0 1 1 0 .1",
+        "console/close.svg" => "M6 6l12 12M18 6 6 18",
         _ => return None,
     };
     Some(format!(

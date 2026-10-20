@@ -11,6 +11,8 @@ pub const STOP: u8 = 2;
 pub const QUIT: u8 = 4;
 /// A sound output was picked; read it with [`Tray::take_output`].
 pub const OUTPUT: u8 = 8;
+/// "Sound map" was chosen.
+pub const MAP: u8 = 16;
 #[derive(Clone, PartialEq, Eq)]
 struct View {
     status: Status,
@@ -88,6 +90,15 @@ impl ksni::Tray for Item {
                 label: "Open LinX".into(),
                 activate: Box::new(|item: &mut Self| {
                     item.actions.fetch_or(SHOW, Ordering::Release);
+                }),
+                ..Default::default()
+            }
+            .into(),
+            StandardItem {
+                label: "Sound map".into(),
+                enabled: self.view.running,
+                activate: Box::new(|item: &mut Self| {
+                    item.actions.fetch_or(MAP, Ordering::Release);
                 }),
                 ..Default::default()
             }

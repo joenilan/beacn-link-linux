@@ -147,8 +147,33 @@ fn execute(
                 .map_err(|e| e.to_string())?;
             Ok(json!({"dispatched":true,"completion":"Read state until phase changes"}))
         }
+        "place" | "place-all" => {
+            // What a drop on the Sound map sends: "1".."4", "device:<node.name>" or "loose".
+            let target = match request["target"].as_str().ok_or("Missing target")? {
+                "loose" => None,
+                t if t.starts_with("device:") => {
+                    Some(beacn_linx_core::link::Target::Device(t["device:".len()..].to_owned()))
+                }
+                t => Some(beacn_linx_core::link::Target::Channel(
+                    t.parse().map_err(|_| "Target is 1..4, device:<name> or loose")?,
+                )),
+            };
+            let command = if op == "place" {
+                let key = request["key"].as_str().ok_or("Missing key")?.to_owned();
+                LinkCommand::Place(key, target)
+            } else {
+                LinkCommand::PlaceAll(target)
+            };
+            view.update(cx, |this, cx| this.send(command, cx))
+                .map_err(|e| e.to_string())?;
+            Ok(json!({"dispatched":true}))
+        }
+        "map" => {
+            crate::sound_map::toggle(None, cx);
+            Ok(json!({"open":cx.global::<super::LinkCore>().map_window.is_some()}))
+        }
         _ => Err(
-            "Unknown op. Use state, components, click, text, scroll, resize, screenshot, pause, connect or quit."
+            "Unknown op. Use state, components, click, text, scroll, resize, screenshot, pause, connect, place, place-all, map or quit."
                 .into(),
         ),
     }
@@ -238,7 +263,8 @@ impl LinkInterface {
             .iter()
             .map(|a| {
                 json!({"key":a.key,"id":key_id(&a.key),"name":a.name,"channel":a.channel,
-                       "remembered":a.remembered,"running":a.running,"streams":a.streams})
+                       "remembered":a.remembered,"running":a.running,"streams":a.streams,
+                       "pinned":format!("{:?}", a.pinned)})
             })
             .collect::<Vec<_>>();
         let meters = self

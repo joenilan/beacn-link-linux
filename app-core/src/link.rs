@@ -6,6 +6,7 @@ use beacn_link_protocol::{
     link_engine::{is_linx_output, Beacn, Control, LinkService},
     metering::Mailbox,
 };
+pub use beacn_link_protocol::link_engine::Target;
 use std::{
     collections::BTreeMap,
     fs,
@@ -32,6 +33,8 @@ pub struct LinkApp {
     pub channel: u8,
     /// Channel LinX re-applies to this app's new streams.
     pub remembered: Option<u8>,
+    /// Placement overriding the remembered channel (a device on this PC).
+    pub pinned: Option<Target>,
     pub running: bool,
     pub streams: usize,
 }
@@ -124,6 +127,11 @@ pub enum LinkCommand {
     AutoConnect(bool),
     /// Make a desktop output (node.name) the default.
     DefaultOutput(String),
+    /// Place one application (key) on a channel or device, or `None` to
+    /// unlink it.
+    Place(String, Option<Target>),
+    /// Place every application at once (a device becomes the sound output).
+    PlaceAll(Option<Target>),
 }
 
 /// Per-application channel memory: `~/.config/linx/channels`.
@@ -183,6 +191,81 @@ pub fn parse_channels(text: &str) -> BTreeMap<String, u8> {
                 .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).ok())
                 .collect::<Option<Vec<_>>>()?;
             Some((String::from_utf8(bytes).ok()?, channel))
+        })
+        .collect()
+}
+
+/// Per-application placements on devices of this PC (or a channel kept
+/// while sound plays locally): `~/.config/linx/placements`.
+pub struct PlacementStore {
+    path: Option<PathBuf>,
+}
+impl PlacementStore {
+    pub fn user() -> Self {
+        Self {
+            path: crate::preferences::Preferences::user_path()
+                .and_then(|p| p.parent().map(|d| d.join("placements"))),
+        }
+    }
+    pub fn load(&self) -> BTreeMap<String, Target> {
+        self.path
+            .as_ref()
+            .and_then(|path| fs::read_to_string(path).ok())
+            .map(|text| parse_placements(&text))
+            .unwrap_or_default()
+    }
+    pub fn save(&self, placements: &BTreeMap<String, Target>) -> Result<(), String> {
+        let path = self.path.as_ref().ok_or("No LinX settings directory.")?;
+        let parent = path.parent().ok_or("No LinX settings directory.")?;
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        let temp = parent.join(format!(".placements-{}", std::process::id()));
+        let mut file = fs::File::create(&temp).map_err(|e| e.to_string())?;
+        file.write_all(format_placements(placements).as_bytes())
+            .and_then(|_| file.sync_all())
+            .map_err(|e| e.to_string())?;
+        fs::rename(&temp, path).map_err(|e| e.to_string())
+    }
+}
+fn hex(text: &str) -> String {
+    text.bytes().map(|b| format!("{b:02x}")).collect()
+}
+fn unhex(hex: &str) -> Option<String> {
+    if hex.is_empty() || hex.len() % 2 != 0 {
+        return None;
+    }
+    let bytes = (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok())
+        .collect::<Option<Vec<_>>>()?;
+    String::from_utf8(bytes).ok()
+}
+pub fn format_placements(placements: &BTreeMap<String, Target>) -> String {
+    let mut out = String::from("linx-placements=1\n");
+    for (key, target) in placements {
+        match target {
+            Target::Channel(c) => out.push_str(&format!("channel\t{c}\t{}\n", hex(key))),
+            Target::Device(name) => {
+                out.push_str(&format!("device\t{}\t{}\n", hex(name), hex(key)))
+            }
+        }
+    }
+    out
+}
+pub fn parse_placements(text: &str) -> BTreeMap<String, Target> {
+    let mut lines = text.lines();
+    if lines.next() != Some("linx-placements=1") {
+        return BTreeMap::new();
+    }
+    lines
+        .filter_map(|line| {
+            let mut parts = line.split('\t');
+            let (kind, value, key) = (parts.next()?, parts.next()?, parts.next()?);
+            let target = match kind {
+                "channel" => Target::Channel(value.parse().ok().filter(|c| (1..=CHANNELS).contains(c))?),
+                "device" => Target::Device(unhex(value)?),
+                _ => return None,
+            };
+            Some((unhex(key)?, target))
         })
         .collect()
 }
@@ -305,6 +388,8 @@ fn run(rx: mpsc::Receiver<LinkCommand>, latest: Arc<Mutex<LinkView>>, ending: Ar
     }
     let store = ChannelStore::user();
     let mut remembered = store.load();
+    let placements = PlacementStore::user();
+    let mut pinned = placements.load();
     let mut service: Option<LinkService> = None;
     // Connect at launch only when automatic connection is enabled.
     let mut want = view.auto_connect;
@@ -330,6 +415,7 @@ fn run(rx: mpsc::Receiver<LinkCommand>, latest: Arc<Mutex<LinkView>>, ending: Ar
                     want = false;
                     if let Some(s) = service.take() {
                         remembered = s.remembered().clone();
+                        pinned = s.pinned().clone();
                     }
                     view.phase = Phase::Paused;
                     view.message = Some("Link paused. Applications use your normal output.".into());
@@ -359,6 +445,20 @@ fn run(rx: mpsc::Receiver<LinkCommand>, latest: Arc<Mutex<LinkView>>, ending: Ar
                     };
                     view.message = result.err();
                 }
+                LinkCommand::Place(key, target) => {
+                    let result = match service.as_mut() {
+                        Some(s) => s.place(&key, target),
+                        None => Err("Connect LinX first.".into()),
+                    };
+                    view.message = result.err();
+                }
+                LinkCommand::PlaceAll(target) => {
+                    let result = match service.as_mut() {
+                        Some(s) => s.place_all(target),
+                        None => Err("Connect LinX first.".into()),
+                    };
+                    view.message = result.err();
+                }
                 LinkCommand::AutoConnect(enabled) => {
                     view.auto_connect = enabled;
                     view.message = match preferences.as_mut() {
@@ -375,7 +475,7 @@ fn run(rx: mpsc::Receiver<LinkCommand>, latest: Arc<Mutex<LinkView>>, ending: Ar
         } else {
             next_tick = Instant::now() + TICK;
             if want && service.is_none() && Instant::now() >= retry_at {
-                match LinkService::connect(remembered.clone()) {
+                match LinkService::connect(remembered.clone(), pinned.clone()) {
                     Ok(s) => {
                         eprintln!("LinX connected");
                         service = Some(s);
@@ -392,6 +492,7 @@ fn run(rx: mpsc::Receiver<LinkCommand>, latest: Arc<Mutex<LinkView>>, ending: Ar
                     // PipeWire went away: release and reconnect automatically.
                     eprintln!("LinX lost PipeWire: {error}");
                     remembered = s.remembered().clone();
+                    pinned = s.pinned().clone();
                     service = None;
                     view.phase = Phase::Retrying;
                     view.audio_error = Some(error);
@@ -404,6 +505,12 @@ fn run(rx: mpsc::Receiver<LinkCommand>, latest: Arc<Mutex<LinkView>>, ending: Ar
                 remembered = s.remembered().clone();
                 if let Err(error) = store.save(&remembered) {
                     view.message = Some(format!("Could not save channel choices: {error}"));
+                }
+            }
+            if s.pinned() != &pinned {
+                pinned = s.pinned().clone();
+                if let Err(error) = placements.save(&pinned) {
+                    view.message = Some(format!("Could not save placements: {error}"));
                 }
             }
             fill(&mut view, s);
@@ -486,6 +593,7 @@ fn fill(view: &mut LinkView, service: &LinkService) {
             name: a.name.clone(),
             channel: a.channel,
             remembered: a.remembered,
+            pinned: a.pinned.clone(),
             running: a.running,
             streams: a.streams.len(),
         })
@@ -499,6 +607,19 @@ fn fill(view: &mut LinkView, service: &LinkService) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn placements_round_trip_and_ignore_bad_lines() {
+        let placements = BTreeMap::from([
+            ("Spotify".to_string(), Target::Device("alsa_output.pci-0000.analog-stereo".into())),
+            ("Game\tX".to_string(), Target::Channel(3)),
+        ]);
+        assert_eq!(parse_placements(&format_placements(&placements)), placements);
+        assert!(parse_placements("other=1\nchannel\t1\t41").is_empty());
+        let parsed = parse_placements(
+            "linx-placements=1\nchannel\t9\t41\ndevice\tzz\t41\nwhat\t1\t41\nchannel\t2\t42\n",
+        );
+        assert_eq!(parsed, BTreeMap::from([("B".to_string(), Target::Channel(2))]));
+    }
     #[test]
     fn hidden_outputs_round_trip_and_ignore_bad_lines() {
         let hidden: std::collections::BTreeSet<String> =

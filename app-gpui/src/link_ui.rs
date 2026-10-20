@@ -55,6 +55,12 @@ pub(crate) struct LinkCore {
     update_unseen: bool,
     /// Sound outputs hidden from the Sound output panel and tray menu.
     pub(crate) hidden_outputs: std::collections::BTreeSet<String>,
+    /// The console window, once opened.
+    console_window: Option<AnyWindowHandle>,
+    /// The Sound map overlay, while open.
+    pub(crate) map_window: Option<AnyWindowHandle>,
+    /// The Sound map shows lanes instead of orbits.
+    pub(crate) map_minimal: bool,
 }
 impl Global for LinkCore {}
 impl LinkCore {
@@ -1220,6 +1226,27 @@ impl Render for LinkInterface {
                                 )
                             })),
                     )
+                    .child(
+                        Button::new("sound-map")
+                            .ghost()
+                            .small()
+                            .ml(px(7.))
+                            .size(px(29.))
+                            .p_0()
+                            .border_1()
+                            .border_color(rgb(p.line))
+                            .rounded(px(5.))
+                            .text_color(rgb(tool_color))
+                            .disabled(self.view.phase != Phase::Running)
+                            .tooltip("Sound map: drag apps onto channels and devices")
+                            .child(
+                                svg()
+                                    .path("console/orbit.svg")
+                                    .size(px(15.))
+                                    .text_color(rgb(tool_color)),
+                            )
+                            .on_click(cx.listener(|_, _, _, cx| crate::sound_map::toggle(None, cx))),
+                    )
                     .child({
                         let current = self
                             .view
@@ -1617,12 +1644,14 @@ impl Render for LinkInterface {
 }
 
 fn open_console(cx: &mut App) {
-    if let Some(window) = cx.windows().first().copied() {
-        cx.activate(true);
-        let _ = window.update(cx, |_, window, _| window.activate_window());
-        return;
+    if let Some(window) = cx.global::<LinkCore>().console_window {
+        if cx.windows().contains(&window) {
+            cx.activate(true);
+            let _ = window.update(cx, |_, window, _| window.activate_window());
+            return;
+        }
     }
-    open_console_window(
+    let handle = open_console_window(
             WindowOptions {
                 // The console is designed at 788x568; the window adds the
                 // client-side shadow margin around it so nothing scrolls.
@@ -1652,6 +1681,7 @@ fn open_console(cx: &mut App) {
             |window, cx| cx.new(|cx| LinkInterface::new(window, cx)),
         )
         .expect("open LinX window");
+    cx.global_mut::<LinkCore>().console_window = Some(handle.into());
     cx.activate(true);
 }
 
@@ -1709,6 +1739,7 @@ pub(crate) fn console_height(window: &Window) -> Pixels {
 /// Without a tray host, closing the window quits so LinX never runs hidden.
 pub fn run(
     start_hidden: bool,
+    start_map: bool,
     login_args: Vec<String>,
     instance: Option<crate::single_instance::Instance>,
 ) {
@@ -1728,6 +1759,9 @@ pub fn run(
             updates: crate::updates::Updates::load(),
             update_unseen: false,
             hidden_outputs: beacn_linx_core::link::HiddenOutputs::user().load(),
+            console_window: None,
+            map_window: None,
+            map_minimal: false,
         });
         cx.on_app_quit(|cx| {
             LinkCore::stop(cx);
@@ -1735,13 +1769,20 @@ pub fn run(
         })
         .detach();
         cx.on_window_closed(|cx, _| {
+            let open = cx.windows();
+            let core = cx.global_mut::<LinkCore>();
+            if core.map_window.is_some_and(|w| !open.contains(&w)) {
+                core.map_window = None;
+            }
             if cx.windows().is_empty() && !tray_available(cx) {
                 LinkCore::stop(cx);
                 cx.quit();
             }
         })
         .detach();
-        if !start_hidden {
+        if start_map {
+            crate::sound_map::toggle(None, cx);
+        } else if !start_hidden {
             open_console(cx);
         }
         cx.spawn(async move |cx| {
@@ -1825,7 +1866,7 @@ fn reveal_if_no_tray(cx: &mut App) {
     }
     cx.global_mut::<LinkCore>().hidden_since = None;
     open_console(cx);
-    if let Some(window) = cx.windows().first().copied() {
+    if let Some(window) = cx.global::<LinkCore>().console_window {
         let _ = window.update(cx, |_, window, _| window.minimize_window());
     }
 }
@@ -1841,9 +1882,14 @@ fn tray_tick(cx: &mut App) -> bool {
         .as_ref()
         .map(|i| i.requests())
         .unwrap_or_default();
+    for request in &requests {
+        if let crate::single_instance::Request::Map(token) = request {
+            crate::sound_map::toggle(token.clone(), cx);
+        }
+    }
     if let Some(token) = requests.iter().find_map(|r| match r {
         crate::single_instance::Request::Show(token) => Some(token.clone()),
-        crate::single_instance::Request::Hidden => None,
+        _ => None,
     }) {
         if let Some(token) = token {
             gpui_linux::set_pending_activation_token(token);
@@ -1879,6 +1925,9 @@ fn tray_tick(cx: &mut App) -> bool {
         if actions & tray::QUIT != 0 {
             return true;
         }
+        if actions & tray::MAP != 0 {
+            crate::sound_map::toggle(None, cx);
+        }
         if actions & tray::SHOW != 0 {
             // Wayland: raise with the click's activation token, not just
             // request attention.
@@ -1908,6 +1957,7 @@ mod tests {
             name: key.into(),
             channel,
             remembered: (channel > 0).then_some(channel),
+            pinned: None,
             running,
             streams: 1,
         }

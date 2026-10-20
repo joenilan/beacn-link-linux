@@ -14,6 +14,9 @@
 //! - The audio bus is independent of the USB control channel: a control
 //!   failure is retried in the background while audio keeps flowing.
 //! - Pausing LinX returns every application it moved to its previous output.
+//! - An application can also be placed on a device of this PC (Spotify on the
+//!   speakers) while the rest stay on their channels; a placement overrides
+//!   the remembered channel until the application is linked again.
 use crate::{
     link_bus::{BusStatus, LinkBus, Output, Stream, CHANNELS},
     metering::Mailbox,
@@ -39,6 +42,15 @@ pub const HOST_TIMEOUT: Duration = Duration::from_secs(5);
 pub const LOCAL_GRACE: Duration = Duration::from_secs(3);
 const ROUTE_ATTEMPTS: u8 = 3;
 
+/// Where an application was explicitly placed.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Target {
+    /// Link In 1..4.
+    Channel(u8),
+    /// A desktop output, by node.name.
+    Device(String),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct App {
     pub key: String,
@@ -48,6 +60,8 @@ pub struct App {
     pub channel: u8,
     /// Remembered channel, if the user assigned one.
     pub remembered: Option<u8>,
+    /// Placement that overrides the remembered channel, if any.
+    pub pinned: Option<Target>,
     pub running: bool,
     pub streams: Vec<Stream>,
 }
@@ -86,6 +100,7 @@ pub fn applications(streams: &[Stream], remembered: &BTreeMap<String, u8>) -> Ve
             wire_name: wire_name(&name),
             name,
             remembered: remembered.get(&key).copied(),
+            pinned: None,
             key,
             channel: 0,
             running: false,
@@ -571,14 +586,25 @@ pub struct LinkService {
     local: bool,
     /// `local` was taken from the desktop default at connection.
     local_known: bool,
+    /// Placements that override the remembered channel: a device on this PC,
+    /// or a channel that stays in use while sound otherwise plays locally.
+    pinned: BTreeMap<String, Target>,
+    /// Outputs present at the last observation, to re-apply device
+    /// placements when one comes back.
+    present: BTreeSet<String>,
     state: State,
 }
 
 impl LinkService {
-    pub fn connect(remembered: BTreeMap<String, u8>) -> Result<Self, String> {
+    pub fn connect(
+        remembered: BTreeMap<String, u8>,
+        pinned: BTreeMap<String, Target>,
+    ) -> Result<Self, String> {
         let mut service = Self {
             bus: LinkBus::open()?,
             remembered,
+            pinned,
+            present: BTreeSet::new(),
             previous: BTreeMap::new(),
             handled: BTreeSet::new(),
             wrote: BTreeMap::new(),
@@ -602,6 +628,19 @@ impl LinkService {
     }
     pub fn remembered(&self) -> &BTreeMap<String, u8> {
         &self.remembered
+    }
+    pub fn pinned(&self) -> &BTreeMap<String, Target> {
+        &self.pinned
+    }
+
+    /// Where an application should play: its placement, else (while LinX is
+    /// the output) its remembered channel. `None` follows the default.
+    fn effective(&self, key: &str) -> Option<Target> {
+        match self.pinned.get(key) {
+            Some(target) => Some(target.clone()),
+            None if !self.local => self.remembered.get(key).map(|c| Target::Channel(*c)),
+            None => None,
+        }
     }
     pub fn meter(&self, channel: u8) -> Option<Arc<Mailbox>> {
         self.bus.meter(channel)
@@ -706,6 +745,21 @@ impl LinkService {
         }
         self.state.bus = snapshot.status;
         self.state.apps = applications(&snapshot.streams, &self.remembered);
+        for app in &mut self.state.apps {
+            app.pinned = self.pinned.get(&app.key).cloned();
+        }
+        let present: BTreeSet<String> = snapshot.outputs.iter().map(|o| o.name.clone()).collect();
+        if present != self.present {
+            // A device came or went: placements on it are applied again.
+            for app in &self.state.apps {
+                if matches!(self.pinned.get(&app.key), Some(Target::Device(_))) {
+                    for s in &app.streams {
+                        self.handled.remove(&(s.node, s.serial));
+                    }
+                }
+            }
+            self.present = present;
+        }
         self.state.outputs = snapshot.outputs;
         self.state.default_output = snapshot.default_output;
         // On connecting, the default the user chose says where sound plays
@@ -737,15 +791,62 @@ impl LinkService {
             eprintln!("LinX observation skipped: {error}");
             return Ok(());
         }
-        if self.state.bus.sinks_ready == CHANNELS && self.state.bus.metadata && !self.local {
+        if self.state.bus.sinks_ready == CHANNELS && self.state.bus.metadata {
             let streams: Vec<Stream> = self
                 .state
                 .apps
                 .iter()
                 .flat_map(|a| a.streams.iter().cloned())
                 .collect();
-            self.learn_desktop_moves(&streams);
-            let routes = pending_routes(&streams, &self.remembered, &self.handled);
+            if !self.local {
+                self.learn_desktop_moves(&streams);
+            }
+            let mut channels = BTreeMap::new();
+            let mut devices = BTreeMap::new();
+            for app in &self.state.apps {
+                match self.effective(&app.key) {
+                    Some(Target::Channel(c)) => {
+                        channels.insert(app.key.clone(), c);
+                    }
+                    Some(Target::Device(name)) => {
+                        devices.insert(app.key.clone(), name);
+                    }
+                    None => {}
+                }
+            }
+            let routes = pending_routes(&streams, &channels, &self.handled);
+            // Device placements: once per stream, while the device exists
+            // (a missing device keeps the stream on the default until it
+            // returns).
+            let mut placed = Vec::new();
+            for stream in streams.iter().filter(|s| s.info && s.movable) {
+                let id = (stream.node, stream.serial);
+                let Some(name) = devices.get(&stream.app_key()) else { continue };
+                if self.handled.contains(&id) || !self.present.contains(name) {
+                    continue;
+                }
+                if stream.target_channel == 0 && self.bus.target_name(stream).as_deref() == Some(name) {
+                    continue;
+                }
+                placed.push((stream.clone(), name.clone()));
+            }
+            for (stream, name) in &placed {
+                let id = (stream.node, stream.serial);
+                self.wrote.remove(&id);
+                match self.bus.route_named(stream, name) {
+                    Ok(()) => {
+                        self.handled.insert(id);
+                    }
+                    Err(error) => {
+                        let tries = self.attempts.entry(id).or_default();
+                        *tries += 1;
+                        eprintln!("LinX placement failed ({tries}/{ROUTE_ATTEMPTS}): {error}");
+                        if *tries >= ROUTE_ATTEMPTS {
+                            self.handled.insert(id);
+                        }
+                    }
+                }
+            }
             for (stream, channel) in &routes {
                 let id = (stream.node, stream.serial);
                 self.remember_previous(stream);
@@ -764,13 +865,19 @@ impl LinkService {
                     }
                 }
             }
-            // Streams that need nothing are settled once their identity is known.
+            // Streams that need nothing are settled once their identity is
+            // known; those waiting for a placed device stay open.
             for stream in streams.iter().filter(|s| s.info) {
-                if !routes.iter().any(|(r, _)| (r.node, r.serial) == (stream.node, stream.serial)) {
+                let waiting = devices.get(&stream.app_key()).is_some_and(|n| !self.present.contains(n));
+                let id = (stream.node, stream.serial);
+                if !waiting
+                    && !routes.iter().any(|(r, _)| (r.node, r.serial) == id)
+                    && !placed.iter().any(|(p, _)| (p.node, p.serial) == id)
+                {
                     self.handled.insert((stream.node, stream.serial));
                 }
             }
-            if !routes.is_empty() {
+            if !routes.is_empty() || !placed.is_empty() {
                 let _ = self.observe();
             }
         }
@@ -802,6 +909,17 @@ impl LinkService {
         } else {
             self.remembered.insert(key.to_owned(), channel);
             self.intent.insert(key.to_owned(), (channel, Instant::now()));
+        }
+        match self.pinned.remove(key) {
+            // Off its device: onto the channel, or the default.
+            Some(Target::Device(_)) => self.reroute(key, channel == 0 || self.local),
+            // Kept on the Studio while sound plays locally: move it there.
+            Some(Target::Channel(_)) if self.local && channel != 0 => {
+                self.pinned.insert(key.to_owned(), Target::Channel(channel));
+                self.reroute(key, false);
+            }
+            Some(Target::Channel(_)) if self.local => self.reroute(key, true),
+            _ => {}
         }
         if self.local {
             // Sound plays on this PC: keep the choice for when LinX is the
@@ -910,6 +1028,11 @@ impl LinkService {
         if !self.state.outputs.iter().any(|o| o.name == name) {
             return Err("That output is no longer available.".into());
         }
+        // Choosing a sound output sends everything there: placements end.
+        let pinned: Vec<String> = std::mem::take(&mut self.pinned).into_keys().collect();
+        for key in &pinned {
+            self.reroute(key, true);
+        }
         if is_linx_output(name) {
             self.bus.set_default_output(LINX_DEFAULT_OUTPUT)?;
             self.local = false;
@@ -935,6 +1058,119 @@ impl LinkService {
         self.state.local_output = self.local;
         let _ = self.observe();
         Ok(())
+    }
+
+    /// Place one application: on Link In 1..4, on a device of this PC, or
+    /// (`None`) nowhere, following the default. A channel placement made
+    /// while sound plays locally keeps that application on the Studio.
+    pub fn place(&mut self, key: &str, target: Option<Target>) -> Result<(), String> {
+        match target {
+            None => {
+                let was = self.pinned.remove(key);
+                let result = self.assign(key, 0);
+                if was.is_some() {
+                    self.reroute(key, true);
+                }
+                result
+            }
+            Some(Target::Channel(channel)) => {
+                if !(1..=CHANNELS as u8).contains(&channel) {
+                    return Err("Link In channel must be 1–4.".into());
+                }
+                self.pinned.remove(key);
+                if self.local {
+                    self.remembered.insert(key.to_owned(), channel);
+                    self.intent.insert(key.to_owned(), (channel, Instant::now()));
+                    self.pinned.insert(key.to_owned(), Target::Channel(channel));
+                    self.reroute(key, false);
+                    let _ = self.observe();
+                    Ok(())
+                } else {
+                    self.assign(key, channel)
+                }
+            }
+            Some(Target::Device(name)) => {
+                if is_linx_output(&name) {
+                    return self.place(key, Some(Target::Channel(1)));
+                }
+                if !self.state.outputs.iter().any(|o| o.name == name) {
+                    return Err("That output is no longer available.".into());
+                }
+                self.intent.remove(key);
+                self.pinned.insert(key.to_owned(), Target::Device(name));
+                self.reroute(key, false);
+                let _ = self.observe();
+                Ok(())
+            }
+        }
+    }
+
+    /// Place every application at once. A device becomes the sound output
+    /// (everything plays there, new applications too); a channel puts every
+    /// current application on it with LinX as the output; `None` unlinks
+    /// every application.
+    pub fn place_all(&mut self, target: Option<Target>) -> Result<(), String> {
+        let keys: Vec<String> = self.state.apps.iter().map(|a| a.key.clone()).collect();
+        match target {
+            Some(Target::Device(name)) => self.set_default_output(&name),
+            Some(Target::Channel(channel)) => {
+                if !(1..=CHANNELS as u8).contains(&channel) {
+                    return Err("Link In channel must be 1–4.".into());
+                }
+                for key in &keys {
+                    self.remembered.insert(key.clone(), channel);
+                    self.intent.insert(key.clone(), (channel, Instant::now()));
+                }
+                self.set_default_output(LINX_DEFAULT_OUTPUT)
+            }
+            None => {
+                for key in &keys {
+                    self.pinned.remove(key);
+                    self.remembered.remove(key);
+                    self.intent.remove(key);
+                    self.reroute(key, true);
+                }
+                self.previous.clear();
+                let _ = self.observe();
+                Ok(())
+            }
+        }
+    }
+
+    /// Move an application's streams to where it belongs now. `follow`
+    /// clears LinX's target so they play on the default output instead.
+    fn reroute(&mut self, key: &str, follow: bool) {
+        let target = if follow { None } else { self.effective(key) };
+        let streams: Vec<Stream> = self
+            .state
+            .apps
+            .iter()
+            .filter(|a| a.key == key)
+            .flat_map(|a| a.streams.iter().cloned())
+            .filter(|s| s.movable)
+            .collect();
+        for stream in streams {
+            let id = (stream.node, stream.serial);
+            let routed = match &target {
+                Some(Target::Channel(c)) => {
+                    self.remember_previous(&stream);
+                    self.wrote.insert(id, *c);
+                    self.bus.route(&stream, *c)
+                }
+                Some(Target::Device(name)) => {
+                    self.wrote.remove(&id);
+                    self.bus.route_named(&stream, name)
+                }
+                None => {
+                    self.wrote.remove(&id);
+                    self.bus.route(&stream, 0)
+                }
+            };
+            if let Err(error) = routed {
+                eprintln!("LinX: {error}");
+            }
+            self.handled.insert(id);
+        }
     }
 
     /// Return every stream LinX routed to its previous output (or the desktop

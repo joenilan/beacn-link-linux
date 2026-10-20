@@ -43,6 +43,8 @@ pub enum Request {
     Show(Option<String>),
     /// A hidden launch (login autostart): nothing to show.
     Hidden,
+    /// `linx --map` (a keyboard shortcut): open or close the Sound map.
+    Map(Option<String>),
 }
 
 fn runtime_dir() -> io::Result<PathBuf> {
@@ -53,7 +55,7 @@ fn runtime_dir() -> io::Result<PathBuf> {
 }
 
 /// Become the running LinX, or hand this launch to the one already running.
-pub fn claim(hidden: bool) -> io::Result<Claim> {
+pub fn claim(hidden: bool, map: bool) -> io::Result<Claim> {
     let dir = runtime_dir()?;
     let lock = OpenOptions::new()
         .create(true)
@@ -79,12 +81,17 @@ pub fn claim(hidden: bool) -> io::Result<Claim> {
         }
         Err(fs::TryLockError::WouldBlock) => Ok(Claim::Running(forward(
             &socket,
-            if hidden {
-                Request::Hidden
-            } else {
-                Request::Show(std::env::var("XDG_ACTIVATION_TOKEN").ok().filter(|t| {
+            {
+                let token = std::env::var("XDG_ACTIVATION_TOKEN").ok().filter(|t| {
                     !t.is_empty() && t.len() < 256 && t.bytes().all(|b| b.is_ascii_graphic())
-                }))
+                });
+                if map {
+                    Request::Map(token)
+                } else if hidden {
+                    Request::Hidden
+                } else {
+                    Request::Show(token)
+                }
             },
         ))),
         Err(fs::TryLockError::Error(error)) => Err(error),
@@ -108,6 +115,8 @@ fn forward(socket: &PathBuf, request: Request) -> io::Result<()> {
         Request::Show(Some(token)) => format!("show {token}\n"),
         Request::Show(None) => "show\n".to_owned(),
         Request::Hidden => "hidden\n".to_owned(),
+        Request::Map(Some(token)) => format!("map {token}\n"),
+        Request::Map(None) => "map\n".to_owned(),
     };
     stream.write_all(line.as_bytes())?;
     // Wait for the acknowledgement so the request is never lost.
@@ -127,13 +136,18 @@ impl Instance {
             let n = stream.read(&mut line).unwrap_or(0);
             let text = String::from_utf8_lossy(&line[..n]);
             let text = text.trim_end();
+            let token = |prefix: &str| {
+                text.strip_prefix(prefix)
+                    .map(str::trim)
+                    .filter(|t| !t.is_empty() && t.bytes().all(|b| b.is_ascii_graphic()))
+                    .map(str::to_owned)
+            };
             let request = if text.starts_with("hidden") {
                 Request::Hidden
+            } else if text == "map" || text.starts_with("map ") {
+                Request::Map(token("map "))
             } else {
-                let token = text.strip_prefix("show ").map(str::trim).filter(|t| {
-                    !t.is_empty() && t.bytes().all(|b| b.is_ascii_graphic())
-                });
-                Request::Show(token.map(str::to_owned))
+                Request::Show(token("show "))
             };
             let _ = stream.write_all(b"ok\n");
             out.push(request);
