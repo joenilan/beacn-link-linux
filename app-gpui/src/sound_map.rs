@@ -107,6 +107,8 @@ struct Drag {
 pub struct SoundMap {
     view: LinkView,
     viewed: Instant,
+    #[cfg(feature = "native-control")]
+    rendered_frames: u64,
     minimal: bool,
     /// Every device is shown, with Hide/Show.
     edit: bool,
@@ -197,6 +199,8 @@ impl SoundMap {
         Self {
             view: cx.global::<LinkCore>().worker.view(),
             viewed: Instant::now(),
+            #[cfg(feature = "native-control")]
+            rendered_frames: 0,
             minimal,
             edit: false,
             hovered: None,
@@ -957,7 +961,7 @@ impl SoundMap {
         self.view.apps.iter().find(|a| a.key == key).is_some_and(|a| a.mute)
     }
 
-    /// Light drawing: whether anything shown changed since the last frame.
+    /// Whether graph state or a temporary notice needs another frame.
     fn stale(&self, cx: &App) -> bool {
         let recent = |at: &Instant, ms: u64| at.elapsed() < Duration::from_millis(ms);
         if self.toast.as_ref().is_some_and(|(_, at)| recent(at, 5500))
@@ -973,6 +977,20 @@ impl SoundMap {
             || view.outputs != self.view.outputs
             || view.default_output != self.view.default_output
             || view.local_output != self.view.local_output
+    }
+
+    /// Poll live meter buffers without repainting an unchanged scene.
+    fn levels_changed(&self, cx: &App) -> bool {
+        if self.light { return false; }
+        let view = cx.global::<LinkCore>().worker.view();
+        self.levels.iter().enumerate().any(|(i, old)| {
+            let used = view.apps.iter().any(|a| a.channel as usize == i + 1);
+            let peak = view.meters[i].as_ref()
+                .filter(|_| used && !view.local_output)
+                .and_then(|m| m.read())
+                .map_or(0., |r| r.peak[0].max(r.peak[1]).clamp(0., 1.));
+            (peak - old).abs() > 0.001
+        })
     }
 
     fn hover(&self, zones: &[Zone]) -> Option<Spot> {
@@ -1087,6 +1105,8 @@ impl Render for SoundMap {
         if self.closing.is_some_and(|at| at.elapsed() >= self.fade()) {
             window.defer(cx, |window, _| window.remove_window());
         }
+        #[cfg(feature = "native-control")]
+        { self.rendered_frames += 1; }
         self.refresh(cx);
         let fade = self.shown_amount();
         self.judge_frames(fade, window, cx);
@@ -1202,17 +1222,18 @@ impl Render for SoundMap {
         // Every frame while something moves. Otherwise 30 per second while
         // cables flow, and a few per second to follow the graph when nothing
         // flows (or drawing light), so an open map costs little.
-        let settling = self.shown.iter().any(|(k, p)| slots.get(k).is_some_and(|s| p.dist(*s) > 0.5));
+        let settling = self.shown.iter().any(|(k, p)| !dragged.contains(k) && slots.get(k).is_some_and(|s| p.dist(*s) > 0.5));
         let flowing = !self.light && cables.iter().any(|c| c.3 > 0.1 && c.4 > 0.);
-        if self.drag.is_some() || self.lasso.is_some() || self.closing.is_some() || fade < 1. || settling {
+        if self.closing.is_some() || fade < 1. || settling {
             window.request_animation_frame();
         } else if self.tick.is_none() {
-            // Light drawing redraws only when something changed.
-            let (wait, light) = (Duration::from_millis(if flowing { 33 } else { 200 }), self.light);
+            // Idle scenes poll for changes without repainting. Pointer events
+            // notify directly, including while holding a drag or selection.
+            let wait = Duration::from_millis(if flowing { 33 } else { 200 });
             self.tick = Some(cx.spawn(async move |this, cx| loop {
                 cx.background_executor().timer(wait).await;
                 let Ok(redraw) = this.update(cx, |this, cx| {
-                    let redraw = !light || this.stale(cx);
+                    let redraw = flowing || this.stale(cx) || this.levels_changed(cx);
                     if redraw {
                         this.tick = None;
                         cx.notify();
@@ -2203,6 +2224,9 @@ pub(crate) fn control(op: &str, request: &serde_json::Value, cx: &mut App) -> Re
                 let zones = map.zones(cx);
                 let orb = if map.minimal { P(1150., 112.) } else { ORB };
                 Ok(json!({
+                    "rendered_frames": map.rendered_frames,
+                    "dragging": map.drag.is_some(),
+                    "selecting": map.lasso.is_some(),
                     "minimal": map.minimal,
                     "light": map.light,
                     "closing": map.closing.is_some(),
